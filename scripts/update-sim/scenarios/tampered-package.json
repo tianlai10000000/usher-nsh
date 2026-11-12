@@ -1,0 +1,32 @@
+{
+  "description": "A package changed after signing is refused and never becomes current",
+  "manifest": {
+    "version": "0.1.1",
+    "build": 2,
+    "package": true
+  },
+  "tamper": {
+    "glob": "*.nshpkg",
+    "kind": "flip-byte"
+  },
+  "preload": "next",
+  "launches": [
+    {
+      "seconds": 14
+    }
+  ],
+  "expect": [
+    {
+      "kind": "absent",
+      "name": "current.nshpkg"
+    },
+    {
+      "kind": "absent",
+      "name": "trying.nshpkg"
+    },
+    {
+      "kind": "log-contains",
+      "text": "the signature does not verify"
+    }
+  ]
+}

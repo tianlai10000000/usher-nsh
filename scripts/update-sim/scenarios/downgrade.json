@@ -1,0 +1,28 @@
+{
+  "description": "A package whose build is not newer than the app's is not offered or run",
+  "manifest": {
+    "version": "0.0.9",
+    "build": 1,
+    "package": true
+  },
+  "preload": "next",
+  "launches": [
+    {
+      "seconds": 14
+    }
+  ],
+  "expect": [
+    {
+      "kind": "absent",
+      "name": "current.nshpkg"
+    },
+    {
+      "kind": "absent",
+      "name": "trying.nshpkg"
+    },
+    {
+      "kind": "log-contains",
+      "text": "is not newer than the app's"
+    }
+  ]
+}

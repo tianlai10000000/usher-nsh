@@ -1,0 +1,31 @@
+{
+  "description": "The manifest offers nothing newer than the installed app",
+  "pending": "the app does not call checkForUpdate or checkForPackage yet (docs/update.md batches 4 and 5); remove this field when the update controller exists",
+  "manifest": {
+    "version": "0.1.0",
+    "build": 1,
+    "package": true
+  },
+  "expect": [
+    {
+      "kind": "requested",
+      "path": "latest.json"
+    },
+    {
+      "kind": "not-requested",
+      "path": ".nshpkg"
+    },
+    {
+      "kind": "absent",
+      "name": "next.nshpkg"
+    },
+    {
+      "kind": "absent",
+      "name": "trying.nshpkg"
+    },
+    {
+      "kind": "absent",
+      "name": "current.nshpkg"
+    }
+  ]
+}

@@ -1,0 +1,13 @@
+{
+  "description": "A newer code package: it runs from the next start and proves healthy",
+  "manifest": { "version": "0.1.1", "build": 2, "package": true },
+  "preload": "next",
+  "launches": [{ "seconds": 14 }],
+  "expect": [
+    { "kind": "has", "name": "current.nshpkg" },
+    { "kind": "has", "name": "trust" },
+    { "kind": "absent", "name": "next.nshpkg" },
+    { "kind": "absent", "name": "trying.nshpkg" },
+    { "kind": "no-partial" }
+  ]
+}

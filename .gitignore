@@ -11,3 +11,6 @@
 *.pem
 *.p12
 *.key
+
+# Local update simulation: one-off keys, built apps and run data (scripts/update-sim/)
+/.nsh/update-sim/

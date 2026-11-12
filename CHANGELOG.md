@@ -6,8 +6,29 @@ Keep work in progress under `Unreleased`.
 
 ## Unreleased
 
-- Frame layout module (`ui/layout/`): a full-width title bar with breadcrumbs and a light/dark switch, a fixed rail with update, settings and account buttons, a secondary menu that can be hidden (the content panel grows left with an animation), and a status bar as wide as the window. Sizes and the animation duration are theme metrics (`layout-*`, `motion-layout`).
-- Settings sections use grouped cards: a heading above a rounded card whose rows put the name and description on the left and the control on the right.
+## 0.1.0
+
+First release. It is installed by hand; the app does not check for or install updates yet, so the update button in the rail stays disabled.
+
+### Added
+
+- Window frame: a full-width title bar with menu toggle, back and forward history, breadcrumbs and a light/dark switch; a fixed rail with home, update, settings and account buttons; a secondary menu that docks beside the content on wide windows and becomes a drawer on narrow ones; and an optional status bar. Docking and status bar visibility are saved.
+- Settings with General, Theme and Diagnostics sections, laid out as grouped cards. Wide windows list the sections on the left; narrow windows use a drop-down.
+- Appearance: Light, Dark or System mode, a configurable accent color, and a choice of style theme. Bundled themes are Default, Apple Liquid Glass, NSH Gallery, Primer · GitHub, Geist · Vercel, Radix Colors · Sand and Slate · shadcn/ui. You can add your own themes as local JSON files.
+- A window background image with adjustable opacity, and adjustable content-area transparency.
+- English and Simplified Chinese, with an option to follow the system language.
+- Tooltips on the title-bar and rail icon buttons, including disabled ones.
+- macOS: native window material, and AppKit settings controls on macOS 26 and later (the Standard build uses NSH controls on every supported macOS).
+- Diagnostics: a log level from `OFF` to `TRACE` (default `INFO`) that applies immediately, daily log files kept for 14 days, and an export of the last day, 7 days or 14 days as a `.tar.gz` in the app's `exports/` folder.
+- Preferences are saved to a local file with schema migration. A damaged file is backed up, and a file written by a newer version is left untouched.
+- Downloads: a `standard` and an `appkit` build for macOS on Apple Silicon, as `.zip` files.
+
+### Known limitations
+
+- macOS on Apple Silicon only. There is no Intel Mac, Windows, Linux, Android or iOS build.
+- The home page is still a Hello World example.
+- Update checking, downloading and installing are not connected to the app yet. A later release will add them; from 0.1.0 on, releases carry the signed update files that feature needs.
+- Diagnostic export has no system save dialog: the archive goes to the `exports/` folder, which the app then reveals.
 
 ## 0.0.1-alpha.1
 

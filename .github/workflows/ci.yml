@@ -17,13 +17,9 @@ concurrency:
 env:
   CARGO_TERM_COLOR: always
   CARGO_INCREMENTAL: 0
-  # One place for the toolchain and the NSH CLI, so every job builds with the same ones.
+  # The Rust toolchain every job builds with. The NSH command line is not set here: the
+  # installer reads its version from Cargo.toml, so there is nothing to keep in step.
   RUST_TOOLCHAIN: "1.98.1"
-  NSH_VERSION: "v0.4.0"
-  # SHA-256 of nsh-macos-arm64.tar.gz for NSH_VERSION, from the release's .sha256 file.
-  # The checksum is pinned here, not downloaded next to the archive: a compromised
-  # release could replace both, but not this file.
-  NSH_MACOS_ARM64_SHA256: "f63c3d57c31b28c9b34227aac81f099d1e0e61f1db552a6ec5127d114eaf59cb"
 
 jobs:
   rust:
@@ -111,7 +107,7 @@ jobs:
 
   scripts:
     name: Release scripts and workflow lint
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - name: Checkout
@@ -119,14 +115,36 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Release gate tests
+      - name: Release script tests
         run: python3 -m unittest discover -s scripts/tests -p "test_*.py" -v
 
-      - name: Lint workflows and shell scripts
+      # Every file Rust embeds must be a listed shell input, or a TSX-only release could ship a
+      # code package to an app whose binary still holds the old copy.
+      - name: Check the shell input list is complete
+        run: python3 scripts/release/shell_inputs.py check-embedded
+
+      # The pre-commit checks are what keep unformatted code out of a commit, so they are tested
+      # here: hooks that quietly stop working would only show up as a failed CI later.
+      - name: Install lefthook, shellcheck and actionlint
         run: |
           set -euo pipefail
           sudo apt-get update -qq
           sudo apt-get install -y -qq shellcheck
-          bash scripts/ci/install-actionlint.sh
-          ./actionlint -color
-          shellcheck scripts/ci/*.sh scripts/*.sh
+          mkdir -p "$HOME/.local/bin"
+          (cd "$HOME/.local/bin" && bash "$GITHUB_WORKSPACE/scripts/ci/install-lefthook.sh")
+          (cd "$HOME/.local/bin" && bash "$GITHUB_WORKSPACE/scripts/ci/install-actionlint.sh")
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          rustup component add rustfmt
+
+      # A lefthook.yml that does not parse writes no hook at all and nothing says so.
+      - name: Validate the lefthook config
+        run: lefthook validate
+
+      - name: Pre-commit hook tests
+        run: bash scripts/tests/test_git_hooks.sh
+
+      - name: Lint workflows and shell scripts
+        run: |
+          set -euo pipefail
+          actionlint -color
+          shellcheck scripts/ci/*.sh scripts/*.sh scripts/git-hooks/*.sh scripts/tests/*.sh scripts/update-sim/*.sh

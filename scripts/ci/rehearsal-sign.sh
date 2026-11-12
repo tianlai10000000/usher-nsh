@@ -1,71 +1,112 @@
 #!/usr/bin/env bash
-# Rehearse release signing without the real update key.
+# Rehearse the release's update files without any real key.
 #
-# Usage: rehearsal-sign.sh RELEASE_DIR VERSION CHANNEL
+# Usage: rehearsal-sign.sh ARTIFACTS_DIR OUT_DIR SHELL_CHANGED
 #
-# Generates a throwaway key pair in a temporary directory, signs RELEASE_DIR's manifest with
-# it, and verifies the result exactly as a client would, against a key list holding only the
-# throwaway public key. Then it proves the verifier really refuses damaged input: a changed
-# package, a changed manifest and an unlisted extra file must each fail verification.
+# Generates throwaway manifest, root and release keys in a temporary directory, certifies the
+# release key, then builds the update files with the SAME script the publish job uses
+# (make-update-files.sh) and checks them with the SAME checker (check_update_files.py). It then
+# proves the checks really refuse damaged input, because a checker that accepts everything would
+# pass the steps above: a swapped archive, a swapped package and an unsigned manifest must each
+# fail, and the code package must verify against the throwaway root and not against another.
 #
-# The real key is never read: this script runs in a job that has no secrets. What it cannot
-# show is that the real key is set up correctly, which only a real release exercises.
-#
-# TOOL names the usher-update-tool binary (default: target/release/usher-update-tool).
+# The real keys are never read: this script runs in a job that has no secrets. What it cannot
+# show is that the real keys are configured correctly, which only a real release shows.
 set -euo pipefail
 
-release="${1:?usage: rehearsal-sign.sh RELEASE_DIR VERSION CHANNEL}"
-version="${2:?usage: rehearsal-sign.sh RELEASE_DIR VERSION CHANNEL}"
-channel="${3:?usage: rehearsal-sign.sh RELEASE_DIR VERSION CHANNEL}"
-tool="${TOOL:-target/release/usher-update-tool}"
-
-[[ -x "$tool" ]] || { echo "::error::$tool is not built" >&2; exit 1; }
-[[ -d "$release" ]] || { echo "::error::$release is not a directory" >&2; exit 1; }
+artifacts="${1:?usage: rehearsal-sign.sh ARTIFACTS_DIR OUT_DIR SHELL_CHANGED}"
+out="${2:?usage: rehearsal-sign.sh ARTIFACTS_DIR OUT_DIR SHELL_CHANGED}"
+shell_changed="${3:?usage: rehearsal-sign.sh ARTIFACTS_DIR OUT_DIR SHELL_CHANGED}"
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+repo="$(cd "$here/../.." && pwd)"
 
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
+umask 077
 
-# The key goes outside the repository, as the tool insists.
-"$tool" keygen --out "$work/key" > "$work/keygen.out"
-printf '%s\n' "$(tr -d '\n' < "$work/key/update-signing.pub")" > "$work/keys.txt"
+shopt -s nullglob
+archives=("$artifacts"/*-macos-aarch64.tar.gz)
+[[ ${#archives[@]} -eq 1 ]] || { echo "::error::Expected one whole-app archive in $artifacts, found ${#archives[@]}" >&2; exit 1; }
 
-"$tool" sign "$release" --version "$version" --channel "$channel" \
-    --key "$work/key/update-signing.secret" --keys "$work/keys.txt" > "$work/sign.out"
-cat "$work/sign.out"
-"$tool" verify "$release" --channel "$channel" --keys "$work/keys.txt"
-test -s "$release/SHA256SUMS"
-test -s "$release/SHA256SUMS.sig"
+# The keys, and a copy of the project whose nsh.json trusts them. The real nsh.json trusts the
+# real keys, which a rehearsal must not touch, so the throwaway ones go into a copy.
+keys="$work/keys"
+mkdir "$keys"
+for name in manifest root release other; do nsh keygen "$keys/$name" > /dev/null; done
+nsh certify --root "$keys/root.secret" --key "$keys/release.pub" \
+    --apps '*' --days 2 --out "$keys/release.cert" > /dev/null
 
-# A verifier that accepts everything would pass the checks above. Prove it does not.
+project="$work/project"
+mkdir "$project"
+for path in App.tsx src ui i18n platforms crates build.rs Cargo.toml Cargo.lock tsconfig.json .cargo nsh.json; do
+    [[ -e "$repo/$path" ]] && cp -R "$repo/$path" "$project/"
+done
+python3 - "$project/nsh.json" "$keys" <<'PY'
+import json, sys
+path, keys = sys.argv[1:]
+data = json.load(open(path))
+read = lambda name: open(f"{keys}/{name}").read().strip()
+data["updater"] = {
+    "github": "rehearsal/rehearsal",
+    "publicKey": read("manifest.pub"),
+    "packages": {"roots": [read("root.pub")]},
+}
+json.dump(data, open(path, "w"), indent=2)
+PY
+
+# The archive is named for the version in nsh.json, which the rehearsal does not change.
+mkdir "$work/archives"
+cp "${archives[0]}" "$work/archives/"
+
+export MANIFEST_KEY="$keys/manifest.secret" RELEASE_KEY="$keys/release.secret" RELEASE_CERT="$keys/release.cert" PROJECT="$project"
+bash "$here/make-update-files.sh" "$work/archives" "$out" "$shell_changed"
+python3 "$repo/scripts/release/check_update_files.py" "$out" --entry "$project" --shell-changed "$shell_changed"
+
+# A checker that accepts everything would pass the steps above. Prove it does not.
 expect_failure() {
     local description="$1"
     shift
     if "$@" > /dev/null 2>&1; then
-        echo "::error::Verification accepted $description; the verifier is broken" >&2
+        echo "::error::The checks accepted $description; they are broken" >&2
         exit 1
     fi
     echo "refused as expected: $description"
 }
-
-first="$(find "$release" -maxdepth 1 -name '*.zip' | LC_ALL=C sort | head -n 1)"
-[[ -n "$first" ]] || { echo "::error::No package to damage" >&2; exit 1; }
+check=(python3 "$repo/scripts/release/check_update_files.py")
 
 damaged="$work/damaged"
+archive_name="$(basename "${archives[0]}")"
+
 mkdir "$damaged"
-cp "$release"/* "$damaged"/
-printf 'x' >> "$damaged/$(basename "$first")"
-expect_failure "a changed package" "$tool" verify "$damaged" --channel "$channel" --keys "$work/keys.txt"
+cp "$out"/* "$damaged"/
+printf 'x' >> "$damaged/$archive_name"
+expect_failure "a swapped whole-app archive" "${check[@]}" "$damaged" --entry "$project" --shell-changed "$shell_changed"
 
-cp "$release"/* "$damaged"/
-printf '\n' >> "$damaged/SHA256SUMS"
-expect_failure "a changed manifest" "$tool" verify "$damaged" --channel "$channel" --keys "$work/keys.txt"
+rm -rf "$damaged"
+mkdir "$damaged"
+cp "$out"/* "$damaged"/
+rm "$damaged/latest.json.sig"
+expect_failure "an unsigned manifest" "${check[@]}" "$damaged" --entry "$project" --shell-changed "$shell_changed"
 
-cp "$release"/* "$damaged"/
-cp "$first" "$damaged/Usher-smuggled.zip"
-expect_failure "an unlisted extra package" "$tool" verify "$damaged" --channel "$channel" --keys "$work/keys.txt"
+rm -rf "$damaged"
+mkdir "$damaged"
+cp "$out"/* "$damaged"/
+opposite="true"
+[[ "$shell_changed" == "true" ]] && opposite="false"
+expect_failure "a release that disagrees about the shell change" "${check[@]}" "$damaged" --entry "$project" --shell-changed "$opposite"
 
-other="stable"
-[[ "$channel" == "stable" ]] && other="preview"
-expect_failure "the wrong channel" "$tool" verify "$release" --channel "$other" --keys "$work/keys.txt"
+if [[ "$shell_changed" == "false" ]]; then
+    package=("$out"/*.nshpkg)
+    [[ ${#package[@]} -eq 1 ]] || { echo "::error::Expected one code package in $out" >&2; exit 1; }
+    # Verified as an app trusting the throwaway root would, and refused by an app trusting another.
+    nsh verify --root "$keys/root.pub" "${package[0]}"
+    expect_failure "a code package under another root" nsh verify --root "$keys/other.pub" "${package[0]}"
+
+    rm -rf "$damaged"
+    mkdir "$damaged"
+    cp "${package[0]}" "$damaged/changed.nshpkg"
+    printf 'x' >> "$damaged/changed.nshpkg"
+    expect_failure "a changed code package" nsh verify --root "$keys/root.pub" "$damaged/changed.nshpkg"
+fi
 
 echo "Rehearsal signing passed."

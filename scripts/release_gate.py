@@ -15,11 +15,19 @@ Checks, in this order (releases only, unless noted):
 2. the tagged commit is on the default branch;
 3. the version agrees in the tag, `nsh.json`, and the root `Cargo.toml`  (both modes);
 4. the build number is a positive integer (both modes) and higher than the last release's;
-5. `CHANGELOG.md` has a section for exactly this version, with content.
+5. `CHANGELOG.md` has a section for exactly this version, with content;
+6. `nsh.json` has an `updater` that points at this repository's releases and names the keys
+   it trusts (releases only). Without it the packaged app could never update itself, and
+   nothing would say so until a user asked.
 
-On success it prints `key=value` lines for `$GITHUB_OUTPUT`: version, channel (`preview` for
-a pre-release version, else `stable`), build, prerelease, rehearsal, release_ready, and
-writes the notes to the file named by `--notes`. Warnings go to stderr as `::warning::`.
+Only formal versions (`v<major>.<minor>.<patch>`) are released: there is one update channel,
+and the updater reads the latest non-pre-release GitHub release (docs/update.md, D7). A tag
+with a pre-release suffix is refused, so no pre-release can be published by mistake. A
+rehearsal may still run on a pre-release version: it builds and publishes nothing.
+
+On success it prints `key=value` lines for `$GITHUB_OUTPUT`: version, build, rehearsal,
+release_ready, and writes the notes to the file named by `--notes`. Warnings go to stderr as
+`::warning::`.
 
 Everything is a plain function of its inputs, so the tests need no Git and no network.
 """
@@ -47,15 +55,24 @@ class GateError(Exception):
 
 
 def parse_tag(tag: str) -> str:
-    """`v1.2.3` -> `1.2.3`. Anything else is refused."""
+    """`v1.2.3` -> `1.2.3`. Anything else is refused, pre-release suffixes included."""
     if not tag.startswith("v") or not SEMVER.match(tag[1:]):
-        raise GateError(f"{tag!r} is not a release tag: expected v<major>.<minor>.<patch>[-pre].")
+        raise GateError(f"{tag!r} is not a release tag: expected v<major>.<minor>.<patch>.")
     return tag[1:]
 
 
-def channel_for(version: str) -> str:
-    """Pre-release versions go to the preview channel; the stable channel never sees them."""
-    return "preview" if SEMVER.match(version).group(4) else "stable"
+def is_prerelease(version: str) -> bool:
+    return bool(SEMVER.match(version).group(4))
+
+
+def require_formal(version: str) -> None:
+    """A release has one channel, the formal one. GitHub's `latest` skips pre-releases, so a
+    pre-release could not be reached by the updater, and publishing one would only mislead."""
+    if is_prerelease(version):
+        raise GateError(
+            f"{version} is a pre-release version. Only formal versions are released: "
+            "there is no preview channel."
+        )
 
 
 def check_event(event: dict, ref: str) -> None:
@@ -112,17 +129,50 @@ def changelog_section(text: str, version: str) -> str:
     return body
 
 
+def updater_problems(root: Path, repository: str) -> list[str]:
+    """What is wrong with `nsh.json`'s `updater`, in the terms of docs/update.md section 4.3.
+
+    The keys themselves are public and belong in the repository, where a change to the trust
+    root is a reviewable diff. Whether they are the right keys is not something a gate can know.
+    """
+    try:
+        data = json.loads((root / "nsh.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return []  # read_nsh_json reports an unreadable nsh.json, once
+    updater = data.get("updater")
+    if not isinstance(updater, dict):
+        return ["nsh.json has no \"updater\": the packaged app could never update itself."]
+    problems = []
+    github = updater.get("github")
+    if github is None:
+        problems.append("nsh.json updater.github is not set: the update source must be this repository's releases.")
+    elif repository and github != repository:
+        problems.append(f"nsh.json updater.github is {github!r}, this repository is {repository!r}.")
+    if "url" in updater:
+        problems.append("nsh.json updater.url must not be set: there is one update source, updater.github.")
+    if not isinstance(updater.get("publicKey"), str) or not updater["publicKey"]:
+        problems.append("nsh.json updater.publicKey is missing: manifests would not be checked.")
+    packages = updater.get("packages")
+    roots = packages.get("roots") if isinstance(packages, dict) else None
+    if not isinstance(roots, list) or not roots or not all(isinstance(r, str) and r for r in roots):
+        problems.append("nsh.json updater.packages.roots names no root key: code packages would not be accepted.")
+    return problems
+
+
 def decide(
     tag: str,
     root: Path,
     *,
     previous_build: int | None,
     strict: bool = True,
+    repository: str = "",
 ) -> dict:
     """What a run with this `tag` is. `strict` is a release: every problem is fatal. Not
     strict is a rehearsal: only problems that make the build itself meaningless are fatal,
     the rest come back in `warnings`."""
     version = parse_tag(tag)
+    if strict:
+        require_formal(version)
     nsh_version, build = read_nsh_json(root / "nsh.json")
     cargo_version = read_cargo_version(root / "Cargo.toml")
     if not (version == nsh_version == cargo_version):
@@ -131,12 +181,17 @@ def decide(
             f"tag {version}, nsh.json {nsh_version}, Cargo.toml {cargo_version}."
         )
     warnings: list[str] = []
+    if not strict and is_prerelease(version):
+        # A rehearsal builds a pre-release version fine; only a real release refuses it.
+        warnings.append(f"{version} is a pre-release version and would be refused: only formal versions are released.")
 
     def soft(message: str) -> None:
         if strict:
             raise GateError(message)
         warnings.append(message)
 
+    for problem in updater_problems(root, repository):
+        soft(problem)
     if previous_build is not None and build <= previous_build:
         soft(f"nsh.json build {build} must be higher than the previous release's {previous_build}.")
     try:
@@ -147,12 +202,9 @@ def decide(
     except OSError as error:
         soft(f"Cannot read CHANGELOG.md: {error}.")
         notes = f"Rehearsal build of {version}: CHANGELOG.md has no notes for it yet."
-    channel = channel_for(version)
     return {
         "version": version,
-        "channel": channel,
         "build": str(build),
-        "prerelease": "true" if channel == "preview" else "false",
         "notes": notes,
         "warnings": warnings,
     }
@@ -188,7 +240,8 @@ RECENT_RELEASES = 20
 
 def highest_build(releases: list[dict], fetch) -> int | None:
     """The highest build among published releases' `build.txt` assets, pre-releases
-    included (`/releases/latest` skips them, which would blind the check for alphas).
+    included (`/releases/latest` skips them). Only formal versions are released now, but earlier
+    pre-releases may exist and still count for the build number.
     Drafts are ignored. A `build.txt` that cannot be read is an error, never "none":
     guessing would let a lower build number through."""
     best = None
@@ -263,7 +316,7 @@ def main(argv: list[str] | None = None) -> int:
             if repository
             else None
         )
-        result = decide(tag, args.root, previous_build=previous, strict=not rehearsal)
+        result = decide(tag, args.root, previous_build=previous, strict=not rehearsal, repository=repository)
     except (GateError, OSError, KeyError, ValueError, subprocess.TimeoutExpired) as error:
         message = str(error) if isinstance(error, GateError) else "Cannot verify the run."
         print(f"::error::{message}", file=sys.stderr)

@@ -606,7 +606,11 @@ fn composite_over(color: &str, background: u32) -> Option<u32> {
         return None;
     }
     let channel = |at: usize| u8::from_str_radix(&hex[at..at + 2], 16).ok().map(f64::from);
-    let alpha = if hex.len() == 8 { channel(6)? / 255.0 } else { 1.0 };
+    let alpha = if hex.len() == 8 {
+        channel(6)? / 255.0
+    } else {
+        1.0
+    };
     let mut shown = 0u32;
     for (index, at) in [0, 2, 4].into_iter().enumerate() {
         let behind = f64::from((background >> (16 - 8 * index)) & 0xff);
@@ -648,7 +652,9 @@ fn derive_focus_ring(tokens: &BTreeMap<String, String>) -> Option<String> {
     };
     // Not every theme can reach it with its own text color; the text color itself is the
     // strongest ring the theme can offer, so it is the answer then.
-    let percent = (0..=100).find(|percent| reads(mix(*percent))).unwrap_or(100);
+    let percent = (0..=100)
+        .find(|percent| reads(mix(*percent)))
+        .unwrap_or(100);
     Some(format!("#{:06x}", mix(percent)))
 }
 
@@ -1061,7 +1067,11 @@ mod tests {
         let rgba = |hex: &str| {
             let hex = hex.strip_prefix('#').expect("a hex color");
             let channel = |at: usize| f64::from(u8::from_str_radix(&hex[at..at + 2], 16).unwrap());
-            let alpha = if hex.len() == 8 { channel(6) / 255.0 } else { 1.0 };
+            let alpha = if hex.len() == 8 {
+                channel(6) / 255.0
+            } else {
+                1.0
+            };
             ([channel(0), channel(2), channel(4)], alpha)
         };
         let (back, _) = rgba(background);
@@ -1091,15 +1101,17 @@ mod tests {
                         continue;
                     };
                     // A translucent surface is judged over the page behind it.
-                    let ratio = contrast(ring, &table["background"]).min(contrast(
-                        ring,
-                        &composite(color, &table["background"]),
-                    ));
+                    let ratio = contrast(ring, &table["background"])
+                        .min(contrast(ring, &composite(color, &table["background"])));
                     if ratio < 3.0 {
                         failures.push(format!(
                             "{} {} focus-ring {ring} on {surface} {color}: {ratio:.2}:1",
                             theme.id,
-                            if matches!(scheme, Scheme::Light) { "light" } else { "dark" },
+                            if matches!(scheme, Scheme::Light) {
+                                "light"
+                            } else {
+                                "dark"
+                            },
                         ));
                     }
                 }

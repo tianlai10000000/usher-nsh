@@ -21,9 +21,15 @@ CHANGELOG = """# Changelog
 """
 
 
-def project(version="1.2.0", cargo="1.2.0", build=5, changelog=CHANGELOG):
+UPDATER = {"github": "owner/repo", "publicKey": "KEY", "packages": {"roots": ["ROOT"]}}
+
+
+def project(version="1.2.0", cargo="1.2.0", build=5, changelog=CHANGELOG, updater=UPDATER):
     root = Path(tempfile.mkdtemp())
-    (root / "nsh.json").write_text(json.dumps({"version": version, "build": build}))
+    data = {"version": version, "build": build}
+    if updater is not None:
+        data["updater"] = updater
+    (root / "nsh.json").write_text(json.dumps(data))
     (root / "Cargo.toml").write_text(f'[package]\nname = "x"\nversion = "{cargo}"\n\n[dependencies]\nserde = {{ version = "1" }}\n')
     (root / "CHANGELOG.md").write_text(changelog)
     return root
@@ -31,16 +37,20 @@ def project(version="1.2.0", cargo="1.2.0", build=5, changelog=CHANGELOG):
 
 class Tags(unittest.TestCase):
     def test_accepts_semver_tags_only(self):
+        # parse_tag only reads the version; whether a pre-release may be released is decided
+        # by require_formal, tested below.
         for tag, version in [("v1.2.3", "1.2.3"), ("v0.0.1-alpha.1", "0.0.1-alpha.1"), ("v1.0.0-rc.1+build.5", "1.0.0-rc.1+build.5")]:
             self.assertEqual(gate.parse_tag(tag), version)
         for tag in ["1.2.3", "v1.2", "v01.2.3", "vlatest", "v1.2.3.4", "release-1", "v", "V1.2.3", "v1.2.3-"]:
             with self.assertRaises(gate.GateError, msg=tag):
                 gate.parse_tag(tag)
 
-    def test_prerelease_versions_use_the_preview_channel(self):
-        self.assertEqual(gate.channel_for("1.2.3"), "stable")
-        self.assertEqual(gate.channel_for("1.2.3-alpha.1"), "preview")
-        self.assertEqual(gate.channel_for("1.2.3+meta"), "stable")
+    def test_only_formal_versions_may_be_released(self):
+        for version in ["1.2.3", "0.1.0", "1.2.3+meta"]:
+            gate.require_formal(version)
+        for version in ["1.2.3-alpha.1", "1.0.0-beta.2", "1.0.0-rc.1", "0.0.1-alpha.1", "1.0.0-rc.1+build.5"]:
+            with self.assertRaises(gate.GateError, msg=version):
+                gate.require_formal(version)
 
 
 class Events(unittest.TestCase):
@@ -56,7 +66,7 @@ class Events(unittest.TestCase):
 class Files(unittest.TestCase):
     def test_a_consistent_project_passes_and_returns_its_notes(self):
         result = gate.decide("v1.2.0", project(), previous_build=4)
-        self.assertEqual((result["version"], result["channel"], result["build"], result["prerelease"]), ("1.2.0", "stable", "5", "false"))
+        self.assertEqual((result["version"], result["build"]), ("1.2.0", "5"))
         self.assertIn("A thing.", result["notes"])
         self.assertNotIn("Older", result["notes"])
         self.assertNotIn("work in progress", result["notes"])
@@ -91,10 +101,17 @@ class Files(unittest.TestCase):
     def test_the_last_section_needs_no_following_heading(self):
         self.assertEqual(gate.changelog_section("## 1.0.0\n- only\n", "1.0.0"), "- only")
 
-    def test_prerelease_tags_are_marked_for_the_preview_channel(self):
+    def test_a_prerelease_release_is_refused_whatever_else_is_right(self):
         root = project(version="1.3.0-beta.1", cargo="1.3.0-beta.1", changelog="## 1.3.0-beta.1\n- b\n")
-        result = gate.decide("v1.3.0-beta.1", root, previous_build=None)
-        self.assertEqual((result["channel"], result["prerelease"]), ("preview", "true"))
+        with self.assertRaises(gate.GateError) as caught:
+            gate.decide("v1.3.0-beta.1", root, previous_build=None)
+        self.assertIn("pre-release", str(caught.exception))
+
+    def test_the_result_has_no_channel_or_prerelease_flag(self):
+        # There is one channel; the workflow must not be able to branch on a flag that is gone.
+        result = gate.decide("v1.2.0", project(), previous_build=None)
+        self.assertNotIn("channel", result)
+        self.assertNotIn("prerelease", result)
 
     def test_cargo_version_ignores_dependency_versions_and_other_sections(self):
         root = Path(tempfile.mkdtemp())
@@ -111,6 +128,46 @@ class Files(unittest.TestCase):
         (root / "nsh.json").write_text("{not json")
         with self.assertRaises(gate.GateError):
             gate.read_nsh_json(root / "nsh.json")
+
+
+class Updater(unittest.TestCase):
+    """A release whose app cannot update itself must not be published."""
+
+    def problems(self, updater, repository="owner/repo"):
+        return gate.updater_problems(project(updater=updater), repository)
+
+    def test_a_complete_updater_passes(self):
+        self.assertEqual(self.problems(UPDATER), [])
+
+    def test_no_updater_is_refused_in_a_release_and_a_warning_in_a_rehearsal(self):
+        root = project(updater=None)
+        with self.assertRaises(gate.GateError) as caught:
+            gate.decide("v1.2.0", root, previous_build=None, repository="owner/repo")
+        self.assertIn("updater", str(caught.exception))
+        result = gate.decide("v1.2.0", root, previous_build=None, strict=False, repository="owner/repo")
+        self.assertTrue(any("updater" in w for w in result["warnings"]))
+
+    def test_each_missing_piece_is_named(self):
+        cases = {
+            "github": {**UPDATER, "github": None},
+            "publicKey": {**UPDATER, "publicKey": ""},
+            "roots": {**UPDATER, "packages": {"roots": []}},
+            "packages": {k: v for k, v in UPDATER.items() if k != "packages"},
+        }
+        for needle, updater in cases.items():
+            if needle == "github":
+                updater = {k: v for k, v in UPDATER.items() if k != "github"}
+            found = self.problems(updater)
+            self.assertTrue(any(needle in problem for problem in found), f"{needle}: {found}")
+
+    def test_the_source_must_be_this_repository(self):
+        self.assertTrue(any("owner/other" in p for p in self.problems({**UPDATER, "github": "owner/other"})))
+
+    def test_a_custom_url_is_refused_because_there_is_one_source(self):
+        self.assertTrue(any("url" in p for p in self.problems({**UPDATER, "url": "http://127.0.0.1:1/latest.json"})))
+
+    def test_every_problem_is_reported_not_just_the_first(self):
+        self.assertGreaterEqual(len(self.problems({"url": "https://x/y.json"})), 3)
 
 
 class PreviousBuild(unittest.TestCase):
@@ -166,6 +223,14 @@ class Rehearsal(unittest.TestCase):
             gate.decide("v1.2.0", project(cargo="9.9.9"), previous_build=None, strict=False)
         with self.assertRaises(gate.GateError):
             gate.decide("v1.2.0", project(build=0), previous_build=None, strict=False)
+
+    def test_a_prerelease_version_is_a_warning_in_a_rehearsal_and_fatal_in_a_release(self):
+        root = project(version="1.3.0-beta.1", cargo="1.3.0-beta.1", changelog="## 1.3.0-beta.1\n- b\n")
+        result = gate.decide("v1.3.0-beta.1", root, previous_build=None, strict=False)
+        self.assertEqual(len(result["warnings"]), 1)
+        self.assertIn("pre-release", result["warnings"][0])
+        with self.assertRaises(gate.GateError):
+            gate.decide("v1.3.0-beta.1", root, previous_build=None, strict=True)
 
     def test_a_missing_changelog_is_a_warning_with_placeholder_notes(self):
         result = gate.decide("v1.2.0", project(changelog="# nothing\n"), previous_build=None, strict=False)
@@ -251,6 +316,13 @@ class Entry(unittest.TestCase):
             self.assertEqual(code, 1, str(env))
             self.assertEqual(out, "", str(env))
             self.assertIn("pushed tag or a manual rehearsal", err)
+
+    def test_a_pushed_prerelease_tag_is_refused_before_anything_builds(self):
+        root = project(version="1.2.0-rc.1", cargo="1.2.0-rc.1", changelog="## 1.2.0-rc.1\n- r\n")
+        code, out, err = self.run_main({**self.push, "GITHUB_REF": "refs/tags/v1.2.0-rc.1"}, root)
+        self.assertEqual(code, 1)
+        self.assertEqual(out, "")
+        self.assertIn("pre-release", err)
 
     def test_a_pushed_tag_still_has_to_agree_with_the_files(self):
         code, _, err = self.run_main({**self.push, "GITHUB_REF": "refs/tags/v9.9.9"}, project())

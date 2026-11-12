@@ -1,0 +1,29 @@
+# Shell inputs: everything that is compiled or bundled into the installed app's binary.
+#
+# A code package (.nshpkg) carries only the app's TSX, so a release that changes any file
+# listed here cannot ship as a code package and is released as a whole-app update only
+# (docs/update.md, section 4.2). scripts/release/shell_inputs.py reads this file; nothing
+# else lists these paths.
+#
+# One path per line, relative to the repository root. A directory covers everything under
+# it. Blank lines and lines starting with # are ignored.
+#
+# Add a path here when Rust starts embedding a new file (include_str!, include_bytes!,
+# include!, or a build.rs that reads it). `shell_inputs.py check-embedded` fails the build
+# when an embedded file is missing from this list.
+
+# Rust: the app's crate, native adapters, workspace crates and the build script.
+src
+platforms
+crates
+build.rs
+Cargo.toml
+Cargo.lock
+
+# Embedded into the binary by Rust, although they live under ui/.
+ui/theme
+ui/config/background.json
+
+# The shell's identity and permissions. Its version and build change on every release, so
+# the comparison ignores those two fields (see IGNORED_NSH_JSON_FIELDS in shell_inputs.py).
+nsh.json

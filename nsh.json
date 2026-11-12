@@ -1,8 +1,17 @@
 {
   "name": "Usher NSH",
   "id": "com.tianlai10000000.usher.nsh",
-  "version": "0.0.1-alpha.1",
+  "version": "0.1.0",
   "build": 1,
   "rust": ".",
-  "theme": "ui/theme/builtin/default/theme.json"
+  "theme": "ui/theme/builtin/default/theme.json",
+  "updater": {
+    "github": "tianlai10000000/usher-nsh",
+    "publicKey": "fn8b2GLhSvDVpcdeVoJaOoMnPMzyYsQlr4hu809jxww=",
+    "packages": {
+      "roots": [
+        "WRRauUdhqbfagBJadB7YF6HVtyMQ27YsYmg2e50E/q0="
+      ]
+    }
+  }
 }

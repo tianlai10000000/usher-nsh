@@ -1,0 +1,52 @@
+# Git hooks, run by lefthook (https://lefthook.dev). Install once per clone:
+#
+#     brew install lefthook && lefthook install
+#
+# `lefthook install` writes .git/hooks/pre-commit, which calls the commands below on every
+# commit. Without lefthook installed a commit goes through with only a warning, so CI repeats
+# the checks that matter (format, lint, tests); the hook is a convenience that catches them
+# earlier. Skip it for one commit with `git commit --no-verify`.
+#
+# Order matters and the jobs run one after another: the formatter fixes files and stages the
+# fix, so everything after it sees the formatted content.
+#
+# Every command receives only the files staged for this commit ({staged_files}). Files you did
+# not stage are not read for checking; the one rule that follows from that: the formatter
+# reads each file on its own (rustfmt via stdin) because rustfmt given a file path also
+# follows `mod` into the files beside it and would rewrite files you did not stage.
+min_version: 2.0.0
+
+pre-commit:
+  parallel: false
+  jobs:
+    # 1. Format. Fixes the file and stages the result (stage_fixed), so a commit never holds
+    #    unformatted Rust. If only part of a file is staged, lefthook sets the rest aside and
+    #    restores it afterwards; if the two cannot be merged the commit stops and nothing is lost.
+    - name: format-rust
+      glob: "*.rs"
+      run: scripts/git-hooks/format-rust.sh {staged_files}
+      stage_fixed: true
+
+    # 2. Shell scripts, on the formatted tree.
+    - name: shellcheck
+      glob: "*.sh"
+      run: scripts/git-hooks/run-if-installed.sh shellcheck "brew install shellcheck" {staged_files}
+
+    # 3. Workflows.
+    - name: actionlint
+      glob: ".github/workflows/*.{yml,yaml}"
+      run: scripts/git-hooks/lint-workflows.sh {staged_files}
+
+    # 4. The hook configuration itself: a broken lefthook.yml makes lefthook stop checking
+    #    without failing the commit, so a change to it is validated here.
+    - name: validate-lefthook-config
+      glob: "lefthook.yml"
+      run: lefthook validate
+
+    # 5. Key material must never be committed (the update key lives outside the repository).
+    - name: no-key-files
+      glob: "*.{secret,pem,p12,key,pfx}"
+      run: scripts/git-hooks/refuse.sh "key material is staged (the update key lives outside the repository):" {staged_files}
+
+    - name: no-private-key-block
+      run: scripts/git-hooks/no-private-key-block.sh

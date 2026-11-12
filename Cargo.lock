@@ -2813,7 +2813,7 @@ dependencies = [
 
 [[package]]
 name = "usher-nsh"
-version = "0.0.1-alpha.1"
+version = "0.1.0"
 dependencies = [
  "block2",
  "chrono",

@@ -47,6 +47,9 @@ test("toggles the bottom status bar across pages", async () => {
   await app.press("id:show-status-bar");
   await app.waitFor("id:bottom-status-bar", { state: "gone" });
   await app.press("id:route-home");
+  // The status bar is part of the frame and is absent on every page, so this assertion would also
+  // pass while still on Settings. Wait for Home's own content first, so it checks the new page.
+  await app.waitFor("text:Hello, World!");
   expect(app.shows("id:bottom-status-bar")).toBe(false);
 
   await app.press("id:route-settings");

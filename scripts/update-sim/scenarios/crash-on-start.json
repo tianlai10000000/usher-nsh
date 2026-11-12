@@ -1,0 +1,12 @@
+{
+  "description": "A package that never proves healthy is deleted and the app goes back",
+  "manifest": { "version": "0.1.1", "build": 2, "package": true },
+  "preload": "next",
+  "launches": [{ "seconds": 5 }, { "seconds": 5 }],
+  "expect": [
+    { "kind": "absent", "name": "trying.nshpkg" },
+    { "kind": "absent", "name": "current.nshpkg" },
+    { "kind": "absent", "name": "next.nshpkg" },
+    { "kind": "log-contains", "text": "never ran 10s without a fatal error" }
+  ]
+}

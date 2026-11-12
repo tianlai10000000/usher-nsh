@@ -17,6 +17,9 @@ test("shares the appearance across Home and Settings", async () => {
   await app.waitFor("text:Current appearance: Dark");
 
   await app.press("id:route-home");
+  // "Current appearance" is shown on Settings too, so it cannot prove the page changed. The click
+  // counter exists only on Home; waiting for it is what makes the reads below safe on a slow host.
+  await app.waitFor("text:Clicks: 1");
   await app.waitFor("text:Current appearance: Dark");
   expect(app.texts()).toContain("Clicks: 1");
 
@@ -37,6 +40,7 @@ test("applies themes and language changes without resetting Home", async () => {
   await app.waitFor("id:glass-status");
   // The floating toolbar must remain interactive above the scrolling content.
   await app.press("id:route-home");
+  await app.waitFor("text:Clicks: 1");
   expect(app.texts()).toContain("Clicks: 1");
   await app.press("id:route-settings");
   await app.waitFor("id:glass-status");
