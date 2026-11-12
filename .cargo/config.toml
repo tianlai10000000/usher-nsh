@@ -1,0 +1,9 @@
+# Cargo loads this profile for direct builds and NSH's generated runners.
+[profile.release]
+strip = "symbols"
+opt-level = "z"
+lto = "fat"
+codegen-units = 1
+panic = "unwind"
+debug = false
+incremental = false

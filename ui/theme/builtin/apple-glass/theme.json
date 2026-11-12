@@ -1,0 +1,39 @@
+{
+  "schemaVersion": 1,
+  "id": "apple-glass",
+  "name": "Apple Liquid Glass",
+  "names": {
+    "zh-Hans": "Apple 液态玻璃"
+  },
+  "extends": "default",
+  "order": 10,
+  "material": "glass",
+  "cssVars": {
+    "light": {
+      "background": "#edf3fb",
+      "card": "#ffffff",
+      "foreground": "#1b283c",
+      "primary": "#0064ce",
+      "border": "#cbd8e8",
+      "muted-foreground": "#53647b",
+      "sidebar": "#e7eefab3",
+      "panel": "#fffffff2",
+      "shell-border": "#40577f28",
+      "window-tint": "#edf3fb14",
+      "primary-foreground": "#ffffff"
+    },
+    "dark": {
+      "background": "#141d2a",
+      "card": "#202c3c",
+      "foreground": "#f1f6ff",
+      "primary": "#69b4ff",
+      "border": "#45576d",
+      "muted-foreground": "#b3c3d6",
+      "sidebar": "#202c3cb3",
+      "panel": "#141d2aed",
+      "shell-border": "#d4e4ff30",
+      "window-tint": "#141d2a2e",
+      "primary-foreground": "#000000"
+    }
+  }
+}

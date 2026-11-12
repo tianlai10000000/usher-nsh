@@ -1,0 +1,58 @@
+{
+  "schemaVersion": 1,
+  "id": "builtin.slate",
+  "name": "Slate · shadcn/ui",
+  "extends": "default",
+  "order": 40,
+  "cssVars": {
+    "shared": {
+      "size-button": 36,
+      "size-button-small": 32,
+      "size-button-large": 40,
+      "size-icon-button": 36,
+      "size-field": 36,
+      "size-switch-width": 32,
+      "size-switch-height": 18,
+      "size-switch-knob": 16,
+      "space-button-x": 16,
+      "space-button-small-x": 12,
+      "space-button-large-x": 24,
+      "space-button-gap": 8,
+      "space-field-x": 12,
+      "space-card": 24,
+      "space-stack": 24,
+      "space-row-x": 24,
+      "space-row-y": 12,
+      "space-title-x": 24,
+      "font-button": 14,
+      "font-button-small": 14,
+      "font-button-large": 14,
+      "font-field": 14,
+      "font-body": 14,
+      "radius-control": 6,
+      "radius-card": 12,
+      "radius-item": 6,
+      "focus-width": 3
+    },
+    "light": {
+      "background": "#F8FAFC",
+      "sidebar": "#E2E8F0A6",
+      "panel": "#F8FAFCEE",
+      "card": "#FFFFFF",
+      "foreground": "#0F172A",
+      "muted-foreground": "#475569",
+      "border": "#CBD5E1",
+      "primary": "#334155"
+    },
+    "dark": {
+      "background": "#020617",
+      "sidebar": "#1E293BC4",
+      "panel": "#0F172AE8",
+      "card": "#1E293B",
+      "foreground": "#F8FAFC",
+      "muted-foreground": "#94A3B8",
+      "border": "#334155",
+      "primary": "#C7D2FE"
+    }
+  }
+}

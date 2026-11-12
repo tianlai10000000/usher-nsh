@@ -1,0 +1,17 @@
+{
+  "defaultOpacity": 30,
+  "minOpacity": 0,
+  "maxOpacity": 100,
+  "opacityStep": 1,
+  "contentTransparency": {
+    "default": 0,
+    "min": 0,
+    "max": 100,
+    "step": 1
+  },
+  "maxImageBytes": 16777216,
+  "maxImagePixels": 16777216,
+  "pickerMaxDimension": 2560,
+  "resourceDirectory": "backgrounds",
+  "assetPrefix": "image-"
+}

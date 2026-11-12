@@ -1,0 +1,425 @@
+name: Release
+
+# Two ways to start it, and only two:
+#
+#   * pushing a new `v<semver>` tag: a release. It is built, signed with the real update key
+#     and published.
+#   * running it by hand from the Actions tab: a rehearsal. The same build chain runs, so the
+#     CD can be tested at any time, but nothing is signed with the real key and nothing is
+#     published. It builds the commit you choose, and its version comes from the files.
+#
+# There is no branch trigger and no schedule. GitHub cannot filter a tag push by branch, so a
+# tag push starts the workflow for any `v*` tag and the first job ends it within seconds unless
+# the tag is new and its commit is on the default branch.
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Never cancel a release half way: a second tag waits for the first. A rehearsal has a group
+# of its own, so it neither delays a release nor is cancelled by one.
+concurrency:
+  group: ${{ github.event_name == 'workflow_dispatch' && format('rehearsal-{0}', github.run_id) || 'release' }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+  RUST_TOOLCHAIN: "1.98.1"
+  NSH_VERSION: "v0.4.0"
+  NSH_MACOS_ARM64_SHA256: "f63c3d57c31b28c9b34227aac81f099d1e0e61f1db552a6ec5127d114eaf59cb"
+  # The product name in release file names. The updater selects packages by exact name.
+  APP_NAME: Usher
+
+jobs:
+  gate:
+    name: Check the tag or rehearsal, versions and changelog
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.gate.outputs.version }}
+      channel: ${{ steps.gate.outputs.channel }}
+      build: ${{ steps.gate.outputs.build }}
+      prerelease: ${{ steps.gate.outputs.prerelease }}
+      rehearsal: ${{ steps.gate.outputs.rehearsal }}
+      release_ready: ${{ steps.gate.outputs.release_ready }}
+      macos_signing: ${{ steps.signing.outputs.enabled }}
+    steps:
+      # The whole history, so "is this commit on main" can be answered.
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Release gate tests
+        run: python3 -m unittest discover -s scripts/tests -p "test_*.py"
+
+      - name: Check the release
+        id: gate
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          python3 scripts/release_gate.py --notes release-notes.md | tee -a "$GITHUB_OUTPUT"
+
+      # Apple signing is off until the Actions variable MACOS_SIGNING_NOTARIZATION_ENABLED
+      # is "true". Resolving it here, before any build, makes a typo fail in seconds.
+      - name: Resolve the macOS signing policy
+        id: signing
+        env:
+          MACOS_SIGNING_NOTARIZATION_ENABLED: ${{ vars.MACOS_SIGNING_NOTARIZATION_ENABLED }}
+        run: bash scripts/ci/macos-signing-policy.sh | tee -a "$GITHUB_OUTPUT"
+
+      - name: Add the macOS notice to the release notes
+        env:
+          ENABLED: ${{ steps.signing.outputs.enabled }}
+        run: bash scripts/ci/macos-release-notice.sh "$ENABLED" release-notes.md
+
+      - name: Say what this run is
+        env:
+          REHEARSAL: ${{ steps.gate.outputs.rehearsal }}
+          READY: ${{ steps.gate.outputs.release_ready }}
+          VERSION: ${{ steps.gate.outputs.version }}
+          BUILD: ${{ steps.gate.outputs.build }}
+        run: |
+          {
+            if [ "$REHEARSAL" = "true" ]; then
+              echo "### Rehearsal of $VERSION (build $BUILD)"
+              echo "Nothing is signed with the real key and nothing is published."
+              if [ "$READY" = "true" ]; then
+                echo "**A tag push for this version would be accepted.**"
+              else
+                echo "**A tag push for this version would be refused**; see the warnings in the gate job."
+              fi
+            else
+              echo "### Release of $VERSION (build $BUILD)"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Keep the notes for the release job
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-notes
+          path: release-notes.md
+          if-no-files-found: error
+          retention-days: 7
+
+  verify:
+    name: Test before building
+    needs: gate
+    runs-on: macos-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+          components: clippy, rustfmt
+
+      - name: Install the NSH CLI
+        run: bash scripts/ci/install-nsh.sh
+
+      # The same checks as CI, so a tag on a commit that never passed CI cannot ship.
+      - name: Format and lint
+        run: |
+          cargo fmt --all --check
+          cargo clippy --workspace --all-targets --locked -- -D warnings
+
+      - name: Rust tests
+        run: cargo test --locked --workspace
+
+      - name: Type check and UI tests
+        run: |
+          set -euo pipefail
+          nsh check
+          for file in tests/ui/*.test.tsx; do
+            nsh test "$file"
+          done
+
+  build-macos:
+    name: Build macOS (${{ matrix.variant }})
+    needs: [gate, verify]
+    runs-on: macos-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: true
+      matrix:
+        # `standard` runs everywhere; `appkit` adds the native controls on macOS 26+.
+        # Only `standard` is the update package: it is the one every Mac can run.
+        include:
+          - variant: standard
+            appkit: "0"
+          - variant: appkit
+            appkit: "1"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+
+      - name: Install the NSH CLI
+        run: bash scripts/ci/install-nsh.sh
+
+      - name: Package the app
+        env:
+          USHER_MACOS_APPKIT: ${{ matrix.appkit }}
+          VERSION: ${{ needs.gate.outputs.version }}
+          BUILD: ${{ needs.gate.outputs.build }}
+        run: |
+          set -euo pipefail
+          nsh package --target macos \
+            --app-version "$VERSION" --build "$BUILD" \
+            --out "dist/${{ matrix.variant }}"
+          app="$(find "dist/${{ matrix.variant }}" -maxdepth 1 -name '*.app' -print -quit)"
+          test -d "$app"
+          echo "APP_PATH=$app" >> "$GITHUB_ENV"
+
+      # --- Apple Developer ID signing and notarization -----------------------------------
+      # Placeholders until a Developer ID is available: every step below is skipped while
+      # the signing policy is false, and becomes blocking the moment it is true. They are
+      # written and linted now so enabling signing is a settings change, not a code change.
+      - name: Install the Apple signing certificate
+        if: needs.gate.outputs.macos_signing == 'true' && needs.gate.outputs.rehearsal == 'false'
+        env:
+          CERTIFICATE_BASE64: ${{ secrets.MACOS_CERTIFICATE_BASE64 }}
+          CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.MACOS_KEYCHAIN_PASSWORD }}
+        run: bash scripts/ci/macos-keychain.sh install
+
+      - name: Sign the app
+        if: needs.gate.outputs.macos_signing == 'true' && needs.gate.outputs.rehearsal == 'false'
+        env:
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+        run: |
+          set -euo pipefail
+          test -n "$APPLE_SIGNING_IDENTITY" || { echo "::error::APPLE_SIGNING_IDENTITY is not set"; exit 1; }
+          # Hardened runtime and a secure timestamp are what notarization requires.
+          codesign --force --deep --options runtime --timestamp \
+            --sign "$APPLE_SIGNING_IDENTITY" "$APP_PATH"
+          codesign --verify --deep --strict --verbose=2 "$APP_PATH"
+
+      - name: Notarize and staple
+        if: needs.gate.outputs.macos_signing == 'true' && needs.gate.outputs.rehearsal == 'false'
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+        run: |
+          set -euo pipefail
+          for name in APPLE_ID APPLE_TEAM_ID APPLE_APP_PASSWORD; do
+            test -n "${!name}" || { echo "::error::$name is not set"; exit 1; }
+          done
+          # Notarization takes a zip, not a bare .app.
+          ditto -c -k --keepParent "$APP_PATH" notarize.zip
+          xcrun notarytool submit notarize.zip \
+            --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" --password "$APPLE_APP_PASSWORD" --wait
+          xcrun stapler staple "$APP_PATH"
+          xcrun stapler validate "$APP_PATH"
+          spctl --assess --type execute --verbose=2 "$APP_PATH"
+          rm -f notarize.zip
+
+      - name: Remove the temporary signing keychain
+        if: always() && needs.gate.outputs.macos_signing == 'true' && needs.gate.outputs.rehearsal == 'false'
+        run: bash scripts/ci/macos-keychain.sh remove
+
+      # The version users see must be the version that was gated: a mismatch here means the
+      # package was not built from the files the gate checked.
+      - name: Check the packaged version
+        env:
+          VERSION: ${{ needs.gate.outputs.version }}
+          BUILD: ${{ needs.gate.outputs.build }}
+        run: |
+          set -euo pipefail
+          plist="$APP_PATH/Contents/Info.plist"
+          short="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$plist")"
+          bundle="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$plist")"
+          identifier="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$plist")"
+          echo "CFBundleShortVersionString=$short CFBundleVersion=$bundle id=$identifier"
+          test "$short" = "$VERSION"
+          test "$bundle" = "$BUILD"
+          test "$identifier" = "com.tianlai10000000.usher.nsh"
+          # Ad hoc (unsigned for Gatekeeper) or Developer ID: either way the bundle must be
+          # internally consistent, or the archive would ship a broken app.
+          codesign --verify --deep --strict "$APP_PATH"
+          codesign -dv "$APP_PATH" 2>&1 | grep -E '^(Signature|Authority|TeamIdentifier)' || true
+
+      - name: Archive
+        env:
+          VARIANT: ${{ matrix.variant }}
+        run: |
+          set -euo pipefail
+          mkdir -p release
+          # ditto keeps the bundle's permissions, symlinks and signature intact; plain
+          # zip or tar can drop the metadata the signature covers.
+          ditto -c -k --keepParent "$APP_PATH" "release/${APP_NAME}-aarch64-apple-darwin-${VARIANT}.zip"
+          # The update package has no variant suffix: the updater selects it by exact name.
+          if [ "$VARIANT" = "standard" ]; then
+            cp "release/${APP_NAME}-aarch64-apple-darwin-standard.zip" \
+               "release/${APP_NAME}-aarch64-apple-darwin.zip"
+          fi
+          ls -lh release
+
+      - name: Upload
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: macos-${{ matrix.variant }}
+          path: release/*.zip
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    name: Sign and publish
+    needs: [gate, build-macos]
+    # Only a pushed tag publishes. A rehearsal never reaches the real key or the release.
+    if: needs.gate.outputs.rehearsal == 'false'
+    runs-on: macos-latest
+    timeout-minutes: 20
+    # The job that can publish and the job that signs are this one, and nothing else
+    # sees the secret. `contents: write` is only here; `attestations` and `id-token` let
+    # GitHub record where these files were built.
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    environment: release
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+
+      - name: Download the builds
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: macos-*
+          path: artifacts
+          merge-multiple: true
+
+      - name: Download the notes
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release-notes
+          path: notes
+
+      - name: Collect release files
+        env:
+          BUILD: ${{ needs.gate.outputs.build }}
+        run: bash scripts/ci/collect-release-files.sh artifacts release_files "$BUILD"
+
+      # Release signing: a missing or wrong key fails the job before anything is published.
+      - name: Sign the release manifest
+        env:
+          UPDATE_SIGNING_KEY: ${{ secrets.UPDATE_SIGNING_KEY }}
+          VERSION: ${{ needs.gate.outputs.version }}
+          CHANNEL: ${{ needs.gate.outputs.channel }}
+        run: |
+          set -euo pipefail
+          test -n "$UPDATE_SIGNING_KEY" || { echo "::error::The UPDATE_SIGNING_KEY secret is not set"; exit 1; }
+          # build.txt is not a release package; the signer only looks at .dmg/.tar.gz/.zip.
+          cargo run --locked --release -p usher-update-tool -- \
+            sign release_files --version "$VERSION" --channel "$CHANNEL" --key-env UPDATE_SIGNING_KEY
+          cargo run --locked --release -p usher-update-tool -- \
+            verify release_files --channel "$CHANNEL"
+          test -s release_files/SHA256SUMS
+          test -s release_files/SHA256SUMS.sig
+
+      - name: Record where the files were built
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: |
+            release_files/*.zip
+            release_files/SHA256SUMS
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+          PRERELEASE: ${{ needs.gate.outputs.prerelease }}
+        run: |
+          set -euo pipefail
+          # macOS ships bash 3.2, where expanding an empty array under `set -u` is an error
+          # (stable releases have no extra flag), hence the `+` form.
+          flags=()
+          if [ "$PRERELEASE" = "true" ]; then flags+=(--prerelease); fi
+          # Drafted first and published last, so a release is never visible half uploaded:
+          # the updater would otherwise see a manifest before every file it lists exists.
+          gh release create "$TAG" release_files/* \
+            --draft --verify-tag --title "$TAG" --notes-file notes/release-notes.md \
+            ${flags[@]+"${flags[@]}"}
+          gh release edit "$TAG" --draft=false
+
+  rehearse:
+    name: Rehearse signing (no real key, no release)
+    needs: [gate, build-macos]
+    # Only a manual run. It runs where `publish` would, with the same files, but has no
+    # secrets, no write permission and no environment, and publishes nothing.
+    if: needs.gate.outputs.rehearsal == 'true'
+    runs-on: macos-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+
+      - name: Download the builds
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: macos-*
+          path: artifacts
+          merge-multiple: true
+
+      - name: Collect release files
+        env:
+          BUILD: ${{ needs.gate.outputs.build }}
+        run: bash scripts/ci/collect-release-files.sh artifacts release_files "$BUILD"
+
+      - name: Build the signing tool
+        run: cargo build --locked --release -p usher-update-tool
+
+      # A throwaway key signs the files and the result is verified as a client would, then
+      # damaged copies must be refused. It shows the signing chain works, not that the real
+      # key is set up: only a real release shows that.
+      - name: Sign with a throwaway key and verify
+        env:
+          VERSION: ${{ needs.gate.outputs.version }}
+          CHANNEL: ${{ needs.gate.outputs.channel }}
+        run: bash scripts/ci/rehearsal-sign.sh release_files "$VERSION" "$CHANNEL"
+
+      - name: Keep the rehearsal files for a few days
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: rehearsal-${{ needs.gate.outputs.version }}
+          path: release_files/*
+          if-no-files-found: error
+          retention-days: 3

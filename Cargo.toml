@@ -1,0 +1,37 @@
+[package]
+name = "usher-nsh"
+version = "0.0.1-alpha.1"
+edition = "2024"
+repository = "https://github.com/tianlai10000000/usher"
+authors = ["yuankai <tanlai10000000@gmail.com>"]
+license = "LicenseRef-Proprietary"
+publish = false
+
+[workspace]
+members = [".", "crates/usher-update", "crates/usher-update-tool"]
+default-members = ["."]
+resolver = "3"
+
+[dependencies]
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+flate2 = "1"
+libc = "0.2"
+nsh-core = "=0.5.0"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tar = { version = "0.4", default-features = false }
+tempfile = "3"
+toml = "1"
+usher-update = { path = "crates/usher-update" }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+block2 = "0.6.2"
+nsh-platform-macos = { version = "=0.5.0", default-features = false }
+objc2-app-kit = { version = "0.3.2", default-features = false, features = [
+    "NSImage",
+    "NSImageView",
+    "NSImageCell",
+    "NSPopUpButton",
+    "NSSegmentedCell",
+    "NSSegmentedControl",
+] }

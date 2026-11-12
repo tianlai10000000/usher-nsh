@@ -1,0 +1,20 @@
+{
+  "home": {
+    "symbol": "house",
+    "selectedSymbol": "house.fill",
+    "fallback": "⌂"
+  },
+  "settings": {
+    "symbol": "gearshape",
+    "selectedSymbol": "gearshape.fill",
+    "fallback": "⚙"
+  },
+  "update": {
+    "symbol": "arrow.down.circle",
+    "fallback": "⇩"
+  },
+  "account": {
+    "symbol": "person",
+    "fallback": "●"
+  }
+}

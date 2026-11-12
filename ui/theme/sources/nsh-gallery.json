@@ -1,0 +1,348 @@
+{
+  "$comment": "Describes how the NSH Gallery UI becomes ui/theme/presets/nsh-gallery.json. Regenerate with scripts/sync-gallery-theme.py. `roles` are tokens that hold per scheme; a value may use var(--name), upstream token names, or @finishes.<name>.<property>. `metrics` are the scheme-independent sizes, each with the upstream file and symbol it was read from so a sync can be reviewed against the source.",
+  "theme": {
+    "id": "builtin.nsh-gallery",
+    "name": "NSH Gallery",
+    "names": {},
+    "extends": "default",
+    "order": 15,
+    "material": "solid"
+  },
+  "source": {
+    "name": "NSH Gallery UI",
+    "url": "https://github.com/longbridge/nsh/tree/main/examples/nsh-gallery-ui",
+    "license": "Apache-2.0",
+    "revision": "adb0f210793fdda3e3443b7183ef5edd458a762d",
+    "rawBase": "https://raw.githubusercontent.com/longbridge/nsh",
+    "directory": "examples/nsh-gallery-ui",
+    "files": {
+      "tokens": "theme.json",
+      "finishes": "finishes.json"
+    }
+  },
+  "roles": {
+    "panel": "var(--card)",
+    "shell-border": "var(--line)",
+    "item-selected": "var(--sidebar-accent)",
+    "item-hover": "var(--hover)",
+    "item-shadow": "@finishes.thumb.boxShadow",
+    "item-pressed": "@finishes.pressed.backgroundColor",
+    "border-strong": "var(--faint)",
+    "finish-raised-fill": "@finishes.raised.backgroundColor",
+    "finish-raised-image": "@finishes.raised.backgroundImage",
+    "finish-raised-shadow": "@finishes.raised.boxShadow",
+    "finish-hover-fill": "@finishes.hover.backgroundColor",
+    "finish-hover-image": "@finishes.hover.backgroundImage",
+    "finish-hover-shadow": "@finishes.hover.boxShadow",
+    "finish-pressed-fill": "@finishes.pressed.backgroundColor",
+    "finish-pressed-image": "@finishes.pressed.backgroundImage",
+    "finish-pressed-shadow": "@finishes.pressed.boxShadow",
+    "finish-on-fill": "@finishes.on.backgroundColor",
+    "finish-on-image": "@finishes.on.backgroundImage",
+    "finish-on-shadow": "@finishes.on.boxShadow",
+    "finish-accent-image": "@finishes.accent.backgroundImage",
+    "finish-accent-shadow": "@finishes.accent.boxShadow",
+    "finish-field-shadow": "@finishes.field.boxShadow",
+    "finish-card-shadow": "@finishes.card.boxShadow",
+    "finish-raised-edge": "@finishes.raised.borderColor",
+    "finish-hover-edge": "@finishes.hover.borderColor",
+    "finish-pressed-edge": "@finishes.pressed.borderColor",
+    "finish-accent-edge": "@finishes.accent.borderColor"
+  },
+  "metrics": {
+    "size-button": [
+      28,
+      "look/button.ts buttonSizes.regular.height"
+    ],
+    "size-button-small": [
+      24,
+      "look/button.ts buttonSizes.small.height"
+    ],
+    "size-button-large": [
+      34,
+      "look/button.ts buttonSizes.large.height"
+    ],
+    "size-icon-button": [
+      28,
+      "look/button.ts iconButtonLook side"
+    ],
+    "size-field": [
+      32,
+      "look/field.tsx fieldSize.height"
+    ],
+    "size-row": [
+      40,
+      "look/surface.tsx controlSize.row"
+    ],
+    "size-switch-width": [
+      28,
+      "look/switch-geometry.ts switchGeometries.pointer.width"
+    ],
+    "size-switch-height": [
+      16,
+      "look/switch-geometry.ts switchGeometries.pointer.height"
+    ],
+    "size-switch-knob": [
+      12,
+      "look/switch-geometry.ts switchGeometries.pointer.knob"
+    ],
+    "size-nav-button": [
+      28,
+      "look/button.ts iconButtonLook side"
+    ],
+    "size-sidebar-item": [
+      32,
+      "look/surface.tsx controlSize.line"
+    ],
+    "size-status-bar": [
+      28,
+      "look/button.ts buttonSizes.regular.height"
+    ],
+    "size-control-icon": [
+      14,
+      "look/button.ts buttonSizes.regular.icon"
+    ],
+    "size-border": [
+      1,
+      "look/button.ts borderWidth"
+    ],
+    "size-hairline": [
+      1,
+      "look/surface.tsx plainRow borderTopWidth"
+    ],
+    "space-button-x": [
+      12,
+      "look/button.ts buttonSizes.regular.pad"
+    ],
+    "space-button-small-x": [
+      8,
+      "look/button.ts buttonSizes.small.pad"
+    ],
+    "space-button-large-x": [
+      16,
+      "look/button.ts buttonSizes.large.pad"
+    ],
+    "space-button-gap": [
+      6,
+      "look/button.ts buttonLook gap (pointer)"
+    ],
+    "space-field-x": [
+      10,
+      "look/field.tsx fieldSize.pad"
+    ],
+    "space-card": [
+      14,
+      "look/surface.tsx density.pad"
+    ],
+    "space-stack": [
+      12,
+      "look/surface.tsx density.gap"
+    ],
+    "space-row-x": [
+      14,
+      "look/surface.tsx density.pad"
+    ],
+    "space-row-y": [
+      6,
+      "look/surface.tsx controlSize.padding"
+    ],
+    "space-row-gap": [
+      10,
+      "look/surface.tsx controlSize.gap"
+    ],
+    "space-title-x": [
+      14,
+      "look/surface.tsx density.pad"
+    ],
+    "font-body": [
+      13,
+      "look/surface.tsx density.body"
+    ],
+    "font-button": [
+      13,
+      "look/button.ts buttonSizes.regular.font"
+    ],
+    "font-button-small": [
+      12,
+      "look/button.ts buttonSizes.small.font"
+    ],
+    "font-button-large": [
+      14,
+      "look/button.ts buttonSizes.large.font"
+    ],
+    "font-field": [
+      14,
+      "look/field.tsx fieldSize.font"
+    ],
+    "font-title": [
+      13,
+      "look/surface.tsx density.title"
+    ],
+    "font-note": [
+      12,
+      "look/surface.tsx density.note"
+    ],
+    "radius-control": [
+      7,
+      "theme.json theme.radius-control"
+    ],
+    "radius-card": [
+      10,
+      "look/surface.tsx density.surface"
+    ],
+    "radius-item": [
+      8,
+      "look/surface.tsx ROW_BLEED"
+    ],
+    "focus-width": [
+      3,
+      "theme.ts focusRing outlineWidth"
+    ],
+    "focus-offset": [
+      0,
+      "theme.ts focusRing offset default"
+    ],
+    "motion-press": [
+      150,
+      "look/press.ts pressEasing.transitionDuration"
+    ],
+    "motion-state": [
+      150,
+      "look/press.ts pressEasing.transitionDuration"
+    ],
+    "feedback-press-scale": [
+      0.97,
+      "look/button.ts buttonLook sink"
+    ],
+    "feedback-press-scale-icon": [
+      0.9,
+      "look/button.ts iconButtonLook sink"
+    ],
+    "feedback-hover-wash": [
+      0.05,
+      "theme.ts hovered alpha"
+    ],
+    "feedback-disabled-opacity": [
+      0.5,
+      "look/button.ts disabledStyle"
+    ]
+  },
+  "touch": {
+    "size-button": [
+      40,
+      "look/button.ts buttonSizes.regular.height (touch)"
+    ],
+    "size-button-small": [
+      36,
+      "look/button.ts buttonSizes.small.height (touch)"
+    ],
+    "size-button-large": [
+      48,
+      "look/button.ts buttonSizes.large.height (touch)"
+    ],
+    "size-icon-button": [
+      40,
+      "look/button.ts iconButtonLook side (touch)"
+    ],
+    "size-field": [
+      46,
+      "look/field.tsx fieldSize.height (touch)"
+    ],
+    "size-row": [
+      44,
+      "look/surface.tsx controlSize.row (touch)"
+    ],
+    "size-switch-width": [
+      42,
+      "look/switch-geometry.ts switchGeometries.regular.width"
+    ],
+    "size-switch-height": [
+      24,
+      "look/switch-geometry.ts switchGeometries.regular.height"
+    ],
+    "size-switch-knob": [
+      20,
+      "look/switch-geometry.ts switchGeometries.regular.knob"
+    ],
+    "size-nav-button": [
+      40,
+      "look/button.ts iconButtonLook side (touch)"
+    ],
+    "size-sidebar-item": [
+      44,
+      "look/surface.tsx controlSize.line (touch)"
+    ],
+    "size-status-bar": [
+      40,
+      "look/button.ts buttonSizes.regular.height (touch)"
+    ],
+    "space-button-x": [
+      16,
+      "look/button.ts buttonSizes.regular.pad (touch)"
+    ],
+    "space-button-small-x": [
+      12,
+      "look/button.ts buttonSizes.small.pad (touch)"
+    ],
+    "space-button-large-x": [
+      20,
+      "look/button.ts buttonSizes.large.pad (touch)"
+    ],
+    "space-button-gap": [
+      8,
+      "look/button.ts buttonLook gap (touch)"
+    ],
+    "space-field-x": [
+      14,
+      "look/field.tsx fieldSize.pad (touch)"
+    ],
+    "space-card": [
+      16,
+      "look/surface.tsx density.pad (touch)"
+    ],
+    "space-row-x": [
+      16,
+      "look/surface.tsx density.pad (touch)"
+    ],
+    "space-row-y": [
+      8,
+      "look/surface.tsx controlSize.padding (touch)"
+    ],
+    "space-row-gap": [
+      12,
+      "look/surface.tsx controlSize.gap (touch)"
+    ],
+    "space-title-x": [
+      16,
+      "look/surface.tsx density.pad (touch)"
+    ],
+    "font-body": [
+      15,
+      "look/surface.tsx density.body (touch)"
+    ],
+    "font-button": [
+      15,
+      "look/button.ts buttonSizes.regular.font (touch)"
+    ],
+    "font-button-small": [
+      14,
+      "look/button.ts buttonSizes.small.font (touch)"
+    ],
+    "font-button-large": [
+      17,
+      "look/button.ts buttonSizes.large.font (touch)"
+    ],
+    "font-field": [
+      15,
+      "look/field.tsx fieldSize.font (touch)"
+    ],
+    "font-note": [
+      13,
+      "look/surface.tsx density.note (touch)"
+    ],
+    "radius-card": [
+      16,
+      "look/surface.tsx density.surface (touch)"
+    ]
+  }
+}

@@ -1,0 +1,10 @@
+Usher NSH includes design tokens derived from the NSH Gallery UI.
+
+  Source:   https://github.com/longbridge/nsh/tree/main/examples/nsh-gallery-ui
+  Files:    theme.json, finishes.json
+  License:  Apache License, Version 2.0
+  Revision: recorded in ui/theme/presets/nsh-gallery.json ("source.revision")
+
+ui/theme/presets/nsh-gallery.json holds colors, radii and shadows taken from those files,
+converted to this application's token format by scripts/sync-gallery-theme.py. The upstream
+license is available at https://github.com/longbridge/nsh/blob/main/LICENSE-APACHE.

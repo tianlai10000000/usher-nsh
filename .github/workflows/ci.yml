@@ -1,0 +1,132 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# Read-only by default: a job that needs more asks for it by name.
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+  # One place for the toolchain and the NSH CLI, so every job builds with the same ones.
+  RUST_TOOLCHAIN: "1.98.1"
+  NSH_VERSION: "v0.4.0"
+  # SHA-256 of nsh-macos-arm64.tar.gz for NSH_VERSION, from the release's .sha256 file.
+  # The checksum is pinned here, not downloaded next to the archive: a compromised
+  # release could replace both, but not this file.
+  NSH_MACOS_ARM64_SHA256: "f63c3d57c31b28c9b34227aac81f099d1e0e61f1db552a6ec5127d114eaf59cb"
+
+jobs:
+  rust:
+    name: Rust format, lint, test
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+          components: clippy, rustfmt
+
+      - name: Cache Cargo
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-rust-${{ env.RUST_TOOLCHAIN }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-rust-${{ env.RUST_TOOLCHAIN }}-
+
+      - name: Format
+        run: cargo fmt --all --check
+
+      - name: Lint
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+
+      # The update crate is pure logic: it must build and pass on its own, without NSH.
+      - name: Test the update crates in isolation
+        run: cargo test --locked -p usher-update -p usher-update-tool
+
+      - name: Test the application crate
+        run: cargo test --locked --lib
+
+  ui:
+    name: NSH type check and UI tests
+    runs-on: macos-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+
+      - name: Cache Cargo
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-ui-${{ env.RUST_TOOLCHAIN }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-ui-${{ env.RUST_TOOLCHAIN }}-
+
+      - name: Install the NSH CLI
+        run: bash scripts/ci/install-nsh.sh
+
+      - name: Type check
+        run: nsh check
+
+      - name: UI tests
+        run: |
+          set -euo pipefail
+          for file in tests/ui/*.test.tsx; do
+            echo "::group::$file"
+            nsh test "$file"
+            echo "::endgroup::"
+          done
+
+  scripts:
+    name: Release scripts and workflow lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Release gate tests
+        run: python3 -m unittest discover -s scripts/tests -p "test_*.py" -v
+
+      - name: Lint workflows and shell scripts
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq shellcheck
+          bash scripts/ci/install-actionlint.sh
+          ./actionlint -color
+          shellcheck scripts/ci/*.sh scripts/*.sh

@@ -1,0 +1,22 @@
+[package]
+name = "usher-update-tool"
+version = "0.0.1-alpha.1"
+edition = "2024"
+license = "LicenseRef-Proprietary"
+publish = false
+
+# Release-side tooling only: key generation, manifest signing, verification. The client
+# never depends on this crate, so none of it (key files, the RNG) ships in the app.
+[[bin]]
+name = "usher-update-tool"
+path = "src/main.rs"
+
+[dependencies]
+usher-update = { path = "../usher-update" }
+base64 = { version = "0.22", default-features = false, features = ["std"] }
+ed25519-dalek = { version = "2.2", default-features = false, features = ["std"] }
+getrandom = "0.3"
+sha2 = "0.10"
+
+[dev-dependencies]
+tempfile = "3"

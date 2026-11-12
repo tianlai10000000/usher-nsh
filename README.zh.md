@@ -1,0 +1,217 @@
+# Usher NSH
+
+[English](README.md) · [架构文档](architecture.md) · [开发与贡献规范](CONTRIBUTING.md)
+
+Usher NSH 是基于 Longbridge Native Shell（NSH）、Rust 和 TSX 构建的桌面与移动应用基础工程。Rust 管理共享应用数据和系统服务，TSX 负责视图与表现状态。主页目前保留 Hello World 示例。
+
+## 当前能力
+
+- Rust 共享设置、本地 TOML 持久化、迁移、恢复和保存状态反馈。
+- Light、Dark、System 明暗模式，可配置强调色、内置色板和本地 JSON 主题。
+- 英文、简体中文与跟随系统语言。
+- 自绘桌面标题栏、可折叠侧栏、导航历史、面包屑和可隐藏底部状态栏。
+- macOS AppKit 窗口材质，以及受支持的增强构建中可切换的原生设置控件族。
+- 结构化诊断日志、可配置等级、按日记录、保留清理和归档导出。
+- 独立 Rust crate 提供更新状态转换与发布签名校验。
+
+更新界面、网络与安装流程、系统托盘和其余平台验收按实施清单推进。日志目前导出到应用数据目录的 `exports/` 并打开该文件夹，系统保存对话框与移动端导出接入仍待完成。
+
+## 支持平台
+
+| 目标 | 项目状态 |
+| --- | --- |
+| macOS | 当前开发平台，已有 AppKit 集成和本地打包验证 |
+| Windows、Linux | 计划支持的桌面平台，待完成项目级构建与运行验收 |
+| Android、iOS | 计划支持的移动平台，待完成模拟器、真机和打包验收 |
+
+实现进度与验收标准记录在 [scaffolding.md](scaffolding.md)。
+
+## 环境要求
+
+准备 Rust 1.97 或更高版本（edition 2024）、Xcode 命令行工具和 NSH CLI v0.5.0。项目中的 Rust NSH 依赖固定为同一版本。NSH 发布文件可从上游项目获取。[NSH v0.5.0](https://github.com/longbridge/nsh/releases/tag/v0.5.0)
+
+## 快速开始
+
+在项目根目录运行。
+
+```sh
+nsh --version
+nsh run --target macos
+```
+
+首次运行会编译 Rust 模块和 macOS 开发宿主，按 `Ctrl+C` 停止开发服务器。开发流程支持 TSX 热更新。Rust 和宿主变更需要重新编译，HMR 状态保留与生命周期验收在实施清单中跟踪。
+
+在 **设置 → 外观** 中分别选择明暗模式、样式主题和控件族。macOS 开发构建默认包含 AppKit 设置控件，原生组件已注册时可在 macOS 26 及以上系统使用。
+
+导航支持前进、后退和面包屑。macOS 桌面快捷键为 `⌘+[` 和 `⌘+]`，其他桌面目标为 `Ctrl+[` 和 `Ctrl+]`。窗口由通栏标题栏（菜单开关、前进后退、面包屑和浅色/深色切换）、固定窄菜单（上方主页，底部依次为更新、设置、用户头像按钮）、可显示或隐藏的二级菜单、内容区和可选的通栏底部状态栏组成。隐藏二级菜单时内容区带动画向左延伸，窄窗改用抽屉显示二级菜单。更新与头像按钮在对应功能接入 `ui/layout/contracts/` 里的接口之前保持禁用。二级菜单停靠和底部状态栏开关会保存到本地。
+
+标题栏和窄菜单的八个图标按钮使用 NSH `Tooltip`，支持鼠标悬停和键盘焦点，禁用按钮也可显示提示。提示文案随所选语言和当前动作更新，优先显示在标题栏按钮下方、窄菜单按钮右侧；NSH 在窗口内容之上绘制浮层，按安全区域自动翻转或平移，较长文案按可用宽度换行。面包屑不显示 Tooltip。
+
+设置页的宽屏分类列表使用框架 `Tab` / `Tabs`，紧凑布局使用 `Select`。选中项显示主题底色与边缘，指示层由 NSH 定位和移动；键盘焦点使用独立光环，方向键及 Home/End 切换分类，Tab 一步进入或离开列表。AppKit 控件族使用原生导航控件。
+
+macOS 窗口的默认启动尺寸和最小外框尺寸均为 800 × 600 点。TSX 热更新保留当前窗口尺寸。
+
+## 本地数据
+
+使用默认 macOS 宿主和应用标识时，数据目录如下。
+
+| 构建 | 目录 |
+| --- | --- |
+| 开发版 | `~/Library/Application Support/com.tianlai10000000.usher.nsh/development/` |
+| 正式版 | `~/Library/Application Support/com.tianlai10000000.usher.nsh/` |
+
+每个目录包含 `settings.toml`、本地主题目录 `themes/`、导入背景图片的 `backgrounds/`、诊断日志 `logs/YYYY-MM-DD/usher.log` 和生成归档的 `exports/`。基础目录由宿主提供，隔离测试可以使用单独的数据根目录。
+
+## 样式主题
+
+所有主题使用同一种 JSON 格式，无论随应用发布还是由用户在本地添加。Rust 注册表（[src/style_themes.rs](src/style_themes.rs)）负责加载主题、与 `extends` 指向的基础主题合并、替换 `var(--name)` 引用，再向界面提供完整的 token 表。界面按名称读取 token，新增主题不需要修改代码。
+
+内置主题在构建时从 [ui/theme/builtin/](ui/theme/builtin/) 和 [ui/theme/presets/](ui/theme/presets/) 发现。在这两个目录添加文件即可新增主题，`order` 字段决定它在列表中的位置。[default](ui/theme/builtin/default/theme.json) 是根主题，定义全部 token，其他主题只需覆盖差异部分。
+
+添加本地主题时，在设置中打开主题目录，添加 `themes/<名称>.json` 或 `themes/<目录>/theme.json`，再点击 **重新扫描主题文件**。设置页也可创建主题或复制已有主题。修改显示名称时保留稳定 ID，以便恢复已保存的选择。
+
+```json
+{
+  "schemaVersion": 1,
+  "id": "user.warm-frost",
+  "name": "Warm Frost",
+  "names": { "zh-Hans": "暖灰磨砂" },
+  "extends": "default",
+  "cssVars": {
+    "light": { "sidebar": "#EFEDE9B3", "radius": 12 },
+    "dark": { "sidebar": "#242322B3", "radius": 12 }
+  }
+}
+```
+
+| 字段 | 含义 |
+| --- | --- |
+| `id` | 本地文件使用 `user.<名称>` 或 `custom-<名称>`。内置主题使用普通 ID 或 `builtin.<名称>`。 |
+| `names` | 可选，按界面语言给出显示名称。语言没有对应项时使用 `name`。 |
+| `extends` | 另一个主题的 ID，省略时为 `default`。继承链止于 `default`，最多八层。 |
+| `material` | `solid` 或 `glass`，省略时继承基础主题。 |
+| `order` | 在主题列表中的位置。没有该字段的本地主题排在内置主题之后。 |
+| `source` | 可选，外部来源主题的出处：名称、地址、许可证和版本。 |
+| `cssVars.shared` | 与配色无关的 token：尺寸、间距、字号、圆角、聚焦和动效。 |
+| `cssVars.light`、`cssVars.dark` | 颜色及其他随配色变化的 token。配色中的值优先于 `shared`。每种配色最多 192 项。 |
+
+token 取值按名称族校验，族之外按形态校验。颜色为 `#RRGGBB` 或 `#RRGGBBAA`、`color-mix(...)`、`rgba(...)` 等 CSS 函数、阴影列表，或 `var(--token)` 引用。度量族取普通数字：
+
+| 族 | 含义 | 范围 |
+| --- | --- | --- |
+| `size-*` | 高度、宽度和线宽，单位点 | 0 到 64 |
+| `layout-*` | 框架宽度、边距、标题栏高度和宽窗断点，单位点 | 0 到 1200 |
+| `space-*` | 内边距和间距，单位点 | 0 到 48 |
+| `font-*` | 字号，单位点 | 0 到 32 |
+| `radius`、`radius-*` | 圆角，单位点 | 0 到 32 |
+| `focus-width`、`focus-offset` | 键盘聚焦光晕的宽度和偏移，单位点。偏移可为负，表示画在内侧。 | 0 到 8，偏移 ±8 |
+| `motion-*` | 时长，单位毫秒 | 0 到 1000 |
+| `feedback-*` | 比例：按压缩放、悬停叠色强度、禁用透明度 | 0 到 1 |
+
+根主题 [default](ui/theme/builtin/default/theme.json) 列出全部度量。控件通过 [ui/theme/look.ts](ui/theme/look.ts) 读取它们，因此主题只需修改数值，就能改变按钮的高度、内边距、圆角、聚焦光晕、按压下沉和悬停叠色。视图中不再有自己的尺寸和颜色。基础主题不存在、引用成环或取值无效的主题会被跳过并在设置中提示，不影响其他主题。
+
+内置主题包括 [Default](ui/theme/builtin/default/theme.json)、[Apple 液态玻璃](ui/theme/builtin/apple-glass/theme.json)、[NSH Gallery](ui/theme/presets/nsh-gallery.json)、[Primer · GitHub](ui/theme/presets/primer.json)、[Geist · Vercel](ui/theme/presets/geist.json)、[Slate · shadcn/ui](ui/theme/presets/slate.json) 和 [Radix Colors · Sand](ui/theme/presets/radix-sand.json)。
+
+Default 和 NSH Gallery 在浅色模式下使用中性浅灰色窗口叠色，覆盖在 macOS 毛玻璃背景之上。NSH Gallery 的内容面板使用卡片底色，浅色模式下为白色。停靠的次级菜单通过 `shell-shadow` 绘制边缘阴影；NSH Gallery 从 Default 继承该阴影与窗口叠色。
+
+窄菜单顶部图标使用 `size-rail-icon`（默认 24 点），底部更新、设置和默认头像图标使用 `size-rail-utility-icon`（默认 18 点），与标题栏图标尺寸独立。浅色模式下的默认菜单选中底色为 `menu-selected: #eaeaeb`。
+
+macOS 上的主页和设置使用系统 SF Symbols，选中时为实心，未选中时为线框；窄菜单和次级菜单保持一致。更新和默认头像同样使用系统图标，所有窄菜单图标集中在 [navigation-icons.json](ui/config/navigation-icons.json)，其他宿主沿用已有字符回退。窄窗口的设置分类下拉框通过 Select 原生高亮状态响应鼠标悬停和键盘导航，底色使用当前主题的 `item-hover`。
+
+在 **设置 → 通用 → 窗口背景** 中，可通过系统图片选择器选择图片、移除图片或调节图片不透明度。初始值为 30%，0% 完全透明，100% 完全不透明。图片铺满窗口，位于毛玻璃背景与所有界面元素之间。拖动滑块时实时预览，释放后保存。图片先复制到本地再保存引用，移动原文件不会影响背景；设置文件仅保存图片元数据与透明度。选择器将图片最长边缩至最多 2560 像素，导入限制为 16 MiB 与 16,777,216 像素。限制与默认值通过 [background.json](ui/config/background.json) 在 Rust 与 TSX 之间共享。图片缺失或无法读取时回退为主题背景，可在设置中重新选择或移除。无数据目录的宿主仅在当前会话保留选择。背景合成统一由 [WindowBackdrop.tsx](ui/layout/components/WindowBackdrop.tsx) 管理。
+
+同一区域中的**内容区域背景透明度**统一控制次级菜单栏（含抽屉）、右侧内容面板及设置页各分类的卡片背景。默认 0%，保留主题底色；100% 时面板底色完全透明，可看到下方的自定义背景图片。文字和控件保持原有外观。拖动时实时预览，释放后保存，与图片不透明度分别存储。
+
+### NSH Gallery 主题
+
+[nsh-gallery.json](ui/theme/presets/nsh-gallery.json) 由 NSH Gallery UI（[examples/nsh-gallery-ui](https://github.com/longbridge/nsh/tree/main/examples/nsh-gallery-ui)，Apache-2.0，见 [NOTICE](NOTICE)）的设计 token 生成。该层是 NSH 仓库的内部部分，因此本主题是固定到某次提交的快照，而不是依赖项。上游 token 到本应用角色的映射位于 [ui/theme/sources/nsh-gallery.json](ui/theme/sources/nsh-gallery.json)。需要跟进上游时，在项目根目录执行：
+
+```sh
+python3 -I scripts/sync-gallery-theme.py --revision main
+cargo test --locked --lib
+```
+
+脚本只重写主题文件和固定的版本号。提交前请检查差异。该主题提供 Gallery 的颜色、圆角和阴影，以及 Gallery 的控件度量：28 点按钮、32 点输入框、7 点控件圆角、3 点聚焦光晕、97% 按压下沉和 5% 悬停叠色。映射中的每个度量都记录了来源文件和符号。尺寸写在 TypeScript 源码（`look/*.ts`）而不是 token 文件里，因此同步后需要在新版本中核对这些符号。Gallery 自身的组件结构不在此复现：标签条、分体按钮、菜单和面板不属于本应用。
+
+[Slate](ui/theme/presets/slate.json)、[Primer](ui/theme/presets/primer.json) 和 [Radix Colors · Sand](ui/theme/presets/radix-sand.json) 以同样方式给出 shadcn/ui、Primer 和 Radix Themes 的尺寸。[Geist](ui/theme/presets/geist.json) 没有给出，因为 Vercel 未公开组件尺寸，所以它使用根主题的尺寸和自己的颜色。
+
+## 诊断日志
+
+设置页的诊断区域支持 `ERROR`、`WARN`、`INFO`、`DEBUG`、`TRACE` 和 `OFF`，默认 `INFO`。修改等级即时生效，并保存供下次启动恢复。
+
+日志由后台写入器按本地日期记录，单文件达到 8 MiB 后分片，按 14 天保留策略与 256 MiB 磁盘配额清理。支持导出今天、最近 7 天或最近 14 天的 `.tar.gz`，跳过符号链接，单个源文件上限 8 MiB，源数据总上限 64 MiB。导出目录保留最近五个归档。平台验收缺口见[批次 05](scaffolding.md#批次-05--诊断日志--部分完成)。
+
+## macOS 打包
+
+```sh
+sh scripts/package-macos.sh standard
+sh scripts/package-macos.sh appkit
+```
+
+| 变体 | 内容 | 输出目录 |
+| --- | --- | --- |
+| `standard` | AppKit 窗口材质、共享主题与 NSH 控件 | `.nsh/out/macos-standard/` |
+| `appkit` | 标准包能力，以及受支持系统上可选择的 AppKit 设置控件 | `.nsh/out/macos-appkit/` |
+
+省略脚本参数时生成 `standard`。两种变体共用应用标识和正式版设置目录。脚本生成本地 ad hoc 签名产物，正式分发签名与公证仍属于发布阶段工作。
+
+Release 优化参数统一放在 [.cargo/config.toml](.cargo/config.toml)。在项目根目录直接运行 `nsh package --target macos` 也会读取该配置，默认输出到 `.nsh/out/`。其余目标在接入时分别验证配置生效情况。
+
+## 验证
+
+从项目根目录按变更范围运行检查。工作区测试命令包含独立更新 crate。
+
+```sh
+cargo test --locked --workspace
+nsh check
+nsh test tests/ui/appearance.test.tsx
+nsh test tests/ui/style-themes.test.tsx
+nsh test tests/ui/background.test.tsx
+nsh test tests/ui/background-layout.test.tsx
+nsh test tests/ui/window-shell.test.tsx
+nsh test tests/ui/tooltips.test.tsx
+nsh test tests/ui/diagnostics.test.tsx
+```
+
+只修改更新逻辑时可运行。
+
+```sh
+cargo test --locked -p usher-update
+```
+
+macOS 原生检查会打开真实窗口，需要图形会话。
+
+```sh
+nsh test tests/ui/window-shell.test.tsx --target macos
+nsh test tests/ui/tooltips.test.tsx --target macos
+nsh test tests/ui/background-layout.test.tsx --target macos
+nsh test tests/ui/appkit.test.tsx --target macos
+USHER_MACOS_APPKIT=0 nsh test tests/ui/appkit.test.tsx --target macos
+```
+
+无头 UI 检查使用会话设置，磁盘持久化与原生材质需要在真实宿主验证。集成测试、benchmark 和性能测试的后续工作见实施清单。
+
+## 仓库导航
+
+| 位置 | 职责 |
+| --- | --- |
+| `App.tsx` | 应用挂载与共享视图装配 |
+| `src/` | Rust 设置、主题文件、诊断日志和 NSH 桥接 |
+| `crates/usher-update/` | 更新状态机和发布签名逻辑 |
+| `ui/layout/Frame.tsx` | 窗口框架装配入口 |
+| `ui/layout/components/` | 标题栏、菜单、内容区、状态栏与背景层 |
+| `ui/layout/controllers/`、`ui/layout/contracts/` | 菜单与窗口控制逻辑，以及布局消费的接口 |
+| `ui/navigation/` | 路由与导航历史 |
+| `ui/features/`、`ui/state/`、`ui/components/` | 功能视图、表现状态和复用控件 |
+| `ui/theme/` | 内置主题文件、Gallery 映射与 token 投影 |
+| `i18n/messages/`、`ui/i18n/` | 翻译目录与界面国际化 |
+| `platforms/macos/` | AppKit 窗口材质、控件与图标 |
+| `tests/ui/` | NSH 界面检查 |
+| `scripts/` | 打包与 Gallery 主题同步命令 |
+| `.nsh/`、`target/` | 生成的构建与测试产物 |
+
+[项目架构](architecture.md)描述模块职责、依赖边界、状态归属与数据流。[分批实施清单](scaffolding.md)记录实现状态，[开发与贡献规范](CONTRIBUTING.md)定义开发与贡献要求。
+
+## 许可
+
+Cargo 包声明为 `LicenseRef-Proprietary`，并设置了 `publish = false`。第三方依赖遵循各自许可证。

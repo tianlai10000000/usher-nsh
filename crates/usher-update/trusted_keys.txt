@@ -1,0 +1,9 @@
+# Public keys that may sign Usher releases, one base64 Ed25519 key per line.
+# Blank lines and lines starting with # are ignored.
+#
+# Add a key with:   cargo run -p usher-update-tool -- keygen --add-to-keyset
+# Keep a backup key listed here ahead of time: if the primary key is retired or leaked,
+# a release signed by the backup can revoke it (see docs: two-layer updates).
+# This file is compiled into the client, so changing it needs a new release.
+uKkD3+tAzMaBMew8DPd19SK26amoBDS7aB38m8FFxqo=
+recovery:O/DQid9tTEOWPwgw+SQUmgYMf1koo4qGZa0ojpwHWVY=

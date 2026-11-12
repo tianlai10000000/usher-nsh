@@ -1,0 +1,53 @@
+{
+  "schemaVersion": 1,
+  "id": "builtin.primer",
+  "name": "Primer · GitHub",
+  "extends": "default",
+  "order": 20,
+  "cssVars": {
+    "shared": {
+      "size-button": 32,
+      "size-button-small": 28,
+      "size-button-large": 40,
+      "size-icon-button": 32,
+      "size-field": 32,
+      "space-button-x": 12,
+      "space-button-small-x": 12,
+      "space-button-large-x": 16,
+      "space-button-gap": 8,
+      "space-field-x": 12,
+      "font-button": 14,
+      "font-button-small": 12,
+      "font-button-large": 14,
+      "font-field": 14,
+      "font-body": 14,
+      "radius-control": 6,
+      "radius-card": 6,
+      "radius-item": 6,
+      "focus-width": 2,
+      "focus-offset": -2
+    },
+    "light": {
+      "background": "#F6F8FA",
+      "sidebar": "#EAF0F7A8",
+      "panel": "#FFFFFFEB",
+      "card": "#FFFFFF",
+      "foreground": "#1F2328",
+      "muted-foreground": "#59636E",
+      "border": "#D1D9E0",
+      "primary": "#0969DA",
+      "radius": 14
+    },
+    "dark": {
+      "background": "#0D1117",
+      "sidebar": "#161B22BC",
+      "panel": "#0D1117EB",
+      "card": "#161B22",
+      "foreground": "#E6EDF3",
+      "muted-foreground": "#9198A1",
+      "border": "#30363D",
+      "primary": "#58A6FF",
+      "radius": 14
+    }
+  }
+}

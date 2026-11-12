@@ -1,0 +1,51 @@
+{
+  "schemaVersion": 1,
+  "id": "builtin.radix-sand",
+  "name": "Radix Colors · Sand",
+  "extends": "default",
+  "order": 50,
+  "cssVars": {
+    "shared": {
+      "size-button": 32,
+      "size-button-small": 24,
+      "size-button-large": 40,
+      "size-icon-button": 32,
+      "size-field": 32,
+      "space-button-x": 12,
+      "space-button-small-x": 8,
+      "space-button-large-x": 16,
+      "space-button-gap": 8,
+      "space-field-x": 8,
+      "font-button": 14,
+      "font-button-small": 12,
+      "font-button-large": 16,
+      "font-field": 14,
+      "font-body": 14,
+      "radius-control": 4,
+      "radius-card": 6,
+      "radius-item": 4,
+      "focus-width": 2,
+      "focus-offset": -1
+    },
+    "light": {
+      "background": "#F9F9F8",
+      "sidebar": "#E9E8E6B3",
+      "panel": "#FDFDFCF0",
+      "card": "#FDFDFC",
+      "foreground": "#21201C",
+      "muted-foreground": "#63635E",
+      "border": "#DAD9D6",
+      "primary": "#63635E"
+    },
+    "dark": {
+      "background": "#111110",
+      "sidebar": "#222221B3",
+      "panel": "#191918ED",
+      "card": "#222221",
+      "foreground": "#EEEEEC",
+      "muted-foreground": "#B5B3AD",
+      "border": "#3B3A37",
+      "primary": "#B5B3AD"
+    }
+  }
+}

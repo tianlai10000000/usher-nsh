@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "id": "builtin.geist",
+  "name": "Geist · Vercel",
+  "extends": "default",
+  "order": 30,
+  "cssVars": {
+    "light": {
+      "background": "#FAFAFA",
+      "sidebar": "#EDEDEDA8",
+      "panel": "#FFFFFFF0",
+      "card": "#FFFFFF",
+      "foreground": "#171717",
+      "muted-foreground": "#666666",
+      "border": "#E2E2E2",
+      "primary": "#171717",
+      "radius": 12
+    },
+    "dark": {
+      "background": "#0A0A0A",
+      "sidebar": "#171717C4",
+      "panel": "#0A0A0AEB",
+      "card": "#171717",
+      "foreground": "#EDEDED",
+      "muted-foreground": "#A1A1A1",
+      "border": "#303030",
+      "primary": "#EDEDED",
+      "radius": 12
+    }
+  }
+}

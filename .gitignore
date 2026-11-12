@@ -1,0 +1,13 @@
+
+/.nsh/
+/target/
+
+# Operating system and editor files
+.DS_Store
+.idea
+
+# Key material never belongs in the repository (the update key lives outside it)
+*.secret
+*.pem
+*.p12
+*.key
