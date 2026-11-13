@@ -7,7 +7,7 @@
  * handle for moving the window. Mobile uses the same bar below the safe area.
  */
 import { colorScheme, platform, View } from "nsh";
-import { Button } from "nsh/base";
+import { AsyncButton } from "../../components/AsyncButton";
 import { SystemIcon } from "../../components/SystemIcon";
 import type { Navigation } from "../../router";
 import type { AppearanceStore } from "../../state/appearance";
@@ -41,7 +41,7 @@ export function TitleBar(props: {
         gap: palette().metric.wrapGap,
       }}>
       <View class="flex-row items-center" style={spacing(palette).text}>
-        <Button testID="sidebar-toggle"
+        <AsyncButton palette={palette} iconOnly testID="sidebar-toggle"
           accessibilityLabel={t(props.menu.docked() ? "nav.closeSidebar" : "nav.sidebar")}
           tooltip={<ButtonTooltip appearance={props.appearance} testID="sidebar-toggle-tooltip" placement="bottom"
             label={t(props.menu.docked() ? "nav.closeSidebar" : "nav.sidebar")} />}
@@ -49,22 +49,22 @@ export function TitleBar(props: {
           activeStyle={toggleLook().activeStyle} focusStyle={toggleLook().focusStyle}
           onPress={props.menu.toggle}>
           <SystemIcon name="sidebar.left" fallback="▯" color={palette().text} size={palette().metric.toolbarIcon} />
-        </Button>
+        </AsyncButton>
         <HistoryControls appearance={props.appearance} navigation={props.navigation} />
       </View>
       <Breadcrumbs appearance={props.appearance} navigation={props.navigation} />
       <View class="h-full min-w-4 flex-1" />
-      <Button testID="titlebar-color-mode" accessibilityLabel={t(dark() ? "nav.switchToLight" : "nav.switchToDark")}
+      <AsyncButton palette={palette} iconOnly testID="titlebar-color-mode" accessibilityLabel={t(dark() ? "nav.switchToLight" : "nav.switchToDark")}
         tooltip={<ButtonTooltip appearance={props.appearance} testID="titlebar-color-mode-tooltip" placement="bottom"
           label={t(dark() ? "nav.switchToLight" : "nav.switchToDark")} />}
         disabled={props.appearance.busy()}
         style={colorLook().style} hoverStyle={colorLook().hoverStyle}
         activeStyle={colorLook().activeStyle} focusStyle={colorLook().focusStyle}
         disabledStyle={colorLook().disabledStyle}
-        onPress={() => void props.appearance.choose(dark() ? "light" : "dark")}>
+        onPress={() => props.appearance.choose(dark() ? "light" : "dark")}>
         <SystemIcon name={dark() ? "sun.max" : "moon"} fallback={dark() ? "☀" : "☾"}
           size={palette().metric.titlebarIcon} color={palette().text} />
-      </Button>
+      </AsyncButton>
     </View>
   );
 }

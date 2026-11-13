@@ -8,6 +8,6 @@ export function NotFoundPage(props: PageProps) {
   return <View testID="route-not-found" style={spacing(palette).stack}>
     <Text style={headingLook(palette, "display")}>{t("router.notFound")}</Text>
     <Text style={{ color: palette().text }}>{props.navigation.current().location.path}</Text>
-    <ThemeButton palette={palette} label={t("nav.back")} onPress={() => void props.navigation.goBack()} disabled={!props.navigation.canGoBack()} />
+    <ThemeButton palette={palette} label={t("nav.back")} onPress={() => props.navigation.goBack()} disabled={!props.navigation.canGoBack()} />
   </View>;
 }

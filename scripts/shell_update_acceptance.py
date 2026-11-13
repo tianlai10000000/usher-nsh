@@ -49,6 +49,65 @@ def archive_app(app: Path, target: Path) -> None:
         archive.add(app, arcname=app.name)
 
 
+def assess_gatekeeper(app: Path, fixture: dict, timeout: float) -> dict:
+    """Observe policy without opening the quarantined fixture or changing system trust."""
+    sim.run(['codesign', '--verify', '--deep', '--strict', str(app)])
+    sim.run(['xattr', '-w', 'com.apple.quarantine', fixture['quarantineAttribute'], str(app)])
+    attribute = sim.run(['xattr', '-p', 'com.apple.quarantine', str(app)]).stdout.strip()
+    if attribute != fixture['quarantineAttribute']:
+        raise RuntimeError('quarantine fixture did not retain its attribute')
+    assessment = subprocess.run(['spctl', '--assess', '--type', 'execute', '--verbose=4', str(app)],
+                                capture_output=True, text=True, timeout=timeout)
+    detail = assessment.stdout + assessment.stderr
+    if assessment.returncode != 3 or 'rejected' not in detail.lower():
+        raise RuntimeError(f'unexpected Gatekeeper result; reassess the ad hoc limitation: {detail}')
+    return {'exit_code': assessment.returncode, 'detail': detail, 'quarantine': attribute,
+            'known_limitation': 'Gatekeeper rejects this ad hoc bundle. Synthetic quarantine is not browser distribution acceptance.'}
+
+
+def verify_interposer(root: Path, timeout: float, interval: float) -> list[str]:
+    """Prove both stop points and unrelated-rename isolation before costly application builds."""
+    library = root / 'interrupt-rename.dylib'
+    probe = root / 'rename-probe'
+    sim.run(['clang', '-dynamiclib', '-Wall', '-Wextra', '-Werror', str(FIXTURE / 'interrupt_rename.c'),
+             '-o', str(library)])
+    sim.run(['codesign', '--sign', '-', str(library)])
+    sim.run(['clang', '-Wall', '-Wextra', '-Werror', str(FIXTURE / 'rename_probe.c'), '-o', str(probe)])
+    verified = []
+    for stage in ('before-install', 'after-install', 'unrelated'):
+        directory = root / stage
+        directory.mkdir()
+        old, new, checkpoint = (directory / name for name in ('old', 'new', 'checkpoint'))
+        old.mkdir()
+        environment = dict(os.environ, DYLD_INSERT_LIBRARIES=str(library),
+                           USHER_ACCEPTANCE_INSTALLATION=str(new if stage == 'after-install' else old),
+                           USHER_ACCEPTANCE_CHECKPOINT=str(checkpoint))
+        environment.pop('USHER_ACCEPTANCE_AFTER_INSTALL', None)
+        if stage == 'after-install':
+            environment['USHER_ACCEPTANCE_AFTER_INSTALL'] = '1'
+        elif stage == 'unrelated':
+            environment['USHER_ACCEPTANCE_INSTALLATION'] = str(directory / 'unrelated')
+        process = subprocess.Popen([str(probe), str(old), str(new)], env=environment)
+        try:
+            if stage == 'unrelated':
+                if process.wait(timeout=timeout) != 0 or checkpoint.exists():
+                    raise RuntimeError('fault hook changed an unrelated rename')
+            else:
+                def stopped():
+                    if process.poll() is not None:
+                        raise RuntimeError('fault hook exited instead of pausing at the rename boundary')
+                    return checkpoint.exists() and checkpoint.read_text() == str(new)
+                wait_for(stopped, timeout, interval, 'fault hook preflight')
+            if old.exists() or not new.is_dir():
+                raise RuntimeError('fault hook did not preserve the real rename')
+            verified.append(stage)
+        finally:
+            if process.poll() is None:
+                process.kill()
+            process.wait(timeout=timeout)
+    return verified
+
+
 def stage_sources(target: Path, version: str, build: int, keys: dict, port: int) -> Path:
     source = sim.project_copy(target, version, build, keys, f'http://127.0.0.1:{port}/latest.json')
     shutil.copytree(FIXTURE, source / 'tests/e2e/shell-update')
@@ -70,9 +129,10 @@ def stage_sources(target: Path, version: str, build: int, keys: dict, port: int)
     return source
 
 
-def build_app(source: Path, output: Path, app_id: str, timeout: int) -> Path:
+def build_app(source: Path, output: Path, app_id: str, timeout: int, *, appkit=False) -> Path:
+    print(f'Building {output.name} ({"appkit" if appkit else "standard"})', flush=True)
     sim.run(['nsh', 'package', '--target', 'macos', '--arch', 'arm64', '-o', str(output)],
-            cwd=source, env=sim.build_environment(), timeout=timeout)
+            cwd=source, env={**sim.build_environment(), 'USHER_MACOS_APPKIT': str(int(appkit))}, timeout=timeout)
     apps = list(output.glob('*.app'))
     if len(apps) != 1:
         raise RuntimeError('expected exactly one real application bundle')
@@ -249,6 +309,13 @@ def prepare_case(case: str, directory: Path, new: Path, source: Path, keys: dict
     bundle.parent.mkdir()
     shutil.copytree(new, bundle, symlinks=True)
     metadata = bundle / 'Contents/Resources/nsh/app.json'
+    if case == 'wrong-architecture':
+        executable = sim.validate_app(bundle, keys['app_id'])
+        sim.run(['clang', '-arch', 'x86_64', str(FIXTURE / 'foreign_arch.c'), '-o', str(executable)])
+        sim.run(['codesign', '--force', '--sign', '-', '--timestamp=none', str(bundle)])
+        sim.run(['codesign', '--verify', '--deep', '--strict', str(bundle)])
+        if sim.run(['lipo', '-archs', str(executable)]).stdout.strip() != 'x86_64':
+            raise RuntimeError('foreign architecture fixture was not actually x86_64')
     if case in ('invalid-signature', 'wrong-identity'):
         data = json.loads(metadata.read_text())
         if case == 'wrong-identity':
@@ -276,8 +343,12 @@ def run_case(case, root, output, old, new, source, keys, config, native, fixture
     directory.mkdir()
     evidence_dir = output / case
     evidence_dir.mkdir()
-    installed = directory / 'installed'
-    installed.mkdir()
+    if case == 'applications-writable':
+        installed = Path(tempfile.mkdtemp(prefix='.usher-update-acceptance-', dir=fixture['applicationsDirectory']))
+    else:
+        installed = directory / 'installed'
+        installed.mkdir()
+    record['installation_parent'] = str(installed)
     app = installed / old.name
     shutil.copytree(old, app, symlinks=True)
     before = inventory(app)
@@ -297,19 +368,31 @@ def run_case(case, root, output, old, new, source, keys, config, native, fixture
         return value if value and value['update']['domain']['phase']['type'] == name else None
     def wait(read, message):
         return wait_for(read, timeout, interval, message)
-    def launch():
+    checkpoint = directory / 'rename-checkpoint'
+    def launch(*, interrupt=False):
         nonlocal process
         previous = evidence.snapshot()[0]
         with (evidence_dir / 'app.log').open('ab') as log:
-            process = subprocess.Popen([str(sim.validate_app(app, keys['app_id']))], stdout=log, stderr=log, start_new_session=True)
+            environment = dict(os.environ)
+            if interrupt:
+                environment.update(DYLD_INSERT_LIBRARIES=str(root / 'interrupt-rename.dylib'),
+                                   USHER_ACCEPTANCE_INSTALLATION=str(app),
+                                   USHER_ACCEPTANCE_CHECKPOINT=str(checkpoint))
+                if case == 'wrong-architecture':
+                    environment['USHER_ACCEPTANCE_AFTER_INSTALL'] = '1'
+            process = subprocess.Popen([str(sim.validate_app(app, keys['app_id']))], env=environment,
+                                       stdout=log, stderr=log, start_new_session=True)
         wait(lambda: evidence.snapshot()[0] > previous, 'boot evidence')
         check_boot(state(), config['oldVersion'], config['oldBuild'], prefs)
+        if state()['appKitAvailable'] != (case == 'appkit-to-standard'):
+            raise RuntimeError('old process did not expose the expected native variant')
         return process.pid
     def find_update():
         evidence.command('check')
         value = wait(lambda: phase('checked'), 'whole-app offer')
         outcome = value['update']['domain']['phase']['outcome']
-        if outcome['type'] != 'shell_update' or outcome['candidate']['version'] != target['version']:
+        expected_outcome = 'manual_upgrade' if case == 'install-readonly' else 'shell_update'
+        if outcome['type'] != expected_outcome or outcome['candidate']['version'] != target['version']:
             raise RuntimeError(f'expected an installable whole-app offer: {outcome}')
     def download():
         evidence.command('download')
@@ -327,6 +410,10 @@ def run_case(case, root, output, old, new, source, keys, config, native, fixture
         namespace.create()
         settings = namespace.root / 'data/settings.toml'
         saved = write_settings(settings, prefs)
+        if case == 'gatekeeper-quarantine':
+            record.update(assess_gatekeeper(app, fixture, timeout))
+            record['status'] = 'passed'
+            return record
         served, archive, pristine = prepare_case(case, directory, new, source, keys, target['version'])
         server = sim.Source(served, {}, port)
         server.RequestHandlerClass = Handler
@@ -334,11 +421,20 @@ def run_case(case, root, output, old, new, source, keys, config, native, fixture
         server.body_limit = fixture['evidenceLimitBytes']
         server.evidence = evidence
         threading.Thread(target=server.serve_forever, daemon=True).start()
-        initial_pid = launch()
+        initial_pid = launch(interrupt=case in ('interrupted-swap', 'wrong-architecture'))
         record['initial_pid'] = initial_pid
+        if case == 'install-readonly':
+            installed.chmod(0o555)
         find_update()
         if any('.tar.gz' in path for path in server.requests):
             raise RuntimeError('whole-app archive downloaded without explicit confirmation')
+        if case == 'install-readonly':
+            record['manual_upgrade'] = state()
+            assert_unchanged()
+            if settings.read_bytes() != saved:
+                raise RuntimeError('manual upgrade changed settings')
+            record['status'] = 'passed'
+            return record
         if case == 'archive-tampered':
             evidence.command('download')
             failed = wait(lambda: phase('install_failed'), 'corrupt archive refusal')
@@ -355,6 +451,46 @@ def run_case(case, root, output, old, new, source, keys, config, native, fixture
             installed.chmod(0o555)
         prior_session = evidence.snapshot()[0]
         evidence.command('install')
+        if case in ('interrupted-swap', 'wrong-architecture'):
+            if case == 'interrupted-swap':
+                destination = wait(lambda: checkpoint.read_text() if checkpoint.exists() else None,
+                                   'first rename checkpoint')
+                # The injected hook stops before returning to the unmodified installer.
+                backup = Path(destination)
+                if backup.parent != installed or not backup.name.startswith('.nsh-updater-old-'):
+                    raise RuntimeError('rename checkpoint escaped the owned installation')
+                if app.exists() or inventory(backup) != before:
+                    raise RuntimeError('interruption did not preserve the old bundle at the rename gap')
+                record['interrupted_inventory'] = inventory(backup)
+                record['automatic_recovery'] = False
+                record['known_limitation'] = 'The application path is absent between renames; external restoration is required.'
+                stop_owned(app, keys['app_id'], process, host, config['processTimeoutSeconds'], interval)
+                backup.rename(app)
+                for leftover in installed.glob('.nsh-updater-*'):
+                    shutil.rmtree(leftover)
+            else:
+                destination = wait(lambda: checkpoint.read_text() if checkpoint.exists() else None,
+                                   'foreign archive replacement before restart')
+                if destination != str(app):
+                    raise RuntimeError('foreign archive checkpoint escaped the owned installation')
+                expected_foreign = inventory(directory / 'payload' / new.name)
+                if inventory(app) != expected_foreign:
+                    raise RuntimeError('foreign archive behavior changed; reassess the recorded architecture limitation')
+                record['installed_architecture'] = sim.run(['lipo', '-archs', str(sim.validate_app(app, keys['app_id']))]).stdout.strip()
+                record['known_limitation'] = 'A signed x86_64 executable mislabeled as arm64 was installed without architecture rejection.'
+                stop_owned(app, keys['app_id'], process, host, config['processTimeoutSeconds'], interval)
+                shutil.rmtree(app)
+                shutil.copytree(old, app, symlinks=True)
+                for leftover in installed.glob('.nsh-updater-*'):
+                    shutil.rmtree(leftover)
+            launch()
+            assert_unchanged()
+            if settings.read_bytes() != saved:
+                raise RuntimeError('external restoration changed settings')
+            record['old_relaunch'] = state()
+            record['manual_recovery'] = True
+            record['status'] = 'passed'
+            return record
         if case in ('invalid-signature', 'wrong-identity', 'install-denied'):
             failed = wait(lambda: phase('install_failed'), 'installation refusal')
             confirm_failure(failed)
@@ -374,6 +510,8 @@ def run_case(case, root, output, old, new, source, keys, config, native, fixture
             wait(lambda: process.poll() is not None, 'old process exit')
             wait(lambda: evidence.snapshot()[0] > prior_session, 'NSH-initiated new process boot')
             check_boot(state(), target['version'], target['build'], prefs)
+            if state()['appKitAvailable']:
+                raise RuntimeError('standard update unexpectedly retained AppKit controls')
             running = wait(lambda: host('process', keys['app_id']), 'new registered native process')
             if any(row['pid'] == initial_pid for row in running):
                 raise RuntimeError('the old process is still registered')
@@ -403,7 +541,9 @@ def run_case(case, root, output, old, new, source, keys, config, native, fixture
         record['requests'] = list(server.requests) if server else []
         try:
             stop_owned(app, keys['app_id'], process, host, config['processTimeoutSeconds'], interval)
-            sim.run([platform_config['lsregister'], '-u', str(app)])
+            # Policy-only fixtures are never launched or registered with LaunchServices.
+            if process is not None:
+                sim.run([platform_config['lsregister'], '-u', str(app)])
             if server:
                 server.shutdown()
                 server.server_close()
@@ -416,6 +556,8 @@ def run_case(case, root, output, old, new, source, keys, config, native, fixture
                 record['status'] = 'failed'
                 record['error'] = 'native diagnostic did not confirm the injected fault'
             namespace.cleanup(lambda: bool(host('process', keys['app_id']) or live_processes(app)))
+            if case == 'applications-writable':
+                shutil.rmtree(installed)
             record['cleanup_pending'] = False
         except (Exception, KeyboardInterrupt) as error:
             record['cleanup_error'] = str(error) or type(error).__name__
@@ -452,6 +594,7 @@ def main():
             return json.loads(sim.run([str(helper), *args]).stdout)
         if not host('session')['ready']:
             raise RuntimeError('requires an unlocked graphical session')
+        report['fault_hook_preflight'] = verify_interposer(root, native['timeoutSeconds'], fixture['pollIntervalMs'] / 1000)
         keys = sim.make_keys(root / 'keys', config)
         keys['app_id'] = native['appId'] + '.' + uuid.uuid4().hex
         report['app_id'] = keys['app_id']
@@ -461,19 +604,21 @@ def main():
             port = reserved.getsockname()[1]
         old_source = stage_sources(root / 'old-src', config['oldVersion'], config['oldBuild'], keys, port)
         new_source = stage_sources(root / 'new-src', release['version'], release['build'], keys, port)
-        print('Building two real isolated applications', flush=True)
+        print('Building three real isolated applications', flush=True)
         old = build_app(old_source, root / 'old-out', keys['app_id'], config['buildTimeoutSeconds'])
         # A valid obsolete resource proves the swap does not merely overlay the new files.
         (old / 'Contents/Resources' / fixture['retiredResource']).write_text(config['oldVersion'])
         sim.run(['codesign', '--force', '--sign', '-', '--timestamp=none', str(old)])
         new = build_app(new_source, root / 'new-out', keys['app_id'], config['buildTimeoutSeconds'])
+        appkit = build_app(old_source, root / 'appkit-out', keys['app_id'], config['buildTimeoutSeconds'], appkit=True)
         report['old_inventory'] = inventory(old)
         report['new_inventory'] = inventory(new)
         for case in fixture['cases']:
             # Register ownership before entering the case, including interruption during cleanup.
             result = {'name': case, 'status': 'failed', 'cleanup_pending': True}
             report['cases'].append(result)
-            run_case(case, root, output, old, new, new_source, keys, config, native, fixture, host, port, result)
+            run_case(case, root, output, appkit if case == 'appkit-to-standard' else old,
+                     new, new_source, keys, config, native, fixture, host, port, result)
             if result.get('cleanup_pending') or result.get('interrupted'):
                 break
         if len(report['cases']) == len(fixture['cases']) and all(c['status'] == 'passed' for c in report['cases']):
@@ -486,6 +631,11 @@ def main():
             if case.get('cleanup_pending'):
                 case['status'] = 'failed'
         report['retained'] = any(c.get('cleanup_pending') for c in report['cases'])
+        report['known_limitations'] = {c['name']: c['known_limitation'] for c in report['cases']
+                                       if c['status'] == 'passed' and c.get('known_limitation')}
+        report['functional_cases_passed'] = sum(c['status'] == 'passed' and not c.get('known_limitation')
+                                                 for c in report['cases'])
+        report['boundary_probes_passed'] = len(report['known_limitations'])
         if not report['retained']:
             shutil.rmtree(root)
         (output / 'report.json').write_text(json.dumps(report, indent=2) + '\n')
@@ -500,7 +650,8 @@ def main():
                 ET.SubElement(case, 'failure', message=message).text = message
         suite.set('failures', str(len(list(suite.iter('failure')))))
         ET.ElementTree(suite).write(args.junit, encoding='unicode', xml_declaration=True)
-        print(f'Shell acceptance: {report["status"]}; evidence: {output}', flush=True)
+        print(f'Shell acceptance: {report["status"]}; functional cases: {report["functional_cases_passed"]}; '
+              f'boundary probes: {report["boundary_probes_passed"]}; evidence: {output}', flush=True)
     return 0 if report['status'] == 'passed' else 1
 
 

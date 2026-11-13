@@ -7,7 +7,8 @@ import type { UpdateActions } from "./index";
 import { UpdateDetails } from "./UpdatesSettings";
 import { SystemIcon } from "../../components/SystemIcon";
 import icons from "../../config/navigation-icons.json";
-import { iconButtonLook } from "../../theme/look";
+import { popupMotion, type PopupSide } from "../../theme/motion";
+import { iconButtonLook, popupLook } from "../../theme/look";
 export function UpdatePanel(
   props: {
     appearance: AppearanceStore;
@@ -16,7 +17,9 @@ export function UpdatePanel(
   },
 ) {
   const open = signal(false);
+  const side = signal<PopupSide>("right");
   const { palette, t } = props.appearance;
+  const motion = () => popupMotion(palette, side());
   const closeLook = () => iconButtonLook(palette, false, true);
   return (
     <Popover
@@ -25,19 +28,20 @@ export function UpdatePanel(
       open={open()}
       placement="right"
       align="end"
+      onPosition={({ placement }) => side.set(placement)}
       margin={palette().metric.panelInset}
       offset={palette().metric.textGap}
+      popupStartingStyle={motion().starting}
+      popupEndingStyle={motion().ending}
       popupStyle={{
-        width: palette().metric.menuWidth + palette().metric.cardPad * 2,
+        ...motion().style,
+        width: "max-content",
+        minWidth: palette().metric.menuWidth + palette().metric.cardPad * 2,
         maxWidth: windowSize().width - safeArea().left - safeArea().right -
           palette().metric.panelInset * 2,
         padding: palette().metric.cardPad,
         gap: palette().metric.groupGap,
-        backgroundColor: palette().background,
-        borderWidth: palette().metric.borderWidth,
-        borderColor: palette().border,
-        borderRadius: palette().metric.radiusCard,
-        boxShadow: palette().shellShadow,
+        ...popupLook(palette),
       }}
       onOpenChange={({ open: next }) => {
         open.set(next);

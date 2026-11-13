@@ -661,7 +661,7 @@ fn derive_focus_ring(tokens: &BTreeMap<String, String>) -> Option<String> {
 /// Surfaces derived from a palette editor theme's four colors. The alpha suffixes keep the
 /// sidebar and panel translucent over the window material and the borders subtle.
 fn derive_palette_tokens(palette: &Palette) -> BTreeMap<String, String> {
-    BTreeMap::from([
+    let mut tokens = BTreeMap::from([
         ("background".to_owned(), palette.background.clone()),
         ("card".to_owned(), palette.surface.clone()),
         ("foreground".to_owned(), palette.text.clone()),
@@ -675,7 +675,21 @@ fn derive_palette_tokens(palette: &Palette) -> BTreeMap<String, String> {
             "window-tint".to_owned(),
             format!("{}66", palette.background),
         ),
-    ])
+    ]);
+    // Editor palettes replace the root colors after inheritance has resolved aliases.
+    // Reproject component roles as well, rather than retaining the root's old surfaces.
+    for (role, source) in [
+        ("field", "background"),
+        ("input", "border"),
+        ("track", "border"),
+        ("knob", "card"),
+        ("line", "border"),
+        ("popover", "card"),
+        ("popover-foreground", "foreground"),
+    ] {
+        tokens.insert(role.to_owned(), tokens[source].clone());
+    }
+    tokens
 }
 
 /// Replaces every `var(--name)` with the named token's value. A reference can point at another
@@ -1493,6 +1507,14 @@ mod tests {
         assert_eq!(light["sidebar"], "#F0F0F0b3");
         assert!(!light.contains_key("primary-foreground"));
         assert!(light.contains_key("item-selected"));
+        for scheme in [Scheme::Light, Scheme::Dark] {
+            let resolved = tokens(&theme, scheme);
+            assert_eq!(resolved["field"], resolved["background"]);
+            assert_eq!(resolved["knob"], resolved["card"]);
+            assert_eq!(resolved["track"], resolved["border"]);
+            assert_eq!(resolved["popover"], resolved["card"]);
+            assert_eq!(resolved["popover-foreground"], resolved["foreground"]);
+        }
     }
 
     #[cfg(unix)]

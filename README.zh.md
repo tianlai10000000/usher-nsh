@@ -24,7 +24,7 @@ macOS arm64 的本地整包替换已验证；正式发布验收、系统托盘�
 | Windows、Linux | 计划支持的桌面平台，待完成项目级构建与运行验收 |
 | Android、iOS | 计划支持的移动平台，待完成模拟器、真机和打包验收 |
 
-实现进度与验收标准记录在 [scaffolding.md](scaffolding.md)。
+实现进度与验收标准记录在 [迭代批次](docs/todo.md)。
 
 ## 环境要求
 
@@ -42,6 +42,8 @@ nsh run --target macos
 首次运行会编译 Rust 模块和 macOS 开发宿主，按 `Ctrl+C` 停止开发服务器。开发流程支持 TSX 热更新。Rust 和宿主变更需要重新编译，HMR 状态保留与生命周期验收在实施清单中跟踪。
 
 在 **设置 → 外观** 中分别选择明暗模式、样式主题和控件族。macOS 开发构建默认包含 AppKit 设置控件，原生组件已注册时可在 macOS 26 及以上系统使用。
+
+文件选择与读写、主题扫描与保存、诊断导出、更新等需要等待的操作在按钮内部显示加载图标并保持禁用，加载前后按钮尺寸不变。主题、明暗模式、语言和导航等即时切换不显示加载图标。仅含图标的按钮在加载期间替换原图标；最左侧窄菜单栏保持现有交互。
 
 导航支持前进、后退和面包屑。macOS 桌面快捷键为 `⌘+[` 和 `⌘+]`，其他桌面目标为 `Ctrl+[` 和 `Ctrl+]`。窗口由通栏标题栏（菜单开关、前进后退、面包屑和浅色/深色切换）、固定窄菜单（上方主页，底部依次为更新、设置、用户头像按钮）、可显示或隐藏的二级菜单、内容区和可选的通栏底部状态栏组成。隐藏二级菜单时内容区带动画向左延伸，窄窗改用抽屉显示二级菜单。更新按钮展示可用更新、下载进度和重启就绪状态；不支持更新（包括开发运行）或显式下载期间禁用。头像按钮仍禁用。二级菜单停靠和底部状态栏开关会保存到本地。
 
@@ -66,7 +68,7 @@ macOS 窗口的默认启动尺寸和最小外框尺寸均为 800 × 600 点。TS
 
 所有主题使用同一种 JSON 格式，无论随应用发布还是由用户在本地添加。Rust 注册表（[src/style_themes.rs](src/style_themes.rs)）负责加载主题、与 `extends` 指向的基础主题合并、替换 `var(--name)` 引用，再向界面提供完整的 token 表。界面按名称读取 token，新增主题不需要修改代码。
 
-内置主题在构建时从 [ui/theme/builtin/](ui/theme/builtin/) 和 [ui/theme/presets/](ui/theme/presets/) 发现。在这两个目录添加文件即可新增主题，`order` 字段决定它在列表中的位置。[default](ui/theme/builtin/default/theme.json) 是根主题，定义全部 token，其他主题只需覆盖差异部分。
+内置主题在构建时从 [ui/theme/builtin/](ui/theme/builtin) 和 [ui/theme/presets/](ui/theme/presets) 发现。在这两个目录添加文件即可新增主题，`order` 字段决定它在列表中的位置。[default](ui/theme/builtin/default/theme.json) 是根主题，定义全部 token，其他主题只需覆盖差异部分。
 
 添加本地主题时，在设置中打开主题目录，添加 `themes/<名称>.json` 或 `themes/<目录>/theme.json`，再点击 **重新扫描主题文件**。设置页也可创建主题或复制已有主题。修改显示名称时保留稳定 ID，以便恢复已保存的选择。
 
@@ -131,6 +133,9 @@ python3 -I scripts/sync-gallery-theme.py --revision main
 cargo test --locked --lib
 ```
 
+组件级主题接入与逐项验收见 [NSH Gallery 主题审计](docs/todo.md#evidence-theme-audit-0)。开关、滑杆、进度、选中指示器和浮层分别读取部件表面；自定义强调色替换固定强调色渐变。已接入开关原生弹簧、滑杆悬停、进度扫动和浮层进出动画，支持减少动态效果。Select 的关闭保留当前框架行为，其余边界见审计文档。
+
+
 脚本只重写主题文件和固定的版本号。提交前请检查差异。该主题提供 Gallery 的颜色、圆角和阴影，以及 Gallery 的控件度量：28 点按钮、32 点输入框、7 点控件圆角、3 点聚焦光晕、97% 按压下沉和 5% 悬停叠色。映射中的每个度量都记录了来源文件和符号。尺寸写在 TypeScript 源码（`look/*.ts`）而不是 token 文件里，因此同步后需要在新版本中核对这些符号。Gallery 自身的组件结构不在此复现：标签条、分体按钮、菜单和面板不属于本应用。
 
 [Slate](ui/theme/presets/slate.json)、[Primer](ui/theme/presets/primer.json) 和 [Radix Colors · Sand](ui/theme/presets/radix-sand.json) 以同样方式给出 shadcn/ui、Primer 和 Radix Themes 的尺寸。[Geist](ui/theme/presets/geist.json) 没有给出，因为 Vercel 未公开组件尺寸，所以它使用根主题的尺寸和自己的颜色。
@@ -141,7 +146,7 @@ cargo test --locked --lib
 
 所有类型共用 `ERROR`、`WARN`、`INFO`、`DEBUG`、`TRACE` 和 `OFF` 等级，默认 INFO。等级及输出开关即时生效并保存供下次启动恢复，OFF 保留开关偏好。结构化诊断是独立事件流，与 TRACE 等级无关，当前记录诊断配置与更新状态转换。
 
-后台写入器按本地日期记录 JSONL：应用事件写 `usher.log`，结构化事件写 `usher_tracing.log`，各自 8 MiB 分片，共享 14 天 / 256 MiB 保留清理；不会为了配额删除当天目录。凭据脱敏，主目录替换为 `~`。支持导出今天、最近 7 天或最近 14 天的 `.tar.gz`，包括已关闭输出的历史文件；跳过符号链接，单个源文件上限 8 MiB，源数据总上限 64 MiB，导出目录保留最近五个归档。独立门面、后端接口与测试矩阵见[日志设计](docs/log.md)，平台验收缺口见[批次 05](scaffolding.md#批次-05--诊断日志--部分完成)。
+后台写入器按本地日期记录 JSONL：应用事件写 `usher.log`，结构化事件写 `usher_tracing.log`，各自 8 MiB 分片，共享 14 天 / 256 MiB 保留清理；不会为了配额删除当天目录。凭据脱敏，主目录替换为 `~`。支持导出今天、最近 7 天或最近 14 天的 `.tar.gz`，包括已关闭输出的历史文件；跳过符号链接，单个源文件上限 8 MiB，源数据总上限 64 MiB，导出目录保留最近五个归档。独立门面、后端接口与测试矩阵见[日志设计](docs/log.md)，平台验收缺口见[批次 05](docs/todo.md#logging)。
 
 ## macOS 打包
 
@@ -219,7 +224,13 @@ macOS 原生检查会打开真实窗口，需要解锁的图形会话。状态�
 python3 scripts/test.py e2e --target macos
 ```
 
-该命令运行三项生命周期探针、一项原生返回 / 守卫测试和诊断布局 / 控件与保存过程样式测试，使用生产状态 / 路由适配器及 RouterView；不包含进程重启或所有原生输入路径。报告包括 e2e-macos.json、native-state.xml、native-isolation.json 和逐轮日志。CI 通过手动 native_state 开关在带 usher-native 标签的 self-hosted macOS runner 上运行；需预先配置并保持桌面解锁，远端运行尚未验证。
+该命令运行三项生命周期探针、一项原生返回 / 守卫测试、诊断布局 / 控件与保存过程样式测试，以及七项按钮生命周期旅程，使用生产状态 / 路由适配器及 RouterView。按钮套件在隔离宿主中加入仅用于测试的适配器，取消真实 AppKit 图片选择面板，并验证关闭、状态恢复与再次取消；该适配器不进入生产应用。不包含进程重启或所有原生输入路径。报告包括 e2e-macos.json、native-state.xml、native-isolation.json 和逐轮日志。CI 通过手动 native_state 开关在带 usher-native 标签的 self-hosted macOS runner 上运行；需预先配置并保持桌面解锁，远端运行尚未验证。
+
+仅运行隔离的原生按钮旅程：
+
+```sh
+python3 scripts/native_button_acceptance.py --junit target/test-reports/native-buttons.xml
+```
 
 发布包深链接验收使用 ad-hoc 签名的 release 应用与唯一测试 ID；专属数据 / 缓存命名空间映射到临时目录，仅在隔离源码副本的产品入口加入只读路由观察器。命令验证 LaunchServices 注册、外部 URL 冷启动和同进程唤醒，然后注销测试应用并清理隔离数据：
 
@@ -243,13 +254,15 @@ scripts/update-sim/sim.sh run --all
 
 日志和清理证据保留在 `target/test-reports/update-sim-*/`。`serve <场景>` 由脚本管理隔离应用，Ctrl+C 后停止并清理。该命令验证生产控制器检查、签名代码包下载和下次启动晋升，以及预置包的恢复链路；真实整包替换由下方独立的 shell-update 命令验收，见[本地更新模拟方案](docs/update.md#12-本地更新模拟d14)。
 
-真实整包归档验收构建新旧两个标准变体应用，通过生产控制器向签名本地源执行检查、下载和安装，核对文件替换、NSH 自动重启、设置保留，以及归档损坏、内部身份 / 签名拒绝和安装权限恢复：
+真实整包归档验收构建新旧标准变体与旧版 AppKit 应用，通过生产控制器向签名本地源执行检查、下载和安装，核对文件替换、NSH 自动重启、设置保留，以及归档损坏、内部身份 / 签名拒绝和安装权限恢复：
 
 ```sh
 python3 scripts/test.py shell-update
 ```
 
-在解锁的 Apple Silicon macOS 桌面串行执行。每轮使用唯一应用 ID、临时源码 / 应用 / 数据目录和一次性密钥。报告保留在 `target/test-reports/shell-update-*/`；清理失败时保留隔离树并使测试失败。命令已加入手动 native_state CI 作业，不覆盖下载隔离标记、Developer ID 公证、正式发布或 AppKit 向标准变体转换。
+在解锁的 Apple Silicon Mac（macOS 26 或以上，AppKit 场景要求）串行执行。每轮使用唯一应用 ID、临时源码 / 应用 / 数据目录和一次性密钥。报告保留在 `target/test-reports/shell-update-*/`；清理失败时保留隔离树并使测试失败。
+
+命令已加入手动 native_state CI 作业，另覆盖 AppKit 转标准版、`/Applications` 下本轮专属临时目录升级、检查前目录不可写，以及替换中断、架构标签不符和人工 quarantine 标记的本地边界探测。边界探测在各场景报告里单独记录已知缺口；探测通过不等于自动崩溃恢复或 Gatekeeper 放行。Developer ID 公证、真实浏览器分发和正式发布不在命令范围内。已确认 NSH 0.5.0 在安装重命名间隙中断后需要外部恢复，且不会拒绝签名有效但架构不符的归档；人工隔离标记的 ad hoc 包被 Gatekeeper 拒绝。剩余验收见更新方案。
 
 原有原生 UI 检查：
 
@@ -286,7 +299,7 @@ USHER_MACOS_APPKIT=0 nsh test tests/ui/appkit.test.tsx --target macos
 | `scripts/` | 打包与 Gallery 主题同步命令 |
 | `.nsh/`、`target/` | 生成的构建与测试产物 |
 
-[项目架构](architecture.md)描述模块职责、依赖边界、状态归属与数据流。[分批实施清单](scaffolding.md)记录实现状态，[开发与贡献规范](CONTRIBUTING.md)定义开发与贡献要求。
+[项目架构](architecture.md)描述模块职责、依赖边界、状态归属与数据流。[分批实施清单](docs/todo.md)记录实现状态，[开发与贡献规范](CONTRIBUTING.md)定义开发与贡献要求，[交互设计规范](docs/interaction-design.md)定义布局、按钮加载、主题与文案等界面要求。
 
 [状态管理方案](docs/state-management.md)记录 SM1 至 SM3 及 SM4 迁移。设置保持原桥接和持久化格式兼容；导航、分类、操作反馈、共享预览、导出和计数已使用 Rust Store，诊断健康使用独立实时订阅。无头回归和隔离目录下的 macOS 多窗口 / HMR 验收均已通过。SM4 在当前支持的 macOS 开发宿主范围完成；其他平台及发布验收分别跟踪。
 

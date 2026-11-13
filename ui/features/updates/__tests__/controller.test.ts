@@ -285,6 +285,25 @@ test("updates projection distinguishes preparing, download rings, manual failure
   expect(presentation(state).warning).toBe(true);
 });
 
+test("updates projection distinguishes development from other unsupported environments", () => {
+  const state: UpdateData = {
+    ...initial,
+    domain: {
+      shell: "0.1.0",
+      running: "0.1.0",
+      auto_check: true,
+      capability: "unsupported",
+      phase: { type: "idle" },
+    },
+  };
+  expect(presentation(state, true).key).toBe("update.development");
+  expect(presentation(state, false).key).toBe("update.unsupported");
+  expect(presentation(state, true).canCheck).toBe(false);
+  state.domain!.capability = "in_app";
+  expect(presentation(state, true).key).toBe("update.check");
+  expect(presentation(state, true).canCheck).toBe(true);
+});
+
 test("updates controller configures unsupported environments and schedules no network work", async () => {
   const h = harness();
   const updater = native();

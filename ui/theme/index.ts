@@ -95,10 +95,14 @@ export function resolveTheme(
 ) {
   const style = theme ?? fallbackTheme;
   // On a touch device a metric the theme states for touch wins over its pointer value.
-  const token = (name: string): string =>
-    (options.touch ?? touchDevice ? style.cssVars.touch[name] : undefined) ??
+  const token = (name: string): string => {
+    const value = (options.touch ?? touchDevice ? style.cssVars.touch[name] : undefined) ??
       style.cssVars[scheme][name] ??
       fallbackTheme.cssVars[scheme][name];
+    // The startup fallback has not passed through the Rust registry's alias resolver yet.
+    const alias = /^var\(--([\w-]+)\)$/.exec(value);
+    return alias ? token(alias[1]) : value;
+  };
   const accent = options.accent ?? token("primary");
   // Metrics are whole points or ratios. The registry has validated them, and the root theme
   // defines every one, so a missing or malformed value can only come from a stale snapshot.
@@ -111,13 +115,25 @@ export function resolveTheme(
     shadow: token(`finish-${state}-shadow`),
     edge: token(`finish-${state}-edge`),
   });
+  // A user accent must not be covered by a snapshot's fixed citrus gradient or edge.
+  const accentFinish = (state: string) => options.accent
+    ? { ...finish(state), fill: accent, image: "none", edge: accent }
+    : finish(state);
 
   return {
     background: token("background"),
     surface: token("card"),
     text: token("foreground"),
     accent,
-    accentText: accentForeground(accent),
+    accentText: options.accent || !style.cssVars[scheme]["primary-foreground"]
+      ? accentForeground(accent) : token("primary-foreground"),
+    field: token("field"),
+    input: token("input"),
+    track: token("track"),
+    knob: token("knob"),
+    line: token("line"),
+    popover: token("popover"),
+    popoverText: token("popover-foreground"),
     updateWarning: token("update-warning"),
     updateWarningText: accentForeground(token("update-warning")),
     border: token("border"),
@@ -135,6 +151,25 @@ export function resolveTheme(
     windowTint: token("window-tint"),
     scrim: token("scrim"),
     scrollbarThumb: token("scrollbar-thumb"),
+    scrollbarThumbHover: token("scrollbar-thumb-hover"),
+    /** Motion parameters remain theme data; native animation objects belong to mounted views. */
+    motion: {
+      switchSpring: { stiffness: metric("motion-switch-stiffness"), damping: metric("motion-switch-damping") },
+      popupMs: metric("motion-popup"),
+      popupTravel: metric("space-popup-travel"),
+      tooltipTravel: metric("space-tooltip-travel"),
+      popupScale: metric("feedback-popup-scale"),
+      popupCurve: token("curve-popup") as `cubic-bezier(${string})`,
+      progressCurve: token("curve-progress") as `cubic-bezier(${string})`,
+      sweepCurve: token("curve-sweep") as `cubic-bezier(${string})`,
+      progressMs: metric("motion-progress"),
+      sweepMs: metric("motion-progress-sweep"),
+      progressSegment: metric("feedback-progress-segment"),
+      buttonHoverOpacity: metric("feedback-button-hover-opacity"),
+      buttonActiveOpacity: metric("feedback-button-active-opacity"),
+      sliderHover: token("effect-slider-hover"),
+      sliderActive: token("effect-slider-active"),
+    },
     /** Sizes, spacing, type, radii and feedback, in points or ratios. */
     metric: {
       buttonHeight: metric("size-button"),
@@ -147,7 +182,16 @@ export function resolveTheme(
       switchHeight: metric("size-switch-height"),
       switchKnob: metric("size-switch-knob"),
       sliderTrack: metric("size-slider-track"),
+      sliderBand: metric("size-slider-band"),
       sliderThumb: metric("size-slider-thumb"),
+      scrollbar: metric("size-scrollbar"),
+      scrollbarThumb: metric("size-scrollbar-thumb"),
+      scrollbarThumbHover: metric("size-scrollbar-thumb-hover"),
+      scrollbarMinThumb: metric("size-scrollbar-min-thumb"),
+      scrollbarInset: metric("space-scrollbar-inset"),
+      scrollbarIdleMs: metric("motion-scrollbar-idle-seconds") * 1000,
+      scrollbarEnterMs: metric("motion-scrollbar-enter"),
+      scrollbarExitMs: metric("motion-scrollbar-exit"),
       navButton: metric("size-nav-button"),
       sidebarItem: metric("size-sidebar-item"),
       statusBar: metric("size-status-bar"),
@@ -199,6 +243,8 @@ export function resolveTheme(
       fontNote: metric("font-note"),
       radiusControl: metric("radius-control"),
       radiusCard: metric("radius-card"),
+      radiusPopup: metric("radius-popup"),
+      radiusTooltip: metric("radius-tooltip"),
       radiusItem: metric("radius-item"),
       borderWidth: metric("size-border"),
       focusWidth: metric("focus-width"),
@@ -216,13 +262,19 @@ export function resolveTheme(
       hover: finish("hover"),
       pressed: finish("pressed"),
       on: finish("on"),
-      accent: finish("accent"),
+      accent: accentFinish("accent"),
+      track: finish("track"),
+      fill: accentFinish("fill"),
+      knob: finish("knob"),
+      knobOn: options.accent ? { ...finish("knob-on"), edge: accent } : finish("knob-on"),
+      thumb: finish("thumb"),
+      menu: finish("menu"),
       field: { boxShadow: token("finish-field-shadow") },
       card: { boxShadow: token("finish-card-shadow") },
     },
     ring: token("ring"),
     /** The keyboard focus halo: an opaque color that reads at 3:1 on every surface. */
-    focusRing: token("focus-ring"),
+    focusRing: token("focus-ring") ?? token("ring"),
     itemPressed: token("item-pressed"),
     borderStrong: token("border-strong"),
     /** Whether the theme lets the window material show through its surfaces. */

@@ -154,6 +154,7 @@
   "settings.section.updates": "更新",
   "update.preparing": "正在准备更新…",
   "update.unsupported": "当前环境不支持应用更新",
+  "update.development": "开发模式不支持应用更新，请使用打包后的应用",
   "update.systemManaged": "更新由系统管理",
   "update.check": "检查更新",
   "update.checking": "正在检查更新…",

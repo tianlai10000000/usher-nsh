@@ -13,7 +13,7 @@ export function RouterView(props: PageProps & { pages: PageRegistry }) {
     return <ErrorBoundary fallback={(_error, reset) => <View testID="route-error">
       <Text style={{ color: palette().text }}>{t("router.failed")}</Text>
       <ThemeButton palette={palette} label={t("settings.retry")} onPress={reset} />
-      <ThemeButton palette={palette} label={t("nav.back")} onPress={() => void props.navigation.goBack()} disabled={!props.navigation.canGoBack()} />
+      <ThemeButton palette={palette} label={t("nav.back")} onPress={() => props.navigation.goBack()} disabled={!props.navigation.canGoBack()} />
     </View>}><Page {...props} /></ErrorBoundary>;
   }}</Each>;
 }

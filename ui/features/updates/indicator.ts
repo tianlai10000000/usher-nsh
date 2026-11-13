@@ -1,7 +1,7 @@
 /** Projects authoritative update phases into localized presentation and available actions. */
 import type { UpdateData } from "./contracts";
 import type { MessageKey } from "../../i18n";
-export function presentation(state: UpdateData) {
+export function presentation(state: UpdateData, development = false) {
   const domain = state.domain;
   const phase = domain?.phase;
   const outcome = phase?.outcome;
@@ -19,8 +19,9 @@ export function presentation(state: UpdateData) {
       : null;
   let key: MessageKey = "update.preparing";
   if (domain) {
-    if (domain.capability === "unsupported") key = "update.unsupported";
-    else if (domain.capability === "system_managed") {
+    if (domain.capability === "unsupported") {
+      key = development ? "update.development" : "update.unsupported";
+    } else if (domain.capability === "system_managed") {
       key = "update.systemManaged";
     } else if (failure) key = `update.failure.${failure}`;
     else if (ready) key = "update.ready";

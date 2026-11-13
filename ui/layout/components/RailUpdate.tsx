@@ -1,7 +1,8 @@
 /** Renders update status using theme metrics and the public Canvas and Button APIs. */
-import { Canvas, reduceMotion, View } from "nsh";
+import { View } from "nsh";
 import { Button } from "nsh/base";
 import { SystemIcon } from "../../components/SystemIcon";
+import { ProgressRing } from "../../components/ProgressRing";
 import icons from "../../config/navigation-icons.json";
 import type { AppearanceStore } from "../../state/appearance";
 import { iconButtonLook } from "../../theme/look";
@@ -18,12 +19,6 @@ export function RailUpdate(
   const emphasis = () => state()?.shape === "emphasis";
   const color = () =>
     state()?.warning ? palette().updateWarning : palette().accent;
-  const spin = () => ({
-    animationName: reduceMotion() ? "none" as const : "spin" as const,
-    animationDuration: palette().metric.updateSpinMs,
-    animationTimingFunction: "linear" as const,
-    animationIterationCount: "infinite" as const,
-  });
   const button = (
     <Button
       testID="rail-update"
@@ -83,41 +78,14 @@ export function RailUpdate(
             height: palette().metric.buttonHeightSmall,
           }}
         >
-          <Canvas
+          <ProgressRing
+            palette={palette}
+            size={palette().metric.buttonHeightSmall}
+            progress={checking() ? null : state()?.progress ?? null}
             testID={checking()
               ? "update-checking-ring"
               : "update-progress-ring"}
-            role="progressbar"
-            accessibilityLabel={state()?.label}
-            style={{
-              width: palette().metric.buttonHeightSmall,
-              height: palette().metric.buttonHeightSmall,
-              ...(checking() || state()?.progress === null ? spin() : {}),
-            }}
-            draw={(cx, size) => {
-              const radius = (Math.min(size.width, size.height) -
-                palette().metric.borderWidth * 2) / 2;
-              cx.lineWidth = palette().metric.borderWidth * 2;
-              cx.lineCap = "round";
-              cx.beginPath();
-              cx.strokeStyle = palette().border;
-              cx.arc(size.width / 2, size.height / 2, radius, 0, Math.PI * 2);
-              cx.stroke();
-              cx.beginPath();
-              cx.strokeStyle = palette().muted;
-              cx.arc(
-                size.width / 2,
-                size.height / 2,
-                radius,
-                -Math.PI / 2,
-                -Math.PI / 2 +
-                  (checking()
-                      ? palette().metric.updateSegment
-                      : (state()?.progress ?? palette().metric.updateSegment)) *
-                    Math.PI * 2,
-              );
-              cx.stroke();
-            }}
+            label={state()?.label}
           />
           <If when={!checking()}>
             <View

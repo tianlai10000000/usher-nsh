@@ -1,0 +1,17 @@
+# Test-only native host extension; never linked into the production application.
+[package]
+name = "usher-native-button-tests"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[workspace]
+
+[dependencies]
+usher-nsh = { path = "../../../.." }
+nsh-core = "=0.5.0"
+dispatch2 = "0.3.1"
+objc2 = "0.6"
+objc2-app-kit = { version = "0.3.2", default-features = false, features = [
+    "NSApplication", "NSOpenPanel", "NSSavePanel", "NSWindow", "NSResponder",
+] }

@@ -1,3 +1,4 @@
+/** Verifies theme metrics and neutral selected-button contrast through the application. */
 import { expect, open, test } from "nsh/test";
 
 // A theme's metrics must reach the screen: the same button is 28, 32 or 36 points tall
@@ -22,19 +23,17 @@ test("controls take their size from the selected theme", async () => {
   }
 });
 
-// A selected button's label is drawn in the color that reads on its accent fill. This checks the
-// label only: the test API cannot read a view's background. The fill itself (two themes once
-// showed a white label on no fill) was confirmed on screenshots from the macOS host.
-test("a selected theme button's label reads on its accent under every shipped theme", async () => {
+// Selected neutral buttons retain the theme foreground on their neutral selected surface.
+test("a selected theme button retains neutral text under every shipped theme", async () => {
   const app = await open("../../App.tsx", { platform: "macos", width: 1100, height: 720, colorScheme: "light", locale: "en-US" });
   await app.press("id:route-settings");
   await app.waitUntil(() => app.shows("id:settings-section-theme"));
   await app.press("id:settings-section-theme");
 
   for (const [id, label, ink] of [
-    ["builtin.slate", "Slate · shadcn/ui", "#ffffff"],
-    ["builtin.primer", "Primer · GitHub", "#ffffff"],
-    ["builtin.nsh-gallery", "NSH Gallery", "#000000"],
+    ["builtin.slate", "Slate · shadcn/ui", "#0f172a"],
+    ["builtin.primer", "Primer · GitHub", "#1f2328"],
+    ["builtin.nsh-gallery", "NSH Gallery", "#101319"],
   ] as const) {
     await app.waitUntil(() => app.enabled(`id:theme-${id}`));
     await app.press(`id:theme-${id}`);

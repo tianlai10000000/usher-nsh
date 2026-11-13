@@ -29,11 +29,12 @@ export function BackgroundSettings(props: { appearance: AppearanceStore }) {
             </If>
           </View>
           <View class="flex-row flex-wrap justify-end" style={spacing(palette).wrap}>
-            <ThemeButton palette={palette} testID="background-image-pick" label={t("background.choose")}
-              disabled={disabled()} onPress={() => void props.appearance.chooseBackgroundImage()} />
-            <ThemeButton palette={palette} testID="background-image-clear" label={t("background.clear")}
+            <ThemeButton palette={palette} testID="background-image-pick" loadingFeedback label={t("background.choose")}
+              busy={props.appearance.pickingBackground()}
+              disabled={disabled()} onPress={() => props.appearance.chooseBackgroundImage()} />
+            <ThemeButton palette={palette} testID="background-image-clear" loadingFeedback label={t("background.clear")}
               disabled={disabled() || !props.appearance.backgroundImage()}
-              onPress={() => void props.appearance.clearBackgroundImage()} />
+              onPress={() => props.appearance.clearBackgroundImage()} />
           </View>
         </View>
         <View testID="background-image-opacity-control" class="flex-row flex-wrap items-center"
@@ -46,10 +47,11 @@ export function BackgroundSettings(props: { appearance: AppearanceStore }) {
             <Slider testID="background-image-opacity" accessibilityLabel={t("background.opacity")}
               value={props.appearance.backgroundImageOpacity()} disabled={disabled()}
               min={backgroundConfig.minOpacity} max={backgroundConfig.maxOpacity} step={backgroundConfig.opacityStep}
+              trackClass={slider().trackClass}
               trackStyle={slider().trackStyle}
               indicatorStyle={slider().indicatorStyle}
               rangeStyle={slider().rangeStyle}
-              thumbClass="rounded-full focus-visible:outline focus-visible:outline-ring"
+              thumbClass={slider().thumbClass}
               thumbStyle={slider().thumbStyle}
               onChange={({ value }) => {
                 if (typeof value === "number") props.appearance.previewBackgroundImageOpacity(value);
@@ -73,10 +75,11 @@ export function BackgroundSettings(props: { appearance: AppearanceStore }) {
               value={props.appearance.contentBackgroundTransparency()} disabled={disabled()}
               min={backgroundConfig.contentTransparency.min} max={backgroundConfig.contentTransparency.max}
               step={backgroundConfig.contentTransparency.step}
+              trackClass={slider().trackClass}
               trackStyle={slider().trackStyle}
               indicatorStyle={slider().indicatorStyle}
               rangeStyle={slider().rangeStyle}
-              thumbClass="rounded-full focus-visible:outline focus-visible:outline-ring"
+              thumbClass={slider().thumbClass}
               thumbStyle={slider().thumbStyle}
               onChange={({ value }) => {
                 if (typeof value === "number") props.appearance.previewContentBackgroundTransparency(value);

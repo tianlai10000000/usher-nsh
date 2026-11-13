@@ -13,13 +13,14 @@ import { DiagnosticsSettings } from "./DiagnosticsSettings";
 import { SettingsNavigation, SettingsSectionPicker } from "./SettingsNavigation";
 import { ThemeSettings } from "./ThemeSettings";
 import { BackgroundSettings } from "./BackgroundSettings";
-import { groupLook, headingLook, noteLook, rowLook, sectionTitleLook, spacing, switchLook } from "../../theme/look";
+import { groupLook, headingLook, noteLook, rowLook, sectionTitleLook, spacing, switchLook, createSwitchLook } from "../../theme/look";
 
 const modes: readonly ColorMode[] = ["light", "dark", "system"];
 const languages: readonly LocalePreference[] = ["system", "en", "zh-Hans"];
 
 function GeneralSettings(props: { appearance: AppearanceStore }) {
   const { palette, t, busy } = props.appearance;
+  const statusSwitch = createSwitchLook(palette, props.appearance.showStatusBar);
   const componentFamilies: readonly ComponentFamily[] = props.appearance.appKitAvailable
     ? ["nsh", "appkit"]
     : ["nsh"];
@@ -46,7 +47,7 @@ function GeneralSettings(props: { appearance: AppearanceStore }) {
                       {(mode) => (
                         <ThemeButton palette={palette} testID={`appearance-${mode()}`} label={t(`mode.${mode()}`)}
                           selected={props.appearance.mode() === mode()} disabled={busy()}
-                          onPress={() => void props.appearance.choose(mode())} />
+                          onPress={() => props.appearance.choose(mode())} />
                       )}
                     </Each>
                   </View>
@@ -89,7 +90,7 @@ function GeneralSettings(props: { appearance: AppearanceStore }) {
                           label={t(`settings.family.${family()}`)}
                           selected={props.appearance.componentFamily() === family()}
                           disabled={busy()}
-                          onPress={() => void props.appearance.chooseComponentFamily(family())}
+                          onPress={() => props.appearance.chooseComponentFamily(family())}
                         />
                       )}
                     </Each>
@@ -125,8 +126,9 @@ function GeneralSettings(props: { appearance: AppearanceStore }) {
                     disabled={busy()}
                     disabledStyle={switchLook(palette, false).disabledStyle}
                     focusStyle={switchLook(palette, false).focusStyle}
-                    trackStyle={switchLook(palette, props.appearance.showStatusBar()).trackStyle}
-                    thumbStyle={switchLook(palette, props.appearance.showStatusBar()).thumbStyle}
+                    trackClass={statusSwitch.trackClass}
+                    trackStyle={statusSwitch.trackStyle}
+                    thumbStyle={statusSwitch.thumbStyle}
                     onChange={({ checked }) => void props.appearance.setShowStatusBar(checked)}
                   />
                 }
@@ -170,7 +172,7 @@ function GeneralSettings(props: { appearance: AppearanceStore }) {
                       {(language) => (
                         <ThemeButton palette={palette} testID={`locale-${language()}`} label={t(`locale.${language()}`)}
                           selected={props.appearance.language() === language()} disabled={busy()}
-                          onPress={() => void props.appearance.chooseLanguage(language())} />
+                          onPress={() => props.appearance.chooseLanguage(language())} />
                       )}
                     </Each>
                   </View>
@@ -232,8 +234,8 @@ export function SettingsPage(props: { appearance: AppearanceStore; updates?: Upd
         {t("settings.title")}
       </Text>
       <If when={retryable()}>
-        <ThemeButton palette={palette} label={t("settings.retry")} testID="settings-retry"
-          onPress={() => void props.appearance.retry()} />
+        <ThemeButton palette={palette} label={t("settings.retry")} testID="settings-retry" loadingFeedback
+          onPress={() => props.appearance.retry()} />
       </If>
       <If
         when={wide()}

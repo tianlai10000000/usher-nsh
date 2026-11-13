@@ -40,6 +40,7 @@ export function driveShellAcceptance(updates: Updates) {
     return {
       shell: shellInfo(),
       package: runningPackage(),
+      appKitAvailable: Settings.appKitThemeAvailable(),
       update: updates.data(),
       error: updates.error(),
       settings: {

@@ -432,6 +432,42 @@
           "required_test_prefixes": [
             "native diagnostics"
           ]
+        },
+        {
+          "id": "native-button-interactions",
+          "runner": "native",
+          "command": [
+            "python3",
+            "scripts/native_button_acceptance.py"
+          ],
+          "test_paths": [
+            "tests/e2e/buttons-native.test.tsx"
+          ],
+          "timeout_seconds": 600,
+          "required_test_prefixes": [
+            "async buttons show internal loading and reject duplicate activation until success or failure",
+            "async buttons retain shared loading after remount and ignore a detached button completion",
+            "async button request guards clear after a rejected promise",
+            "immediate promise actions do not show loading or change control implementation",
+            "settings show loading for scan and export but not immediate appearance changes",
+            "async background picker loading survives a section change and clears when picking is cancelled",
+            "async install buttons remain busy after command submission and recover from a failed installation"
+          ]
+        },
+        {
+          "id": "native-theme-motion",
+          "runner": "native",
+          "command": [
+            "python3",
+            "scripts/native_theme_acceptance.py"
+          ],
+          "test_paths": [
+            "tests/e2e/theme-motion-native.test.tsx"
+          ],
+          "timeout_seconds": 180,
+          "required_test_prefixes": [
+            "native Gallery motion frames"
+          ]
         }
       ]
     },
@@ -565,7 +601,13 @@
             "shell archive archive-tampered",
             "shell archive wrong-identity",
             "shell archive invalid-signature",
-            "shell archive install-denied"
+            "shell archive install-denied",
+            "shell archive install-readonly",
+            "shell archive appkit-to-standard",
+            "shell archive interrupted-swap",
+            "shell archive wrong-architecture",
+            "shell archive gatekeeper-quarantine",
+            "shell archive applications-writable"
           ]
         }
       ]

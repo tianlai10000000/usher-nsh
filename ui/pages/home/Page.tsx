@@ -9,7 +9,7 @@ export function HomePage(props: PageProps) {
   return <View class="flex-1 items-center justify-center" style={spacing(palette).stack}>
     <Text style={headingLook(palette, "display")}>{t("home.greeting")}</Text>
     <ThemeButton palette={palette} label={t("home.click")} prominent native={false}
-      onPress={() => void props.session.change({ kind: "increment" })} />
+      onPress={() => props.session.change({ kind: "increment" })} />
     <Text style={{ color: palette().text }}>{t("home.clicks", { count: props.session.value().clicks })}</Text>
     <EffectiveAppearance appearance={props.appearance} />
   </View>;

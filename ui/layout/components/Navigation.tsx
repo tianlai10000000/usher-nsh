@@ -5,7 +5,7 @@
  * menus. The arrows also bind the platform's back and forward shortcuts for the mounted window.
  */
 import { keymap, platform, Text, View, windowSize } from "nsh";
-import { Button } from "nsh/base";
+import { AsyncButton } from "../../components/AsyncButton";
 import { SystemIcon } from "../../components/SystemIcon";
 import type { Navigation } from "../../router";
 import type { AppearanceStore } from "../../state/appearance";
@@ -28,26 +28,26 @@ export function HistoryControls(props: NavigationProps) {
 
   return (
     <View class="flex-row items-center" style={spacing(palette).text}>
-      <Button testID="nav-back" accessibilityLabel={t("nav.back")} disabled={!canGoBack()}
+      <AsyncButton palette={palette} iconOnly testID="nav-back" accessibilityLabel={t("nav.back")} disabled={!canGoBack()}
         tooltip={<ButtonTooltip appearance={props.appearance} testID="nav-back-tooltip" placement="bottom"
           label={t("nav.back")} />}
         style={{ ...iconButtonLook(palette, false, true).style, ...arrowAlignment }}
         hoverStyle={iconButtonLook(palette, false, true).hoverStyle}
         activeStyle={iconButtonLook(palette, false, true).activeStyle}
         focusStyle={iconButtonLook(palette, false, true).focusStyle}
-        disabledStyle={iconButtonLook(palette, false, true).disabledStyle} onPress={() => void goBack()}>
+        disabledStyle={iconButtonLook(palette, false, true).disabledStyle} onPress={() => goBack()}>
         <SystemIcon name="arrow.left" fallback="←" size={palette().metric.titlebarIcon} color={palette().text} />
-      </Button>
-      <Button testID="nav-forward" accessibilityLabel={t("nav.forward")} disabled={!canGoForward()}
+      </AsyncButton>
+      <AsyncButton palette={palette} iconOnly testID="nav-forward" accessibilityLabel={t("nav.forward")} disabled={!canGoForward()}
         tooltip={<ButtonTooltip appearance={props.appearance} testID="nav-forward-tooltip" placement="bottom"
           label={t("nav.forward")} />}
         style={{ ...iconButtonLook(palette, false, true).style, ...arrowAlignment }}
         hoverStyle={iconButtonLook(palette, false, true).hoverStyle}
         activeStyle={iconButtonLook(palette, false, true).activeStyle}
         focusStyle={iconButtonLook(palette, false, true).focusStyle}
-        disabledStyle={iconButtonLook(palette, false, true).disabledStyle} onPress={() => void goForward()}>
+        disabledStyle={iconButtonLook(palette, false, true).disabledStyle} onPress={() => goForward()}>
         <SystemIcon name="arrow.right" fallback="→" size={palette().metric.titlebarIcon} color={palette().text} />
-      </Button>
+      </AsyncButton>
     </View>
   );
 }
@@ -66,13 +66,13 @@ export function Breadcrumbs(props: NavigationProps) {
         {(crumb) => (
           <If when={crumb().current} else={
             <View class="min-w-0 flex-row items-center" style={spacing(palette).text}>
-              <Button testID={`breadcrumb-${crumb().id}`} class="min-w-0"
-                style={{ paddingHorizontal: palette().metric.textGap / 2, borderRadius: palette().metric.radiusItem / 2 }}
+              <AsyncButton palette={palette} testID={`breadcrumb-${crumb().id}`} class="min-w-0 flex-row items-center"
+                style={{ gap: palette().metric.textGap, paddingHorizontal: palette().metric.textGap / 2, borderRadius: palette().metric.radiusItem / 2 }}
                 hoverStyle={{ opacity: 0.7 }}
                 focusStyle={focusRing(palette)}
-                onPress={() => void navigate(crumb().id)}>
+                onPress={() => navigate(crumb().id)}>
                 <Text style={{ ...noteLook(palette), fontSize: palette().metric.fontBody, numberOfLines: 1 }}>{t(crumb().titleKey)}</Text>
-              </Button>
+              </AsyncButton>
               <SystemIcon name="chevron.right" fallback="›" size={9} color={palette().muted} />
             </View>
           }>

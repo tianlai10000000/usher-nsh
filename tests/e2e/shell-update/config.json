@@ -7,7 +7,13 @@
     "archive-tampered",
     "wrong-identity",
     "invalid-signature",
-    "install-denied"
+    "install-denied",
+    "install-readonly",
+    "appkit-to-standard",
+    "interrupted-swap",
+    "wrong-architecture",
+    "gatekeeper-quarantine",
+    "applications-writable"
   ],
   "settings": {
     "schemaVersion": 1,
@@ -36,5 +42,7 @@
     "wrong-identity": "rejected",
     "invalid-signature": "rejected",
     "install-denied": "disk"
-  }
+  },
+  "quarantineAttribute": "0083;00000000;UsherAcceptance;",
+  "applicationsDirectory": "/Applications"
 }

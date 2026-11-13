@@ -1,8 +1,11 @@
-import { Text } from "nsh";
+/** Composes themed controls with native adapters and optional inline busy feedback. */
+import { Text, View } from "nsh";
 import { Button, Input } from "nsh/base";
 import type { AppearanceStore } from "../state/appearance";
 import { buttonLook, fieldLook } from "../theme/look";
 import { AppKitButton } from "./AppKitControls";
+import { ProgressRing } from "./ProgressRing";
+import { useButtonAction } from "./AsyncButton";
 
 export type PaletteAccessor = AppearanceStore["palette"];
 
@@ -14,14 +17,18 @@ export function ThemeButton(props: {
   prominent?: boolean;
   native?: boolean;
   disabled?: boolean;
-  onPress: () => void;
+  loadingFeedback?: boolean;
+  busy?: boolean;
+  onPress: () => void | Promise<unknown>;
 }) {
+  const action = useButtonAction(props);
+  const supportsLoading = () => props.loadingFeedback === true || props.busy !== undefined;
   // The look is recomputed where it is read, so it follows the theme, the scheme and the accent.
   const look = () =>
-    buttonLook(props.palette, { kind: props.prominent ? "primary" : "secondary", selected: props.selected });
+    buttonLook(props.palette, { kind: props.prominent ? "primary" : "secondary", selected: props.selected, busy: action.busy() });
   return (
     <If
-      when={props.native !== false && props.palette().nativeAppKit}
+      when={props.native !== false && props.palette().nativeAppKit && !supportsLoading()}
       else={
         <Button
           testID={props.testID}
@@ -31,9 +38,22 @@ export function ThemeButton(props: {
           focusStyle={look().focusStyle}
           disabledStyle={look().disabledStyle}
           selected={props.selected}
-          disabled={props.disabled}
-          onPress={props.onPress}
+          disabled={action.disabled()}
+          onPress={action.run}
         >
+          <If when={supportsLoading()}>
+            <View style={{ width: props.palette().metric.controlIcon, height: props.palette().metric.controlIcon, flexShrink: 0 }}>
+              <If when={action.busy()}>
+                <ProgressRing
+                  palette={props.palette}
+                  size={props.palette().metric.controlIcon}
+                  progress={null}
+                  label={props.label}
+                  testID={props.testID ? `${props.testID}-loading` : undefined}
+                />
+              </If>
+            </View>
+          </If>
           <Text style={look().label}>{props.label}</Text>
         </Button>
       }
@@ -42,8 +62,8 @@ export function ThemeButton(props: {
         testID={props.testID}
         style={{ height: props.palette().metric.buttonHeight }}
         label={props.label}
-        enabled={!props.disabled}
-        onActivate={props.onPress}
+        enabled={!action.disabled()}
+        onActivate={action.run}
       />
     </If>
   );

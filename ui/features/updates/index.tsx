@@ -1,6 +1,6 @@
 /** Composes borrowed update projections and retains one native executor per Rust scope in this VM. */
 import * as native from "nsh/updater";
-import { openUrl } from "nsh";
+import { appInfo, openUrl } from "nsh";
 import type { AppearanceStore } from "../../state/appearance";
 import { createProjection } from "../../state/projection";
 import { nshRuntime, onDispose } from "../../state/runtime/nsh";
@@ -58,7 +58,7 @@ export function createUpdates(
     owner.dispose();
     if (shared && --shared.users === 0) shared.controller.detach();
   });
-  const view = () => presentation(owner.view.value());
+  const view = () => presentation(owner.view.value(), appInfo().development);
   async function dispatch(command: Parameters<typeof owner.view.dispatch>[0]) {
     error.write(null);
     try {

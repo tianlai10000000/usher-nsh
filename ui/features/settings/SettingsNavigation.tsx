@@ -4,6 +4,7 @@ import { Select, Tab, Tabs } from "nsh/base";
 import { AppKitPopup, AppKitSidebar } from "../../components/AppKitControls";
 import { SystemIcon } from "../../components/SystemIcon";
 import type { MessageKey } from "../../i18n";
+import { createSelectMotion } from "../../theme/motion";
 import { fieldLook, selectLook, spacing, tabLook } from "../../theme/look";
 import { isSettingsSection, settingsSections, type AppearanceStore } from "../../state/appearance";
 
@@ -74,6 +75,7 @@ export function SettingsNavigation(props: { appearance: AppearanceStore }) {
 export function SettingsSectionPicker(props: { appearance: AppearanceStore }) {
   const { palette, t, settingsSection } = props.appearance;
   const { items, choose, currentLabel } = useSections(props.appearance);
+  const popup = createSelectMotion(palette);
 
   return (
     <If
@@ -87,7 +89,8 @@ export function SettingsSectionPicker(props: { appearance: AppearanceStore }) {
             if (value !== null) choose(value);
           }}
           popupClass="border"
-          popupStyle={selectLook(palette).popupStyle}
+          popupStyle={{ ...selectLook(palette).popupStyle, ...popup.style }}
+          onOpen={popup.show} onClose={popup.hide}
           itemClass={selectLook(palette).itemClass}
           itemStyle={selectLook(palette).itemStyle}
           trigger={

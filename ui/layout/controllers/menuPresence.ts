@@ -48,11 +48,12 @@ export function createMenuPresence(appearance: AppearanceStore) {
       LayoutAnimation.configureNext(LayoutAnimation.create(palette().metric.layoutMs, "easeInEaseOut", "opacity"));
     }
     dockedLocal.set(wanted);
-    void setSidebarDocked(wanted);
+    const saving = setSidebarDocked(wanted);
     settleTimer = setTimeout(() => {
       sliding = false;
       settle();
     }, slideMs());
+    return saving;
   }
 
   function toggle() {
@@ -61,7 +62,7 @@ export function createMenuPresence(appearance: AppearanceStore) {
       return;
     }
     wanted = !wanted;
-    settle();
+    return settle();
   }
 
   return { wide, docked, mounted, drawerOpen, toggle };

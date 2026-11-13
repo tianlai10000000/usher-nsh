@@ -6,16 +6,19 @@ import { ThemeButton } from "../../components/ThemeControls";
 import { SystemIcon } from "../../components/SystemIcon";
 import { diagnosticLevels, type AppearanceStore, type DiagnosticLevel, type DiagnosticOutput } from "../../state/appearance";
 import type { MessageKey } from "../../i18n";
+import { createSelectMotion } from "../../theme/motion";
 import config from "../../config/diagnostics.json";
-import { fieldLook, groupLook, headingLook, noteLook, rowLook, sectionTitleLook, selectLook, spacing, switchLook } from "../../theme/look";
+import { fieldLook, groupLook, headingLook, noteLook, rowLook, sectionTitleLook, selectLook, spacing, switchLook, createSwitchLook } from "../../theme/look";
 
 function Choice(props: { appearance: AppearanceStore; id: string; label: string; value: string; items: { id: string; label: string }[]; disabled?: boolean; change: (value: string) => void }) {
   const { palette } = props.appearance;
+  const popup = createSelectMotion(palette);
   const title = () => props.items.find(item => item.id === props.value)?.label ?? "";
   return <If when={palette().nativeAppKit} else={
     <Select accessibilityLabel={props.label} disabled={props.disabled}
       items={props.items.map(item => ({ value: item.id, title: item.label }))} value={props.value}
-      popupClass="border" popupStyle={selectLook(palette).popupStyle}
+      popupClass="border" popupStyle={{ ...selectLook(palette).popupStyle, ...popup.style }}
+      onOpen={popup.show} onClose={popup.hide}
       itemClass={selectLook(palette).itemClass} itemStyle={selectLook(palette).itemStyle}
       onChange={({ value }) => { if (value !== null) props.change(value); }}
       trigger={<View testID={props.id} accessibilityLabel={props.label} class="flex-row items-center justify-between" style={fieldLook(palette).style} hoverStyle={fieldLook(palette).hoverStyle}>
@@ -31,6 +34,7 @@ function Choice(props: { appearance: AppearanceStore; id: string; label: string;
 function OutputRow(props: { appearance: AppearanceStore; output: string; divider: boolean; available: boolean }) {
   const { palette, t, busy } = props.appearance;
   const checked = () => props.available && props.appearance.diagnosticOutput(props.output as DiagnosticOutput);
+  const animatedSwitch = createSwitchLook(palette, checked);
   const label = () => t(`diagnostics.output.${props.output}` as MessageKey);
   return <View class="flex-row items-center" style={rowLook(palette, { divider: props.divider })}>
     <View class="min-w-0 flex-1" style={spacing(palette).text}>
@@ -41,7 +45,7 @@ function OutputRow(props: { appearance: AppearanceStore; output: string; divider
     {/* Temporary save protection must not dim every connected output. */}
     <Switch testID={`diagnostic-output-${props.output}`} accessibilityLabel={label()} checked={checked()}
       disabled={!props.available || busy()} disabledStyle={props.available ? undefined : switchLook(palette, checked()).disabledStyle}
-      trackStyle={switchLook(palette, checked()).trackStyle} thumbStyle={switchLook(palette, checked()).thumbStyle}
+      trackClass={animatedSwitch.trackClass} trackStyle={animatedSwitch.trackStyle} thumbStyle={animatedSwitch.thumbStyle}
       focusStyle={switchLook(palette, checked()).focusStyle}
       onChange={({ checked }) => { if (props.available) void props.appearance.chooseDiagnosticOutput(props.output as DiagnosticOutput, checked); }} />
   </View>;
@@ -102,8 +106,9 @@ export function DiagnosticsSettings(props: { appearance: AppearanceStore }) {
                 items={config.ranges.map(item => ({ id: item.id, label: t(`diagnostics.range.${item.id}` as MessageKey) }))}
                 change={value => { if (config.ranges.some(item => item.id === value)) range.set(value); }} />
             </View>
-            <ThemeButton palette={palette} prominent testID="diagnostic-export" label={t(exportState().kind === "running" ? "diagnostics.exporting" : "diagnostics.export")}
-              disabled={exportState().kind === "running"} onPress={() => void props.appearance.exportDiagnostics(days())} />
+            <ThemeButton palette={palette} prominent testID="diagnostic-export" loadingFeedback label={t("diagnostics.export")}
+              busy={exportState().kind === "running"}
+              disabled={exportState().kind === "running"} onPress={() => props.appearance.exportDiagnostics(days())} />
           </View>
           <If when={exportState().kind === "done"}><Text testID="diagnostic-export-done" style={{ ...noteLook(palette, "text"), numberOfLines: 0 }}>{t("diagnostics.exported", { name: exportState().name ?? "" })}</Text></If>
           <If when={exportState().kind === "error" && exportState().text}><Text testID="diagnostic-export-error" style={{ ...noteLook(palette), numberOfLines: 0 }}>{t(exportState().text ?? "diagnostics.error.diagnostics_export_failed")}</Text></If>

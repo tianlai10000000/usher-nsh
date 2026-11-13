@@ -131,7 +131,7 @@ export function ThemeSettings(props: { appearance: AppearanceStore; busy: () => 
                           label={choice().label}
                           selected={props.appearance.themeId() === choice().id}
                           disabled={props.busy()}
-                          onPress={() => void props.appearance.chooseTheme(choice().id)}
+                          onPress={() => props.appearance.chooseTheme(choice().id)}
                         />
                       )}
                     </Each>
@@ -159,11 +159,11 @@ export function ThemeSettings(props: { appearance: AppearanceStore; busy: () => 
                 placeholder={t("theme.accentPlaceholder")} value={accentDraft()} onChange={(value) => accentDraft.set(value)} />
               <View class="flex-row flex-wrap justify-end" style={spacing(palette).wrap}>
                 <ThemeButton palette={palette} testID="accent-apply" label={t("theme.applyAccent")}
-                  disabled={props.busy()} onPress={() => void props.appearance.setAccent(accentDraft().trim())} />
+                  disabled={props.busy()} onPress={() => props.appearance.setAccent(accentDraft().trim())} />
                 <ThemeButton palette={palette} testID="accent-reset" label={t("theme.accentDefault")}
                   disabled={props.busy()} onPress={() => {
                     accentDraft.set("");
-                    void props.appearance.setAccent(null);
+                    return props.appearance.setAccent(null);
                   }} />
               </View>
             </View>
@@ -198,26 +198,27 @@ export function ThemeSettings(props: { appearance: AppearanceStore; busy: () => 
             </View>
             <View class="min-w-0 flex-1 flex-row flex-wrap items-center justify-end" style={spacing(palette).wrap}>
               <If when={canOpenDirectory}>
-                <ThemeButton palette={palette} testID="theme-directory-open" label={t("theme.openDirectory")}
+                <ThemeButton palette={palette} testID="theme-directory-open" loadingFeedback label={t("theme.openDirectory")}
+                  busy={props.appearance.openingDirectory()}
                   disabled={props.busy() || props.appearance.openingDirectory()}
-                  onPress={() => void props.appearance.openThemeDirectory()} />
+                  onPress={() => props.appearance.openThemeDirectory()} />
               </If>
-              <ThemeButton palette={palette} testID="theme-directory-rescan" label={t("theme.rescan")}
-                disabled={props.busy()} onPress={() => void props.appearance.rescanThemes()} />
+              <ThemeButton palette={palette} testID="theme-directory-rescan" loadingFeedback label={t("theme.rescan")}
+                disabled={props.busy()} onPress={() => props.appearance.rescanThemes()} />
             </View>
           </View>
           <View class="flex-row flex-wrap items-center justify-end" style={{ ...rowLook(palette, { divider: true }), ...spacing(palette).wrap }}>
             <ThemeButton palette={palette} testID="theme-add" label={t("theme.add")}
               disabled={props.busy()} onPress={() => createDraft()} />
             <If when={selectedStyle() !== undefined && props.appearance.selectedCustomTheme() === undefined}>
-              <ThemeButton palette={palette} testID="theme-clone" label={t("theme.cloneStyle")}
-                disabled={props.busy()} onPress={() => void duplicateStyle()} />
+              <ThemeButton palette={palette} testID="theme-clone" loadingFeedback label={t("theme.cloneStyle")}
+                disabled={props.busy()} onPress={() => duplicateStyle()} />
             </If>
             <If when={props.appearance.selectedCustomTheme() !== undefined}>
               <ThemeButton palette={palette} testID="theme-edit" label={t("theme.edit")}
                 disabled={props.busy()} onPress={() => edit(props.appearance.selectedCustomTheme())} />
-              <ThemeButton palette={palette} testID="theme-remove" label={t("theme.remove")}
-                disabled={props.busy()} onPress={() => void props.appearance.removeTheme(props.appearance.themeId())} />
+              <ThemeButton palette={palette} testID="theme-remove" loadingFeedback label={t("theme.remove")}
+                disabled={props.busy()} onPress={() => props.appearance.removeTheme(props.appearance.themeId())} />
             </If>
           </View>
           <If when={draft() !== null}>
@@ -269,8 +270,8 @@ export function ThemeSettings(props: { appearance: AppearanceStore; busy: () => 
                 </View>
               </View>
               <View class="flex-row flex-wrap justify-end" style={spacing(palette).wrap}>
-                <ThemeButton palette={palette} testID="theme-save" label={t("theme.save")}
-                  prominent disabled={props.busy()} onPress={() => void save()} />
+                <ThemeButton palette={palette} testID="theme-save" loadingFeedback label={t("theme.save")}
+                  prominent disabled={props.busy()} onPress={() => save()} />
                 <ThemeButton palette={palette} testID="theme-cancel" label={t("theme.cancel")}
                   onPress={() => draft.set(null)} />
               </View>

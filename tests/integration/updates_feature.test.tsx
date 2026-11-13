@@ -28,8 +28,15 @@ test("updates feature checks whole-app updates, renders progress and preserves r
     await app.press("id:update-panel-close");
     await app.press("id:update-download");
     await app.waitFor("id:rail-update-progress");
+    await app.waitFor("id:update-download >> id:update-download-loading");
+    expect(app.enabled("id:update-download")).toBe(false);
+    await expect(app.press("id:update-download")).rejects.toMatchObject({ code: "ERR_NSH_TEST_DISABLED" });
     expect(app.enabled("id:rail-update")).toBe(false);
     expect(app.texts()).toContain("Downloads:1");
+    await app.press("id:settings-section-general");
+    await app.press("id:settings-section-updates");
+    await app.waitFor("id:update-download >> id:update-download-loading");
+    expect(app.enabled("id:update-download")).toBe(false);
     await app.press("id:finish-download");
     await app.waitFor("id:update-install");
     expect(app.enabled("id:rail-update")).toBe(true);
@@ -167,6 +174,13 @@ test("updates feature hides an idle rail entry, shows a checking ring and hides 
     await app.press("id:scenario-checking");
     await app.press("id:update-check");
     await app.waitFor("id:update-checking-ring");
+    await app.waitFor("id:update-check >> id:update-check-loading");
+    expect(app.enabled("id:update-check")).toBe(false);
+    expect(app.shows("id:update-check >> text:Check for updates")).toBe(true);
+    await expect(app.press("id:update-check")).rejects.toMatchObject({
+      code: "ERR_NSH_TEST_DISABLED",
+    });
+    expect(app.texts()).toContain("Checks:1");
     expect(app.enabled("id:rail-update")).toBe(false);
     expect(app.shows("id:rail-update-progress")).toBe(false);
     expect(app.shows("id:rail-update-symbol")).toBe(false);
@@ -177,6 +191,7 @@ test("updates feature hides an idle rail entry, shows a checking ring and hides 
     await app.waitFor("text:You’re up to date");
     await app.waitFor("id:rail-update", { state: "gone" });
     expect(app.enabled("id:update-check")).toBe(true);
+    expect(app.shows("id:update-check-loading")).toBe(false);
   } finally {
     app.dispose();
   }
@@ -195,6 +210,41 @@ test("updates feature keeps background check failures quiet while preserving the
     await app.press("id:update-check");
     await app.waitFor("id:rail-update-symbol");
     expect(app.enabled("id:rail-update")).toBe(true);
+  } finally {
+    app.dispose();
+  }
+});
+
+test("updates feature shows busy feedback inside the popover action without changing rail interaction", async () => {
+  const app = await open(entry, options);
+  try {
+    await settings(app);
+    await app.press("id:scenario-offline");
+    await app.press("id:update-check");
+    await app.waitFor("id:rail-update-symbol");
+    await app.press("id:scenario-checking");
+    await app.press("id:rail-update");
+    await app.waitFor("id:update-panel-close");
+    expect(app.texts()).toContain("Checks:1");
+
+    const action = "id:update-panel-details >> id:update-check";
+    await app.press(action);
+    await app.waitFor(`${action} >> id:update-check-loading`);
+    expect(app.shows(`${action} >> text:Check for updates`)).toBe(true);
+    expect(app.enabled(action)).toBe(false);
+    await expect(app.press(action)).rejects.toMatchObject({
+      code: "ERR_NSH_TEST_DISABLED",
+    });
+    expect(app.texts()).toContain("Checks:2");
+    expect(app.shows("id:update-checking-ring")).toBe(true);
+    expect(app.enabled("id:rail-update")).toBe(false);
+
+    await app.press("id:update-panel-close");
+    expect(app.shows("id:update-checking-ring")).toBe(true);
+    expect(app.texts()).toContain("Checks:2");
+    await app.press("id:finish-check");
+    await app.waitFor("id:rail-update", { state: "gone" });
+    expect(app.enabled("id:update-check")).toBe(true);
   } finally {
     app.dispose();
   }

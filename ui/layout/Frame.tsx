@@ -12,7 +12,7 @@
  * children. WindowBackdrop owns the material and image layers beneath all interactive regions.
  */
 import { platform, safeArea, View } from "nsh";
-import { Dialog } from "nsh/base";
+import { Sheet } from "nsh/base";
 import type { JSX } from "nsh/jsx-runtime";
 import type { Navigation } from "../router";
 import type { AppearanceStore } from "../state/appearance";
@@ -78,16 +78,17 @@ export function Frame(props: {
         <StatusBar appearance={props.appearance} />
       </If>
 
-      <Dialog testID="sidebar-drawer" open={menu.drawerOpen()} animation="none"
-        class="self-start"
-        style={{ height: "100%", width: palette().metric.menuWidth,
+      <Sheet open={menu.drawerOpen()} side="left"
+        popupStyle={{ height: "100%", width: palette().metric.menuWidth,
           backgroundColor: contentBackgroundColor(palette().background, props.appearance.contentBackgroundTransparency()),
           paddingTop: safeArea().top + palette().metric.panelInset, paddingBottom: safeArea().bottom }}
         backdropStyle={{ backgroundColor: palette().scrim }}
         onOpenChange={({ open }) => menu.drawerOpen.set(open)}>
-        <SecondaryMenu appearance={props.appearance} navigation={props.navigation}
-          onNavigate={() => menu.drawerOpen.set(false)} />
-      </Dialog>
+        <View testID="sidebar-drawer" class="min-h-0 flex-1">
+          <SecondaryMenu appearance={props.appearance} navigation={props.navigation}
+            onNavigate={() => menu.drawerOpen.set(false)} />
+        </View>
+      </Sheet>
     </View>
   );
 }

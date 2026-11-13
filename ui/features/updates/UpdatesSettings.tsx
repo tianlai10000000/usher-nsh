@@ -1,5 +1,5 @@
 /** The update settings section reads a shared projection and dispatches semantic commands. */
-import { reduceMotion, Text, View } from "nsh";
+import { Text, View } from "nsh";
 import { Progress, Switch } from "nsh/base";
 import type { AppearanceStore } from "../../state/appearance";
 import type { UpdateActions } from "./index";
@@ -10,6 +10,8 @@ import {
   rowLook,
   spacing,
   switchLook,
+  createProgressLook,
+  createSwitchLook,
 } from "../../theme/look";
 
 export function UpdateDetails(
@@ -22,6 +24,10 @@ export function UpdateDetails(
   const { palette, t } = props.appearance;
   const updates = props.updates;
   const view = updates.view;
+  const downloading = () => updates.data().domain?.phase.type === "downloading";
+  const progress = createProgressLook(palette, () => (view().progress ?? 0) * 100,
+    () => downloading() && view().progress === null);
+  const installing = () => ["installing", "awaiting_first_launch"].includes(updates.data().domain?.phase.type ?? "");
   return (
     <View
       testID={props.testID ?? "update-details"}
@@ -49,26 +55,9 @@ export function UpdateDetails(
           accessibilityLabel={t("update.downloading", {
             version: view().candidate?.version ?? "",
           })}
-          trackStyle={{
-            height: palette().metric.sliderTrack,
-            backgroundColor: palette().border,
-          }}
-          indicatorStyle={{
-            height: palette().metric.sliderTrack,
-            backgroundColor: palette().accent,
-            ...(view().progress === null
-              ? {
-                width: `${
-                  palette().metric.updateSegment * 100
-                }%` as `${number}%`,
-                animationName: reduceMotion()
-                  ? "none" as const
-                  : "pulse" as const,
-                animationDuration: palette().metric.updateSpinMs,
-                animationIterationCount: "infinite" as const,
-              }
-              : {}),
-          }}
+          onLayout={progress.onLayout}
+          trackStyle={progress.trackStyle}
+          indicatorStyle={progress.indicatorStyle}
         />
       </If>
       <If when={view().ready && view().candidate?.kind === "package"}>
@@ -81,34 +70,39 @@ export function UpdateDetails(
       </If>
       <View
         testID="update-actions"
-        class="flex-row flex-wrap items-center"
+        class="flex-row items-center"
         style={{ ...spacing(palette).wrap, width: "100%" }}
       >
-        <If when={view().canDownload}>
+        <If when={view().canDownload || downloading()}>
           <ThemeButton
             palette={palette}
-            testID="update-download"
+            testID="update-download" loadingFeedback
             prominent
+            busy={downloading()}
+            disabled={view().working}
             label={t("update.download")}
-            onPress={() => void updates.download()}
+            onPress={() => updates.download()}
           />
         </If>
-        <If when={view().ready}>
+        <If when={view().ready || installing()}>
           <ThemeButton
             palette={palette}
-            testID="update-install"
+            testID="update-install" loadingFeedback
             prominent
+            busy={installing()}
             label={t("update.restart")}
-            onPress={() => void updates.install()}
+            onPress={() => updates.install()}
           />
         </If>
-        <If when={!view().ready}>
+        <If when={!view().ready && !installing()}>
           <ThemeButton
             palette={palette}
-            testID="update-check"
-            label={t(view().canRetryCheck ? "update.retry" : "update.check")}
+            testID="update-check" loadingFeedback
+            native={false}
+            busy={updates.data().domain?.phase.type === "checking"}
+            label={t("update.check")}
             disabled={!view().canCheck}
-            onPress={() => void updates.check()}
+            onPress={() => updates.check()}
           />
         </If>
         <If
@@ -118,9 +112,9 @@ export function UpdateDetails(
         >
           <ThemeButton
             palette={palette}
-            testID="update-manual"
+            testID="update-manual" loadingFeedback
             label={t("update.manualDownload")}
-            onPress={() => void updates.manual()}
+            onPress={() => updates.manual()}
           />
         </If>
       </View>
@@ -133,6 +127,7 @@ export function UpdatesSettings(
   const { palette, t } = props.appearance;
   const data = props.updates.data;
   const enabled = () => data().domain?.auto_check ?? true;
+  const animatedSwitch = createSwitchLook(palette, enabled);
   const unknown = () => t("update.unknown");
   return (
     <View testID="settings-updates" style={spacing(palette).stack}>
@@ -158,8 +153,9 @@ export function UpdatesSettings(
             accessibilityLabel={t("update.autoCheck")}
             checked={enabled()}
             disabled={!data().domain}
-            trackStyle={switchLook(palette, enabled()).trackStyle}
-            thumbStyle={switchLook(palette, enabled()).thumbStyle}
+            trackClass={animatedSwitch.trackClass}
+            trackStyle={animatedSwitch.trackStyle}
+            thumbStyle={animatedSwitch.thumbStyle}
             focusStyle={switchLook(palette, enabled()).focusStyle}
             onChange={({ checked }) => void props.updates.autoCheck(checked)}
           />

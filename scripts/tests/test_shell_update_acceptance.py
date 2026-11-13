@@ -45,6 +45,36 @@ class ShellAcceptanceTests(unittest.TestCase):
             self.assertEqual(contents.getmember('Original.app/Contents/MacOS/alias').linkname, 'app')
             self.assertEqual({p.name.split('/')[0] for p in contents}, {'Original.app'})
 
+    def test_build_variants_use_distinct_explicit_native_configuration(self):
+        for appkit in (False, True):
+            output = self.root / str(appkit)
+            output.mkdir()
+            (output / 'Fixture.app').mkdir()
+            with patch.object(shell.sim, 'run') as run, patch.object(shell.sim, 'validate_app'):
+                shell.build_app(self.root, output, 'acceptance.unique', 10, appkit=appkit)
+            self.assertEqual(run.call_args_list[0].kwargs['env']['USHER_MACOS_APPKIT'], str(int(appkit)))
+            self.assertEqual(run.call_args_list[1].args[0][:4], ['codesign', '--verify', '--deep', '--strict'])
+
+    def test_gatekeeper_rejection_requires_a_valid_bundle_and_verified_quarantine(self):
+        fixture = {'quarantineAttribute': 'test-quarantine'}
+        with patch.object(shell.sim, 'run', side_effect=[Mock(), Mock(), Mock(stdout='test-quarantine\n')]) as run, \
+             patch.object(shell.subprocess, 'run', return_value=Mock(returncode=3, stdout='', stderr='app: rejected')) as assess:
+            evidence = shell.assess_gatekeeper(self.root / 'Fixture.app', fixture, 10)
+        self.assertEqual(evidence['exit_code'], 3)
+        self.assertIn('Synthetic', evidence['known_limitation'])
+        self.assertEqual(run.call_args_list[0].args[0][:4], ['codesign', '--verify', '--deep', '--strict'])
+        self.assertIn('--assess', assess.call_args.args[0])
+        self.assertNotIn('--master-disable', assess.call_args.args[0])
+
+    def test_gatekeeper_unexpected_success_or_tool_failure_cannot_count_as_rejection(self):
+        for result in (Mock(returncode=0, stdout='accepted', stderr=''),
+                       Mock(returncode=1, stdout='', stderr='assessment service unavailable')):
+            with self.subTest(code=result.returncode), \
+                 patch.object(shell.sim, 'run', return_value=Mock(stdout='fixture')), \
+                 patch.object(shell.subprocess, 'run', return_value=result):
+                with self.assertRaisesRegex(RuntimeError, 'unexpected Gatekeeper'):
+                    shell.assess_gatekeeper(self.root, {'quarantineAttribute': 'fixture'}, 10)
+
     def test_inventory_detects_overlay_leftovers_bytes_permissions_and_links(self):
         app = self.app()
         original = shell.inventory(app)
@@ -191,6 +221,7 @@ class ShellAcceptanceTests(unittest.TestCase):
              patch.object(shell.sim, 'COMMAND_LOG'), patch.object(shell.sim, 'run', return_value=Mock(stdout='{"ready":true}')), \
              patch.object(shell.sim, 'make_keys', return_value={}), patch.object(shell.sim.socket, 'socket', return_value=socket), \
              patch.object(shell, 'stage_sources', return_value=self.root), patch.object(shell, 'build_app', return_value=app), \
+             patch.object(shell, 'verify_interposer', return_value=[]), \
              patch.object(shell, 'run_case', side_effect=interrupt_cleanup):
             self.assertEqual(shell.main(), 1)
         evidence = json.loads(next(self.root.glob('shell-update-*/report.json')).read_text())

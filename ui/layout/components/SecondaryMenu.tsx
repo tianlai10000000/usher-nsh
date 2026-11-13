@@ -7,7 +7,7 @@
  * this file only draws the panel and reports navigation.
  */
 import { Text, View } from "nsh";
-import { Button } from "nsh/base";
+import { AsyncButton } from "../../components/AsyncButton";
 import { SystemIcon } from "../../components/SystemIcon";
 import navigationIcons from "../../config/navigation-icons.json";
 import { contentBackgroundColor, menuItemLook } from "../../theme/look";
@@ -29,14 +29,14 @@ export function SecondaryMenu(props: {
     const look = () => menuItemLook(palette, selected());
     const icon = navigationIcons[id];
     return (
-      <Button testID={`route-${id}`}
+      <AsyncButton palette={palette} testID={`route-${id}`}
         selected={selected()}
         style={{ ...look().style, paddingHorizontal: palette().metric.sidebarItemPadX, gap: palette().metric.wrapGap }}
         hoverStyle={look().hoverStyle}
         activeStyle={look().activeStyle}
         focusStyle={look().focusStyle}
         onPress={() => {
-          void navigate(id).then(result => {
+          return navigate(id).then(result => {
             if (result === "committed" || result === "duplicated") props.onNavigate?.();
           });
         }}>
@@ -47,7 +47,7 @@ export function SecondaryMenu(props: {
           style={{ ...look().label, numberOfLines: 1 }}>
           {t(routes[id].titleKey)}
         </Text>
-      </Button>
+      </AsyncButton>
     );
   }
 

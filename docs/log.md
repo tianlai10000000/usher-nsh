@@ -1,10 +1,10 @@
-# 日志模块架构与实施记录
+# 日志模块架构
 
-本文记录独立 `usher-logging` 的边界、既定取舍、实施批次及验收。方案已获授权实施；日志重构与更新业务批次分别管理。相关约束见 [开发规范](../CONTRIBUTING.md)、[项目架构](../architecture.md#8-诊断日志)、[测试方案](testing.md)及[更新方案 8.6](update.md#86-日志-crate)。
+本文规定独立 `usher-logging` 的边界、接口与后端设计。批次及验收统一见 [迭代台账](todo.md#logging)。相关约束见 [开发规范](../CONTRIBUTING.md)、[项目架构](../architecture.md#8-诊断日志)、[测试架构](testing.md)及[更新方案 8.6](update.md#86-日志-crate)。
 
 ## 1. 目标与原有文档
 
-原有日志说明分布在 architecture.md 第 8 节、docs/update.md 第 8.6 节、scaffolding.md 批次 05、中英文 README 和状态管理文档中。此前已把主体搬入 `crates/usher-logging/`，但仍公开 JSON、时间、路径、分片和归档辅助函数，业务容易依赖具体实现。本次收敛为普通日志门面、装配接口和私有后端，迁移全部既有调用点。
+`crates/usher-logging/` 对外提供稳定门面与装配接口，JSON、时间、路径、分片和归档等具体实现保留在私有后端。业务通过公共契约调用，不依赖底层辅助函数。
 
 普通业务只需输出事件、打印结构化日志、查询过滤条件和设置等级。替换底层输出实现时，更改日志 crate 的适配器与装配选择，业务、页面和更新状态机保持同一调用契约。不发布到 crates.io，不增加远程收集、第三方库全局拦截或运行中无损替换协议。
 
@@ -112,19 +112,6 @@ if let Some(log) = usher_logging::current() {
 
 本次保留旧行为的明确限制：WARN / ERROR 等待入队，`flush(timeout)` 的 timeout 只覆盖发送后的确认等待；阻塞发送与线程 join 没有总截止时间。flush 确认表示队列屏障，不保证 durable write；刷新错误不由该 bool 表达。退出与 panic 刷新也不承诺异常进程终止无丢失。盘满、强杀、跨平台分享另行验收，不将这些问题混入接口重构。
 
-## 8. 实施批次与迁移清单
-
-| 批次 | 状态 | 交付 |
-| --- | --- | --- |
-| LG1 普通门面 | 已实施 | 自有 Level / Fields / LogKind / Submit，移除公开底层辅助 API |
-| LG2 私有后端 | 已实施 | 模块按职责拆分，LogWriter / ArchiveProvider，保留文件语义和配置 |
-| LG3 应用适配 | 已实施 | 健康观察者、设置事务和归档桥接迁移；旧设置兼容 |
-| LG4 全部日志调用 | 已实施 | 启动、等级变更、TSX 短事件、更新记录 / detail、安装前刷新、panic / exit |
-| LG5 分层验证 | 已实施 | 模块单测、公共契约 mock / 真实文件对照、应用集成、桥接及 UI 命令进入现有 CI |
-| LG6 类型控制与页面 | 已实施 | 三个实际开关，两个不可用占位，分区换序与诊断页重排；无真实终端 / 内存采集 |
-
-迁移采用现有 `usher-logging`，未新增第二套日志系统。`usher-update` 的领域 Level / Record 不迁入 logger，避免把 I/O 依赖带进纯规则。`src/diagnostic_state.rs` 与 `diagnostic_bridge.rs` 留在应用，测试辅助 Capture 留在日志 crate 的 tests/support，不进入运行时依赖或通用测试工具 crate。
-
 ## 9. 测试架构与命令
 
 所有命令从项目根目录执行，NSH 命令串行运行。统一入口写入 target/test-reports，拒绝零用例、跳过、过滤或必测组缺失；CI 使用相同入口。
@@ -141,7 +128,3 @@ if let Some(log) = usher_logging::current() {
 mock 矩阵为四类事件 × 六档过滤配置 × 六档提交等级，包含 OFF 无事件；逐输出核对确切记录，不只检查 enabled 返回值。另枚举全部 32 种输出 / 采集标志组合，覆盖动态切换、已入队目标关闭、不向新目标补写、字段脱敏、后端局部失败和非有限值。真实文件适配器与 Capture 对照全部类型 / 等级的结果。终端 / 内存事件是合成输入，不能据此宣称真实采集已接入。
 
 队列单测使用通道暂停写入器、确定占满队列、检查丢弃计数与 WARN / ERROR 保留，不依赖吞吐压测碰巧占满。每例独立 Runtime / 临时根；仅进程生命周期单测使用串行保护的全局安装。不要把日志专有 mock 放进 usher-test-support，不增加测试用公开内部函数，不把 mock 页计为真实桥接或平台验收。
-
-## 10. 本次验收
-
-本机 macOS arm64 已通过 20 项日志单测、13 项公共契约、241 项工作区测试、44 项应用集成、43 项 state-ui、30 项 UI 与 5 项原生验收。原生宽窄屏和归档区域截图已核对；完整结果见 [测试方案第 26 节](testing.md#26-日志门面类型控制与诊断页2026-11-13) 与 [批次 05](../scaffolding.md#批次-05--诊断日志--部分完成)。当前未验收 Windows、Linux、Android、iOS 的宿主输出 / 分享、真实盘满和进程强杀；它们继续作为平台缺口保留。

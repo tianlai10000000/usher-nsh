@@ -47,7 +47,28 @@
     "finish-raised-edge": "@finishes.raised.borderColor",
     "finish-hover-edge": "@finishes.hover.borderColor",
     "finish-pressed-edge": "@finishes.pressed.borderColor",
-    "finish-accent-edge": "@finishes.accent.borderColor"
+    "finish-accent-edge": "@finishes.accent.borderColor",
+    "finish-track-edge": "@finishes.track.borderColor",
+    "finish-track-shadow": "@finishes.track.boxShadow",
+    "finish-fill-image": "@finishes.fill.backgroundImage",
+    "finish-fill-edge": "@finishes.fill.borderColor",
+    "finish-fill-shadow": "@finishes.fill.boxShadow",
+    "finish-knob-fill": "@finishes.knob.backgroundColor",
+    "finish-knob-image": "@finishes.knob.backgroundImage",
+    "finish-knob-edge": "@finishes.knob.borderColor",
+    "finish-knob-shadow": "@finishes.knob.boxShadow",
+    "finish-knob-on-fill": "@finishes.knobOn.backgroundColor",
+    "finish-knob-on-image": "@finishes.knobOn.backgroundImage",
+    "finish-knob-on-edge": "@finishes.knobOn.borderColor",
+    "finish-knob-on-shadow": "@finishes.knobOn.boxShadow",
+    "finish-thumb-fill": "@finishes.thumb.backgroundColor",
+    "finish-thumb-image": "@finishes.thumb.backgroundImage",
+    "finish-thumb-edge": "@finishes.thumb.borderColor",
+    "finish-thumb-shadow": "@finishes.thumb.boxShadow",
+    "finish-menu-fill": "@finishes.menu.backgroundColor",
+    "finish-menu-edge": "@finishes.menu.borderColor",
+    "finish-menu-shadow": "@finishes.menu.boxShadow",
+    "finish-on-edge": "@finishes.on.borderColor"
   },
   "metrics": {
     "size-button": [
@@ -225,6 +246,118 @@
     "feedback-disabled-opacity": [
       0.5,
       "look/button.ts disabledStyle"
+    ],
+    "size-slider-track": [
+      6,
+      "slider.ts sliderLook pointer rail"
+    ],
+    "size-slider-thumb": [
+      14,
+      "slider.ts sliderLook pointer thumb"
+    ],
+    "radius-popup": [
+      10,
+      "popup.tsx popupSurface"
+    ],
+    "radius-tooltip": [
+      6,
+      "look/overlay.ts tooltipLook rounded-md"
+    ],
+    "size-slider-band": [
+      20,
+      "slider.ts sliderLook pointer band"
+    ],
+    "size-scrollbar": [
+      16,
+      "scrollbar-theme.ts vertical w-4"
+    ],
+    "size-scrollbar-thumb": [
+      6,
+      "scrollbar-theme.ts pointer w-1.5"
+    ],
+    "size-scrollbar-thumb-hover": [
+      8,
+      "scrollbar-theme.ts hover:w-2"
+    ],
+    "space-scrollbar-inset": [
+      4,
+      "scrollbar-theme.ts pointer p-1"
+    ],
+    "motion-scrollbar-enter": [
+      300,
+      "scrollbar-theme.ts motion.enter"
+    ],
+    "motion-scrollbar-exit": [
+      500,
+      "scrollbar-theme.ts motion.exit"
+    ],
+    "motion-scrollbar-idle-seconds": [
+      2,
+      "scrollbar-theme.ts motion.idle / 1000 (seconds)"
+    ],
+    "motion-switch-stiffness": [
+      504,
+      "theme.ts motion.move.stiffness"
+    ],
+    "motion-switch-damping": [
+      38,
+      "theme.ts motion.move.damping"
+    ],
+    "motion-popup": [
+      150,
+      "popup.tsx popIn duration"
+    ],
+    "space-popup-travel": [
+      4,
+      "popup.tsx popIn distance"
+    ],
+    "space-tooltip-travel": [
+      3,
+      "popup.tsx createPresence distance"
+    ],
+    "feedback-popup-scale": [
+      0.96,
+      "popup.tsx popIn scale"
+    ],
+    "feedback-button-hover-opacity": [
+      0.94,
+      "look/button.ts primary hoverStyle"
+    ],
+    "feedback-button-active-opacity": [
+      0.88,
+      "look/button.ts primary activeStyle"
+    ],
+    "effect-slider-hover": [
+      "brightness(1.05)",
+      "slider.ts thumbClass hover:brightness-105"
+    ],
+    "effect-slider-active": [
+      "brightness(0.95)",
+      "slider.ts thumbClass active:brightness-95"
+    ],
+    "curve-popup": [
+      "cubic-bezier(0.16, 1, 0.3, 1)",
+      "popup.tsx popIn easing"
+    ],
+    "curve-progress": [
+      "cubic-bezier(0.2, 0, 0, 1)",
+      "look/meter.ts progressGlide"
+    ],
+    "curve-sweep": [
+      "cubic-bezier(0.42, 0, 0.58, 1)",
+      "look/meter.ts progressSweep"
+    ],
+    "motion-progress": [
+      180,
+      "look/meter.ts progressGlide"
+    ],
+    "motion-progress-sweep": [
+      800,
+      "look/meter.ts progressSweep"
+    ],
+    "feedback-progress-segment": [
+      0.3333333333333333,
+      "look/meter.ts indeterminate w-1/3"
     ]
   },
   "touch": {
@@ -343,6 +476,26 @@
     "radius-card": [
       16,
       "look/surface.tsx density.surface (touch)"
+    ],
+    "size-slider-track": [
+      8,
+      "slider.ts sliderLook touch rail"
+    ],
+    "size-slider-thumb": [
+      20,
+      "slider.ts sliderLook touch thumb"
+    ],
+    "size-slider-band": [
+      32,
+      "slider.ts sliderLook touch band"
+    ],
+    "size-scrollbar-thumb": [
+      3,
+      "scrollbar-theme.ts touch w-[3px]"
+    ],
+    "space-scrollbar-inset": [
+      2,
+      "scrollbar-theme.ts touch p-0.5"
     ]
   }
 }

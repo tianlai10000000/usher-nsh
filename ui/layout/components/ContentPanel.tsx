@@ -5,30 +5,37 @@
  * panel fills whatever width the menus leave, so it grows to the left when the secondary menu
  * hides.
  */
-import { platform, Scroll, View } from "nsh";
+import { platform, Scroll, View, type ViewStyle } from "nsh";
 import type { ScrollbarTheme } from "nsh/base";
 import type { JSX } from "nsh/jsx-runtime";
 import type { AppearanceStore } from "../../state/appearance";
 import { contentBackgroundColor } from "../../theme/look";
 
-// The thumb is laid out with the scroll viewport so its right edge tracks window resizes. Its
-// color is a theme token, read when drawn, so the bar follows the theme and color scheme.
-const macScrollBar = (thumbColor: () => string) => ({
+/** Keeps one scrollbar object while its part getters follow theme changes. */
+const themedScrollBar = (palette: AppearanceStore["palette"]): ScrollbarTheme => ({
   mode: "hover",
-  motion: { idle: 700, exit: 300 },
-  minThumbLength: 32,
+  get motion() { return { idle: palette().metric.scrollbarIdleMs,
+    enter: palette().metric.scrollbarEnterMs, exit: palette().metric.scrollbarExitMs }; },
+  get minThumbLength() { return palette().metric.scrollbarMinThumb; },
   vertical: {
-    style: { position: "absolute", top: 2, right: 0, bottom: 2, width: 12, paddingLeft: 4, paddingRight: 2 },
-    thumbClass: "rounded-full",
-    thumbStyle: { get backgroundColor() { return thumbColor(); } },
+    get style(): ViewStyle { return { position: "absolute", top: 0, right: 0, bottom: 0,
+      width: palette().metric.scrollbar, padding: palette().metric.scrollbarInset, alignItems: "flex-end" }; },
+    get thumbClass() {
+      const p = palette();
+      const color = p.scrollbarThumbHover.replace(/\s+/g, "_");
+      return `rounded-full w-[${p.metric.scrollbarThumb}px] bg-[${p.scrollbarThumb.replace(/\s+/g, "_")}]
+        hover:w-[${p.metric.scrollbarThumbHover}px] active:w-[${p.metric.scrollbarThumbHover}px]
+        hover:bg-[${color}] active:bg-[${color}]
+        transition-all duration-[${p.metric.scrollbarEnterMs}ms] motion-reduce:transition-none`;
+    },
   },
-}) satisfies ScrollbarTheme;
+});
 
 export function ContentPanel(props: { appearance: AppearanceStore; children: JSX.Element }) {
   const { palette } = props.appearance;
   const desktop = platform.desktop;
   // Built once so a theme change never replaces the bar.
-  const scrollBar = platform.os === "macos" ? macScrollBar(() => palette().scrollbarThumb) : true;
+  const scrollBar = platform.os === "macos" ? themedScrollBar(palette) : true;
   const radius = () => (desktop ? palette().panelRadius : 0);
   const inset = () => (desktop ? palette().metric.panelInset : 0);
 

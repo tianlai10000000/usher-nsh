@@ -1,10 +1,10 @@
 # 部署与发布
 
-构建、签名和发布由两个 GitHub Actions 工作流完成：[ci.yml](../.github/workflows/ci.yml) 检查代码，[release.yml](../.github/workflows/release.yml) 构建、签名并发布。两者使用同一套固定版本的 Rust 工具链和 NSH 命令行，由 [scripts/ci/](../scripts/ci/) 里的脚本安装与执行，这些脚本在本机都跑过。
+构建、签名和发布由两个 GitHub Actions 工作流完成：[ci.yml](../.github/workflows/ci.yml) 检查代码，[release.yml](../.github/workflows/release.yml) 构建、签名并发布。两者使用同一套固定版本的 Rust 工具链和 NSH 命令行，由 [scripts/ci/](../scripts/ci) 里的脚本安装与执行，这些脚本在本机都跑过。
 
 ## 两种启动方式
 
-`release.yml` 只有两种启动方式，没有分支触发，没有定时任务。更新方案的设计依据是 [应用更新方案](update.md)，本文只写操作：
+`release.yml` 只有两种启动方式，没有分支触发，没有定时任务。更新行为见 [更新设计](update.md)，本文规定发布管线与操作契约：
 
 | 方式 | 是什么 | 做什么 |
 | --- | --- | --- |
@@ -158,18 +158,7 @@ NSH 原生体系有三类密钥，设计见 [更新方案 4.1](update.md#41-密�
 4. 清单密钥泄露时，应用内嵌的是它的公钥，必须发布一个内置新公钥的**整包**版本，旧安装需要手动安装一次，这是 NSH 体系下清单密钥无法在线轮换的限制。
 5. 根密钥泄露是最严重的情况：已安装的应用只信任旧根，只能通过可信渠道重新分发内置新根公钥的版本。
 
-**当前应用尚未接入吊销列表的下发**，所以吊销只对运行 `nsh verify --revocations` 的发布侧检查有效，已安装的客户端仍需完成吊销列表接入与分发验收。
-
-## 发布前核对（首次发布 `0.1.0`）
-
-`0.1.0` 是真实发布，标签不可移动，所以下面每一项都要在推标签之前确认：
-
-1. `nsh.json` 的 `updater.publicKey`、`updater.packages.roots` 与 `~/.usher-nsh-update-signing/` 里的 `manifest.pub`、`root.pub` 一致（门禁只检查它们存在，不检查是不是对的那一把）。
-2. 三个 Secret 已配置，且 `NSH_RELEASE_CERT` 对应的根就是 `root.pub`，证书未过期。可在本机用 `nsh verify --root root.pub <某个本地签出的 .nshpkg>` 确认这套密钥有效。
-3. 仓库对匿名用户可见，否则更新器读不到 `latest.json`（见“已知限制”）。
-4. 手动跑一次演练，摘要写着“会被接受”，`rehearse` 最后一行是 `Rehearsal signing passed.`。
-5. `CHANGELOG.md` 有 `## 0.1.0` 小节，`nsh.json`、`Cargo.toml` 版本一致，`build` 比任何已发布的高。
-6. 发布后 `0.1.0` 验证不了更新（没有旧版本可更新）。要验证更新必须再发一个更高的正式版，见 [更新方案 4.5](update.md#45-首次发布d13)。
+发布侧 `nsh verify --revocations` 与客户端信任库是不同边界；仅执行发布侧检查不改变已安装客户端的信任状态。客户端吊销列表的接入与分发由 [REL3](todo.md#release) 跟踪。
 
 ## 需要配置的 Secrets 和变量
 
@@ -181,7 +170,7 @@ NSH 原生体系有三类密钥，设计见 [更新方案 4.1](update.md#41-密�
 | `MACOS_SIGNING_NOTARIZATION_ENABLED` | Variable | 是否做 Apple 签名与公证。不设或 `false` 为否，`true` 为是；其他值（含大小写变体和空白）在构建前就失败 |
 | `MACOS_CERTIFICATE_BASE64`、`MACOS_CERTIFICATE_PASSWORD`、`MACOS_KEYCHAIN_PASSWORD`、`APPLE_SIGNING_IDENTITY`、`APPLE_ID`、`APPLE_TEAM_ID`、`APPLE_APP_PASSWORD` | Secret | 只在开启 Apple 签名时需要 |
 
-三个 Secret 现在是**仓库级** Secret。`publish` 作业绑定的 `release` 环境读得到它们，但把它们改放到环境级 Secret 范围更小，建议这样做。
+此前配置记录中，三个 Secret 为**仓库级** Secret，正式发布前需复核。`publish` 作业绑定的 `release` 环境读得到它们，但把它们改放到环境级 Secret 范围更小，建议这样做。
 
 另外要在仓库设置里建一个名为 `release` 的 Environment，可以在里面加人工审批，这样每次发布前都要有人点确认。演练不受它影响。
 
@@ -194,15 +183,10 @@ NSH 原生体系有三类密钥，设计见 [更新方案 4.1](update.md#41-密�
 - 更新清单与代码包的签名不受影响，始终必须。
 - Apple 签名、公证、钥匙串三组步骤已经写好并通过 lint，用一张自签名证书在本机演练过钥匙串的安装、`codesign` 和清理；公证和 `stapler` 需要真实的开发者账号，**没有演练过**。拿到证书后把变量设为 `true`、补上 Secrets 即可启用，不需要改代码。因为演练会跳过 Apple 签名，第一次启用只能在真实发布里验证，所以启用前请先在本机用自签名证书走一遍。
 
-## 已知限制
+## 发布信任与构建边界
 
-- 批次 3 至 5 已接入双路径状态机、实际 NSH 检查 / 下载 / 重启调用与产品 UI；兼容代码包要求与外壳主次版本相同。批次 6 已验证隔离本地源的真实整包替换、NSH 自动重启及设置保留，不能替代真实 Release 下载和 Gatekeeper 验收。
-- **更新器匿名读取 `releases/latest/download/latest.json`，仓库必须是公开的，或者更新源另行托管。** 当前这个仓库在未登录时访问返回 404，发布前需要确认可见性。私有仓库的用户无法读取更新，这与更新器的设计无关，是 GitHub 对匿名下载的限制。
-- 发布依赖的 GitHub 动作都固定到提交哈希，升级它们要手动改工作流里的值。
-- **NSH 命令行的版本只写在 `Cargo.toml` 里**（`nsh-core` 的精确版本），[install-nsh.sh](../scripts/ci/install-nsh.sh) 读它来决定装哪个版本，所以升级 NSH 只改 `Cargo.toml`，工作流里没有第二份版本号，也没有需要同步的校验值。安装时会核对压缩包与 NSH 同目录发布的 `.sha256`，并确认装好的 `nsh` 报告的版本就是要求的版本。它防得住下载损坏和装错版本，**防不住发布者把压缩包和 `.sha256` 一起替换**；要防这个，得把校验值固定在本仓库里，代价是每次升级 NSH 都要同步改一次。
-- Ubuntu 作业固定在 `ubuntu-24.04`，不用 `ubuntu-latest`，因为后者正在迁移到 Ubuntu 26，工作流不该在我们没改动时换了系统。
-- 第一次 CI 运行已经暴露了两个问题并已修复：`src/style_themes.rs` 有未格式化的代码，以及工作流固定的 NSH 版本和项目要求的不一致。发布流水线（`release.yml`）还没在 GitHub 上运行过。整条流水线在本机逐段跑过（门禁、`nsh package`、归档、收集、临时密钥签名与拒绝测试），**但从未在 GitHub 上运行过**。第一次演练很可能会暴露一两个本机验证不到的问题：权限、`release` 环境、Secrets 的读取、`macos-latest` 上的具体行为。
+更新器匿名读取 GitHub latest 的清单与签名，更新源必须允许匿名下载。正式发布前的密钥配对、环境配置及资源可读性核验统一由 [发布批次](todo.md#release) 跟踪。
 
-## 更新逻辑批次 3 至 5 的发布边界
+NSH CLI 版本由 Cargo.toml 中 nsh-core 的精确版本提供，install-nsh.sh 校验上游同目录 SHA-256 和安装后的版本。此校验可发现损坏或装错版本，不能防止上游同时替换归档与校验文件。GitHub Actions 固定提交哈希，Ubuntu runner 固定 ubuntu-24.04。
 
-应用采用 A 方案初始化更新服务；Rust 桥接与独立 usher-logging 均属于外壳输入。本轮包含 Rust 与桥接变更，不能作为仅 TSX 代码包发布；版本线门禁继续按更新方案 D9 执行。客户端控制器和产品 UI 已接入；本机桥接测试使用可控原生 I/O，另有本地源签名代码包下载 / 再启动模拟。这两类测试不证明真实 Release；批次 6 另通过 shell-update 命令验证了 macOS arm64 标准变体真实归档的本地替换与失败恢复。该测试使用一次性密钥和无下载隔离标记的 ad hoc 应用，不证明 Apple 公证、Gatekeeper 或线上分发。本轮未修改密钥、发布工作流，也未执行真实发布。
+Rust、桥接与日志 crate 属于外壳输入，不能作为仅 TSX 代码包发布。清单按 OS / 架构收录 standard 整包，AppKit zip 用于手动下载。NSH 0.5.0 的整包替换不保证 rename 间隙自动恢复，也不验证签名有效归档内可执行文件的架构；签名校验与这些安装保护是不同边界。ad hoc 签名不建立 Gatekeeper 信任。修复与实际分发验收见 [更新批次](todo.md#updates)。

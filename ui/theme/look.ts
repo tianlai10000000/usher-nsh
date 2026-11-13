@@ -5,9 +5,12 @@
  * duration themselves, so a theme changes controls by changing token values. State feedback is
  * the same kind of data: how far a press sinks, how strong a hover wash is, how wide the
  * keyboard focus halo is and how long a state change eases all come from the theme.
+ * Stateful `create*Look` factories own native animation values for one mounted control;
+ * create them in the component body and bind their reactive part getters in JSX.
  */
 import type { InputStyle, TextStyle, ViewStyle } from "nsh";
-import { reduceMotion } from "nsh";
+import { cleanup, createAnimatedValue, effect } from "nsh";
+import { followSpring, motionReduced, nativeCurve } from "./motion";
 import type { AppearanceStore } from "../state/appearance";
 import backgroundConfig from "../config/background.json";
 
@@ -50,7 +53,7 @@ function transition(palette: Palette, properties: string): ViewStyle {
   const { metric } = palette();
   return {
     transitionProperty: `${properties}, transform`,
-    transitionDuration: reduceMotion() ? 0 : Math.max(metric.pressMs, metric.stateMs),
+    transitionDuration: motionReduced() ? 0 : Math.max(metric.pressMs, metric.stateMs),
     transitionTimingFunction: "ease-out",
   };
 }
@@ -73,7 +76,7 @@ export function focusRing(palette: Palette, offset?: number): ViewStyle {
 
 /** A press that sinks the control to `scale`. None with reduced motion. */
 function sink(scale: number): ViewStyle {
-  return reduceMotion() ? {} : { transform: [{ scale }] };
+  return motionReduced() ? {} : { transform: [{ scale }] };
 }
 
 const dimensions = (palette: Palette, size: ButtonSize) => {
@@ -99,7 +102,7 @@ export function buttonLook(
   const kind = options.kind ?? "secondary";
   const size = dimensions(palette, options.size ?? "regular");
   const p = palette();
-  const filled = kind === "primary" || options.selected === true;
+  const filled = kind === "primary";
   const idle = options.busy === true;
   // A selected neutral button takes the "on" finish; a primary one the accent finish. When the
   // theme draws no finish the plain fill and edge below apply, so a flat theme still reads.
@@ -108,7 +111,7 @@ export function buttonLook(
     kind === "primary"
       ? { backgroundColor: p.accent, borderColor: p.accent, ...finishStyle(chosen) }
       : options.selected
-        ? { backgroundColor: p.accent, borderColor: p.accent, ...finishStyle(p.finish.accent) }
+        ? { backgroundColor: p.itemSelected, borderColor: p.border, ...finishStyle(p.finish.on) }
         : kind === "ghost"
           ? { backgroundColor: "transparent", borderColor: "transparent" }
           : { backgroundColor: "transparent", borderColor: p.border, ...finishStyle(chosen) };
@@ -131,7 +134,7 @@ export function buttonLook(
     hoverStyle: idle
       ? undefined
       : filled
-        ? ({ opacity: 0.94 } satisfies ViewStyle)
+        ? ({ opacity: p.motion.buttonHoverOpacity } satisfies ViewStyle)
         : ({
             backgroundColor: mix(p.text, p.metric.hoverWash),
             ...(kind === "ghost" ? {} : finishStyle(p.finish.hover)),
@@ -139,7 +142,7 @@ export function buttonLook(
     activeStyle: idle
       ? undefined
       : ({
-          ...(filled ? { opacity: 0.88 } : { backgroundColor: p.itemPressed }),
+          ...(filled ? { opacity: p.motion.buttonActiveOpacity } : { backgroundColor: p.itemPressed }),
           ...(filled || kind === "ghost" ? {} : finishStyle(p.finish.pressed)),
           ...sink(p.metric.pressScale),
         } satisfies ViewStyle),
@@ -190,8 +193,8 @@ export function fieldLook(palette: Palette) {
       borderRadius: p.metric.radiusControl,
       borderCurve: "continuous",
       borderWidth: p.metric.borderWidth,
-      borderColor: p.border,
-      backgroundColor: p.background,
+      borderColor: p.input,
+      backgroundColor: p.field,
       color: p.text,
       fontSize: p.metric.fontField,
       placeholderColor: p.muted,
@@ -213,11 +216,8 @@ export function selectLook(palette: Palette) {
   const highlightColor = p.itemHover.replace(/\s+/g, "_");
   return {
     popupStyle: {
-      backgroundColor: p.surface,
-      borderColor: p.border,
+      ...popupLook(palette),
       padding: p.metric.textGap,
-      borderRadius: p.metric.radiusCard,
-      boxShadow: p.shellShadow,
     } satisfies ViewStyle,
     itemClass: `flex-row items-center focus:bg-[${highlightColor}]`,
     itemStyle: {
@@ -240,6 +240,7 @@ export function cardLook(palette: Palette): ViewStyle {
     borderWidth: p.metric.borderWidth,
     borderRadius: p.metric.radiusCard,
     borderCurve: "continuous",
+    boxShadow: p.finish.card.boxShadow,
   };
 }
 
@@ -281,6 +282,7 @@ export function tabLook(palette: Palette, selected = false) {
       borderColor: p.border,
       backgroundColor: p.itemSelected,
       boxShadow: p.itemShadow,
+      ...finishStyle(p.finish.thumb),
     } satisfies ViewStyle,
     style: {
       height: p.metric.sidebarItem,
@@ -316,10 +318,13 @@ export function menuItemLook(palette: Palette, selected: boolean) {
   };
 }
 
-/** The on/off switch: track, knob and the travel between them, all from the switch metrics. */
+/** Static switch parts and endpoint geometry; interactive switches use createSwitchLook. */
 export function switchLook(palette: Palette, checked: boolean) {
   const p = palette();
-  const inset = (p.metric.switchHeight - p.metric.switchKnob) / 2;
+  const gap = (p.metric.switchHeight - p.metric.switchKnob) / 2;
+  // Border participates in the content box; keep both end gaps symmetrical.
+  const border = Math.min(p.metric.borderWidth, gap);
+  const inset = gap - border;
   return {
     trackStyle: {
       width: p.metric.switchWidth,
@@ -327,18 +332,30 @@ export function switchLook(palette: Palette, checked: boolean) {
       padding: inset,
       justifyContent: "center",
       borderRadius: p.metric.switchHeight / 2,
-      backgroundColor: checked ? p.accent : p.border,
-      ...transition(palette, "background-color"),
+      backgroundColor: checked ? p.accent : p.track,
+      borderWidth: border,
+      borderColor: checked ? p.accent : p.border,
+      boxShadow: checked ? p.finish.fill.shadow : p.finish.track.shadow,
+      ...(checked
+        ? { borderColor: p.finish.fill.edge === "transparent" ? p.accent : p.finish.fill.edge }
+        : finishStyle(p.finish.track)),
+      ...transition(palette, "background-color, border-color, box-shadow"),
     } satisfies ViewStyle,
     thumbStyle: {
+      position: "absolute",
+      left: inset,
+      top: inset,
       width: p.metric.switchKnob,
       height: p.metric.switchKnob,
       borderRadius: p.metric.switchKnob / 2,
-      backgroundColor: checked ? p.accentText : p.surface,
-      transform: [{ translateX: checked ? p.metric.switchWidth - p.metric.switchKnob - 2 * inset : 0 }],
+      backgroundColor: p.knob,
+      borderWidth: p.metric.borderWidth,
+      borderColor: p.border,
+      ...finishStyle(checked ? p.finish.knobOn : p.finish.knob),
+      transform: [{ translateX: checked ? p.metric.switchWidth - p.metric.switchKnob - 2 * gap : 0 }],
       ...transition(palette, "background-color"),
     } satisfies ViewStyle,
-    focusStyle: focusRing(palette, 2),
+    focusStyle: focusRing(palette),
     disabledStyle: { opacity: p.metric.disabledOpacity } satisfies ViewStyle,
   };
 }
@@ -346,15 +363,27 @@ export function switchLook(palette: Palette, checked: boolean) {
 /** The framework slider's track, selected range and thumb, sized entirely by theme metrics. */
 export function sliderLook(palette: Palette) {
   const p = palette();
+  const brightness = (filter: string) => {
+    const value = /^brightness\(([\d.]+)\)$/.exec(filter)?.[1];
+    return `brightness-${value === undefined ? 100 : Math.round(Number(value) * 100)}`;
+  };
   return {
-    trackStyle: { height: p.metric.fieldHeight, justifyContent: "center",
+    trackClass: `transition-opacity duration-[${p.metric.stateMs}ms] motion-reduce:transition-none disabled:opacity-[${p.metric.disabledOpacity}]`,
+    thumbClass: `transition duration-[${p.metric.stateMs}ms] motion-reduce:transition-none
+      hover:${brightness(p.motion.sliderHover)} active:${brightness(p.motion.sliderActive)}
+      disabled:brightness-100 focus-visible:outline-[${p.metric.focusWidth}px]
+      focus-visible:outline-[${p.focusRing.replace(/\s+/g, "_")}]`,
+    trackStyle: { height: p.metric.sliderBand, justifyContent: "center",
       paddingHorizontal: p.metric.sliderThumb / 2 } satisfies ViewStyle,
     indicatorStyle: { height: p.metric.sliderTrack, borderRadius: p.metric.radiusControl,
-      backgroundColor: p.border } satisfies ViewStyle,
-    rangeStyle: { borderRadius: p.metric.radiusControl, backgroundColor: p.accent } satisfies ViewStyle,
+      backgroundColor: p.track, ...railFinish(palette) } satisfies ViewStyle,
+    rangeStyle: { borderRadius: p.metric.radiusControl, backgroundColor: p.accent,
+      borderWidth: p.metric.borderWidth, ...finishStyle(p.finish.fill) } satisfies ViewStyle,
     thumbStyle: { width: p.metric.sliderThumb, height: p.metric.sliderThumb,
-      backgroundColor: p.surface, borderWidth: p.metric.borderWidth,
-      borderColor: p.borderStrong, boxShadow: p.itemShadow } satisfies ViewStyle,
+      borderRadius: p.metric.sliderThumb / 2,
+      backgroundColor: p.knob, borderWidth: p.metric.borderWidth,
+      borderColor: p.borderStrong, boxShadow: p.itemShadow,
+      ...finishStyle(p.finish.knob) } satisfies ViewStyle,
   };
 }
 
@@ -380,7 +409,7 @@ export function rowLook(palette: Palette, options: { divider?: boolean } = {}): 
     paddingVertical: p.metric.rowPadY,
     gap: p.metric.rowGap,
     borderTopWidth: options.divider ? p.metric.borderWidth : 0,
-    borderTopColor: p.border,
+    borderTopColor: p.line,
   };
 }
 
@@ -411,5 +440,103 @@ export function spacing(palette: Palette) {
     page: { gap: metric.pageGap } satisfies ViewStyle,
     wrap: { gap: metric.wrapGap } satisfies ViewStyle,
     stack: { gap: metric.stackGap } satisfies ViewStyle,
+  };
+}
+
+/** Draws the rail edge inside its box so it does not shorten the filled range. */
+function railFinish(palette: Palette): ViewStyle {
+  const p = palette();
+  const edge = p.finish.track.edge;
+  const shadow = p.finish.track.shadow;
+  if (edge === "transparent") return shadow === "none" ? {} : { boxShadow: shadow };
+  return { boxShadow: `inset 0 0 0 ${p.metric.borderWidth}px ${edge}${shadow === "none" ? "" : `, ${shadow}`}` };
+}
+
+/** Shared floating tier for select lists and popovers; sizing remains with the caller. */
+export function popupLook(palette: Palette): ViewStyle {
+  const p = palette();
+  return {
+    backgroundColor: p.popover,
+    borderWidth: p.metric.borderWidth,
+    borderColor: p.border,
+    borderRadius: p.metric.radiusPopup,
+    boxShadow: p.shellShadow,
+    ...finishStyle(p.finish.menu),
+  };
+}
+
+/** Static progress surfaces shared with Slider; live bars use createProgressLook. */
+export function progressLook(palette: Palette) {
+  const p = palette();
+  return {
+    trackStyle: { height: p.metric.sliderTrack, borderRadius: p.metric.sliderTrack / 2,
+      overflow: "hidden", backgroundColor: p.track, ...railFinish(palette) } satisfies ViewStyle,
+    indicatorStyle: { height: p.metric.sliderTrack, borderRadius: p.metric.sliderTrack / 2,
+      backgroundColor: p.accent,
+      ...(p.finish.fill.image !== "none" ? { backgroundImage: p.finish.fill.image } : {}) } satisfies ViewStyle,
+  };
+}
+
+/** Allocate once in the component body, then bind its getters to the Switch parts. */
+export function createSwitchLook(palette: Palette, checked: () => boolean) {
+  const progress = followSpring(() => checked() ? 1 : 0, () => palette().motion.switchSpring);
+  return {
+    trackClass: "rtl:-scale-x-100",
+    get trackStyle(): ViewStyle {
+      const p = palette();
+      return { ...switchLook(palette, checked()).trackStyle,
+        backgroundColor: progress.interpolate({ inputRange: [0, 1], outputRange: [p.track, p.accent] }),
+        // Native animated properties must not also have a CSS transition.
+        transitionProperty: "border-color, box-shadow" };
+    },
+    get thumbStyle(): ViewStyle {
+      const p = palette();
+      return { ...switchLook(palette, checked()).thumbStyle,
+        transform: [{ translateX: progress.mul(p.metric.switchWidth - p.metric.switchHeight) }],
+        transitionProperty: "background-color, border-color, box-shadow" };
+    },
+  };
+}
+
+/** Allocate once; native keyframes run only while an indeterminate bar is visible. */
+export function createProgressLook(palette: Palette, value: () => number, indeterminate: () => boolean) {
+  const offset = createAnimatedValue(0);
+  const width = createAnimatedValue(0);
+  const translation = offset.mul(width);
+  let running: string | undefined;
+  let wasIndeterminate: boolean | undefined;
+  let shown: number | undefined;
+  effect(() => {
+    const active = indeterminate();
+    const reduced = motionReduced();
+    const p = palette().motion;
+    const target = Math.max(0, Math.min(100, value())) / 100 - 1;
+    if (active) {
+      const next = `${reduced}:${p.sweepMs}:${p.sweepCurve}:${p.progressSegment}`;
+      if (next !== running) {
+        if (reduced) offset.set((1 - p.progressSegment) / 2);
+        else void offset.keyframes([0, 1 - p.progressSegment], { duration: p.sweepMs,
+          easing: nativeCurve(p.sweepCurve), iterations: "infinite", direction: "alternate" });
+      }
+      running = next;
+    } else {
+      // Keep one native transform binding across modes: replacing an animated transform with
+      // CSS translate can retain the old binding on the mounted Progress indicator.
+      if (wasIndeterminate !== false || reduced) offset.set(target);
+      else if (target !== shown) void offset.timing(target, { duration: p.progressMs, easing: nativeCurve(p.progressCurve) });
+      running = undefined;
+    }
+    wasIndeterminate = active;
+    shown = target;
+  });
+  cleanup(() => { void offset.stop(); void width.stop(); });
+  return {
+    onLayout: ({ bounds }: { bounds: { size: { width: number } } }) => width.set(bounds.size.width),
+    get trackStyle() { return progressLook(palette).trackStyle; },
+    get indicatorStyle(): ViewStyle {
+      return { ...progressLook(palette).indicatorStyle,
+        width: indeterminate() ? `${palette().motion.progressSegment * 100}%` : "100%",
+        transform: [{ translateX: translation }] };
+    },
   };
 }
