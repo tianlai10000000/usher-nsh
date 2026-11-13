@@ -1,6 +1,6 @@
 # 迭代批次与完成状态
 
-更新日期：2026-11-13。本文件是项目任务、优先级、完成状态、验收缺口与执行证据的唯一维护入口。`docs/` 其他文档只维护模块架构、接口、设计约束和验证方法；README 说明实际产品能力。原 `scaffolding.md` 只保留入口，原主题与状态审计已完整迁入本文件。
+更新日期：2026-11-14。本文件是项目任务、优先级、完成状态、验收缺口与执行证据的唯一维护入口。`docs/` 其他文档只维护模块架构、接口、设计约束和验证方法；README 说明实际产品能力。原 `scaffolding.md` 只保留入口，原主题与状态审计已完整迁入本文件。
 
 ## 维护规则
 
@@ -23,7 +23,7 @@
 | [05 / LG 日志与导出](#logging) | P1 | 部分完成 | 门面和诊断页已完成；补产物旅程与故障验收 |
 | [RT4 路由扩展](#routing) | P1 | 部分完成 | 本机 URL / VM reload 已验；其他宿主、进程重启和 iOS 手势待补 |
 | [UT2 / TE1 / TE2 测试闭环](#testing) | P1 | 部分完成 | 补跨语言 fixture、完整真实旅程与远端 runner |
-| [U6-03–U6-06 发布验收](#updates) | P1 | 暂缓 / 待决策 | 保留此前决定；正式发布须另获授权 |
+| [U6-03–U6-06 发布验收](#updates) | P1 | 部分完成 / 暂缓 / 待决策 | 0.1.1 真实发布及 standard 整包升级通过；代码包远端分发与其余边界仍待验收 |
 | [01 / SM6 跨平台](#platform) | P2 | 部分完成 | 工具链 → 应用构建 → 宿主 → CI → 发布旅程 |
 | [02 系统托盘](#platform) | P2 | 待实施 | 先共享菜单模型，再三端宿主及生命周期 |
 | [06.01 / 06.07 版本和公告](#release) | P2 | 部分完成 / 待实施 | 统一构建身份；changelog 单一来源 |
@@ -105,7 +105,7 @@
 | U6-03 / V5 | P1 | 暂缓（待验收） | 真实浏览器下载、quarantine、首次打开及更新后启动；记录 ad hoc 的实际体验。Apple 签名 / 公证继续按 D6 暂缓。 |
 | U6-04 / V8 | P1 | 暂缓（待验收） | 管理员所有权与 ACL 组合下的 canInstall、手动升级及失败后旧版可用性。当前账户可写 /Applications 的本地验收不替代这些条件。 |
 | U6-05 / V9 | P1 | 待决策 | 确认是否接受 AppKit 更新为 standard 丢失原生控件能力，再决定清单 / 变体分发。技术转换成功不替代产品决定。 |
-| U6-06 / 06.03 / 06.06 | P1 | 暂缓（待授权与验收） | 获准真实发布后核对密钥配对、匿名更新源、release 环境、草稿转正式、latest、构建来源证明、实际下载和双路径升级；代码包签名、换根拒绝与密钥轮换须补远端流水线和分发验证。 |
+| U6-06 / 06.03 / 06.06 | P1 | 部分完成 | 0.1.1 真实发布已验：密钥配对、匿名源、release 环境、草稿转正式、latest、来源证明、下载及 standard 整包升级通过。首次发布不含代码包；代码包远端签名 / 分发、换根拒绝与密钥轮换仍待后续验收。 |
 | 06.02 / 06.04 / 06.05 | P1 | 部分完成 | 双路径、桥接、UI、本地代码包及整包替换已验；剩余发布项归 U6，托盘入口归 02，不重复新增更新器。 |
 
 <a id="release"></a>
@@ -116,15 +116,25 @@
 
 | 编号 | 优先级 | 状态 | 下一步与完成条件 |
 | --- | --- | --- | --- |
-| REL1 / U6-06 | P1 | 进行中（2026-11-14 已授权） | 用户授权 GitHub 真实发布及本地双路径更新验收，并已将仓库改为 public。匿名仓库 API 已验证；三项仓库 Secret 存在，release 环境已创建；配置公钥与本地公钥文件、证书发布公钥匹配，证书到期日为 2027-11-12。用户指定首次正式发布为 0.1.1 / build 2，本地 0.1.0 / build 1 作为整包升级基线；实际发布与升级仍待执行。 |
+| REL1 / U6-06 | P1 | 部分完成（本轮发布与整包验收已完成） | 用户授权的 0.1.1 / build 2 已发布至公开仓库，macOS arm64 standard 的本地 0.1.0 / build 1 自动发现、下载校验、安装重启、设置保留和再次检查全部通过。首次正式发布按门禁仅含整包，远端代码包路径待后续补丁版本验证。 |
 | REL2 | P2 | 暂缓 | Developer ID、公证和 stapler 真正启用后的分发验证；自签名钥匙串实验和 lint 不替代 Apple 公证。Secrets 范围收敛及 release 环境配置与 REL1 一并核查。 |
 | REL3 / 06.03 | P1 | 待实施 | 客户端吊销列表的接入与分发：发布侧 verify --revocations 已有，不能代替已安装客户端拒绝吊销包。确定可信下发、更新和离线失败策略，并验收密钥轮换 / 吊销的实际分发。 |
-
-2026-11-14 发布前检查：发现 Cargo 根包版本号变化被误判为外壳变化，导致正常补丁发布无法产出代码包；修正为只忽略根包发布身份，依赖与其他配置仍受门禁保护。脚本测试 141 项通过，包含三处版本文件同步升级、依赖变化与损坏身份回归；`git diff --check` 通过。同步修正 0.1.0 CHANGELOG 中尚未接入更新的过时说明。原提交 aa936a6 的 [Release 演练 #2](https://github.com/tianlai10000000/usher-nsh/actions/runs/43459471107) 门禁通过、release_ready=true，macOS 作业仍在排队，尚不计为构建或签名通过。
-
-2026-11-14 远端 CI 发现浮层退出动画期间 `update-download` 选择器歧义，更新集成用例改为等待关闭控件消失后继续。更新专项 9 项通过；后续以修复后的远端完整 CI 与演练为准。真实发布密钥签出的本地预检包已通过 `nsh verify --root`；这不替代 GitHub Secret 的实际签名验收。
 | 06.01 | P2 | 部分完成 | 统一运行构建身份、关于弹窗、包元数据与 Release 附件；补版本一致性门禁、说明生成、升级公告和首次升级提示。 |
 | 06.07 | P2 | 待实施 | 仓库目标版本 changelog 为唯一公告源；发现新版和首次升级入口，覆盖版本匹配、已读去重、缺失、失败与重试。 |
+
+2026-11-14 发布前检查：发现 Cargo 根包版本号变化被误判为外壳变化，导致正常补丁发布无法产出代码包；修正为只忽略根包发布身份，依赖与其他配置仍受门禁保护。脚本测试 141 项通过，包含三处版本文件同步升级、依赖变化与损坏身份回归；`git diff --check` 通过。同步修正 0.1.0 CHANGELOG 中尚未接入更新的过时说明。原提交 aa936a6 的 [Release 演练 #2](https://github.com/tianlai10000000/usher-nsh/actions/runs/43459471107) 门禁通过、release_ready=true；该演练及中间演练 #3 已取消，由最终演练 #4 替代。
+
+2026-11-14 远端 CI 发现浮层退出动画期间 `update-download` 选择器歧义，更新集成用例改为等待关闭控件消失后继续。更新专项 9 项通过；后续以修复后的远端完整 CI 与演练为准。真实发布密钥签出的本地预检包已通过 `nsh verify --root`；这不替代 GitHub Secret 的实际签名验收。
+
+2026-11-14 正式发布执行记录：目标提交 `db4459b4b453be156c1a6bc3643c09bbbef11729`，`v0.1.1` 已推送且不移动。[最终 CI](https://github.com/tianlai10000000/usher-nsh/actions/runs/43461352881) 与 [完整演练 #4](https://github.com/tianlai10000000/usher-nsh/actions/runs/43461420574) 均成功；演练两个 macOS 变体和临时签名 / 损坏检查通过。[正式发布 #5](https://github.com/tianlai10000000/usher-nsh/actions/runs/43469734628) 首次尝试在 `usher-logging::pipeline::tests::events_land_in_the_bucket_of_their_own_local_date` 的 5 秒 flush 等待超时，日志存在约 17 秒停顿；本地日志模块 20 项复核通过（0.06 秒），未更改生产代码或延长超时，失败作业已完整重跑。首次失败日志保留于 `target/test-reports/github-release/release-attempt-1.log`，不得用后续重跑结果抹去该记录。
+
+2026-11-14 本轮最终验收：
+
+- [正式 Release v0.1.1](https://github.com/tianlai10000000/usher-nsh/releases/tag/v0.1.1) 已由正式发布 #5 的第二次尝试生成；两个 macOS 变体构建、真实更新清单签名、来源证明和发布全部成功。工作流先创建草稿，再转正式并设为 latest；匿名 `/releases/latest` 返回 v0.1.1、draft=false、prerelease=false。首次尝试的日志超时记录保留，不计为一次无重试通过。
+- 六个附件均经无凭据网络请求实际下载，大小与 GitHub SHA-256 一致；`check_update_files.py --shell-changed true` 通过。整包 tar、两种 zip 和 latest.json 的 `gh attestation verify` 均通过，限定 release.yml、标签 refs/tags/v0.1.1 和提交 db4459b4b453be156c1a6bc3643c09bbbef11729。首次发布没有 `.nshpkg`，不声称完成远端代码包验收。
+- 本机 macOS arm64：使用未修改产品标识及更新源的 0.1.0 / build 1 standard 包，启动后的自动检查发现 0.1.1，正常 UI 点击下载后显示可重启；点击 Restart now 后旧进程 93600 退出、更新器自行启动新进程 93731。界面与 Info.plist 均为 0.1.1 / build 2，再次检查显示 up to date。升级后的可执行文件 SHA-256 为 `5bf83e45e9901bf7ee24996755c0609d6a0a0dd46f410f32a37f1b820dd76be4`，与匿名下载的正式 tar 内文件逐字节一致，且不同于旧版；`codesign --verify --deep --strict` 通过。
+- 深色偏好在重启后保留，隔离 settings.toml 前后完全一致。验收未改 HOME、未借用真实用户设置；原有 development 数据临时保留并映射回原位置，结束后已退出测试进程、恢复原目录并清除本轮缓存 / saved-state 映射。升级后的测试 app 保留在 `target/github-release-baseline/app/Usher NSH.app`。
+- 原始证据位于 `target/test-reports/github-release/`：`evidence.json`、`public-release.json`、`anonymous-downloads.json`、四份 `attestation-*.json`、两次正式发布日志和 `isolation.json`。范围仅为本机可写目录内 standard 整包升级；浏览器 quarantine / Gatekeeper、Apple Developer ID / 公证、管理员所有权 / ACL、AppKit 变体转换、远端代码包及密钥轮换仍按原批次状态推进。
 
 <a id="notify"></a>
 
