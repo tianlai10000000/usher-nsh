@@ -109,6 +109,7 @@ lefthook install
 
 1. 在 `nsh.json` 和根 `Cargo.toml` 里把版本改成同一个值，例如 `0.1.0`。**外壳输入有改动（Rust、原生适配、编进二进制的主题与配置、`nsh.json` 的权限等，范围见 [shell-inputs.txt](../scripts/release/shell-inputs.txt)）时，必须升主版本或次版本；只改 TSX 才能升补丁版本。** 门禁会检查，真实发布不满足就失败。
 2. 把 `nsh.json` 的 `build` 加一。构建号必须比上一个已发布的高，客户端会拒绝更低的构建。
+   同步 `Cargo.lock` 中根包的版本。仅根包发布版本号变化不计为外壳变更，依赖或其他 Cargo 配置变化仍要求升主版本或次版本。
 3. 在 [CHANGELOG.md](../CHANGELOG.md) 里写一个 `## 0.1.0` 小节，内容就是发布说明。小节为空会被拒绝。
 4. 合并到 `main`，等 CI 通过，**再手动跑一次演练**，看摘要是否写着“会被接受”。
 5. 在 `main` 上的那个提交打标签并推送：

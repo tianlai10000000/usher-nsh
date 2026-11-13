@@ -8,12 +8,12 @@ Keep work in progress under `Unreleased`.
 
 ## 0.1.0
 
-First release. It is installed by hand; the app does not check for or install updates yet, so the update button in the rail stays disabled.
+First release, installed by hand. Subsequent releases are discovered through signed GitHub update manifests; compatible code packages and whole-app upgrades use the application's Updates controls.
 
 ### Added
 
 - Window frame: a full-width title bar with menu toggle, back and forward history, breadcrumbs and a light/dark switch; a fixed rail with home, update, settings and account buttons; a secondary menu that docks beside the content on wide windows and becomes a drawer on narrow ones; and an optional status bar. Docking and status bar visibility are saved.
-- Settings with General, Theme and Diagnostics sections, laid out as grouped cards. Wide windows list the sections on the left; narrow windows use a drop-down.
+- Settings with General, Theme, Updates and Diagnostics sections, laid out as grouped cards. Wide windows list the sections on the left; narrow windows use a drop-down.
 - Appearance: Light, Dark or System mode, a configurable accent color, and a choice of style theme. Bundled themes are Default, Apple Liquid Glass, NSH Gallery, Primer · GitHub, Geist · Vercel, Radix Colors · Sand and Slate · shadcn/ui. You can add your own themes as local JSON files.
 - A window background image with adjustable opacity, and adjustable content-area transparency.
 - English and Simplified Chinese, with an option to follow the system language.
@@ -27,7 +27,7 @@ First release. It is installed by hand; the app does not check for or install up
 
 - macOS on Apple Silicon only. There is no Intel Mac, Windows, Linux, Android or iOS build.
 - The home page is still a Hello World example.
-- Update checking, downloading and installing are not connected to the app yet. A later release will add them; from 0.1.0 on, releases carry the signed update files that feature needs.
+- Packages use ad hoc macOS signatures without Developer ID notarization. Gatekeeper may prevent first launch. Whole-app replacement interrupted between renames requires external recovery, and the current installer does not independently reject a mislabeled executable architecture.
 - Diagnostic export has no system save dialog: the archive goes to the `exports/` folder, which the app then reveals.
 
 ## 0.0.1-alpha.1

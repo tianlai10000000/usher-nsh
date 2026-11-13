@@ -34,6 +34,7 @@ import json
 import re
 import subprocess
 import sys
+import tomllib
 from pathlib import Path
 
 INPUT_LIST = Path(__file__).resolve().parent / "shell-inputs.txt"
@@ -114,6 +115,21 @@ def git(root: Path, *arguments: str) -> subprocess.CompletedProcess:
     )
 
 
+def normalized_cargo(text: str, manifest: dict, *, lockfile: bool) -> dict:
+    """Ignore only the local root package's release identity, preserving dependency inputs."""
+    data = tomllib.loads(text)
+    identity = manifest["package"]
+    if lockfile:
+        packages = [package for package in data.get("package", [])
+                    if package.get("name") == identity["name"] and "source" not in package]
+        if len(packages) != 1 or packages[0].get("version") != identity["version"]:
+            raise ShellInputsError("Cargo.lock does not identify the root package at its declared version.")
+        packages[0].pop("version")
+    else:
+        data["package"].pop("version")
+    return data
+
+
 def changed_files(root: Path, base: str, inputs: list[str]) -> list[str]:
     """Shell input files that differ between `base` and the working tree."""
     result = git(root, "rev-parse", "--verify", "--end-of-options", base + "^{commit}")
@@ -133,6 +149,25 @@ def changed_files(root: Path, base: str, inputs: list[str]) -> list[str]:
                 raise ShellInputsError(f"nsh.json cannot be compared: {error}.") from error
             if same:
                 files.remove("nsh.json")
+    cargo_files = [name for name in ("Cargo.toml", "Cargo.lock") if name in files]
+    if cargo_files:
+        previous_manifest = git(root, "show", f"{base}:Cargo.toml")
+        if previous_manifest.returncode == 0 and (root / "Cargo.toml").is_file():
+            try:
+                before = tomllib.loads(previous_manifest.stdout)
+                after = tomllib.loads((root / "Cargo.toml").read_text(encoding="utf-8"))
+                for name in cargo_files:
+                    previous = git(root, "show", f"{base}:{name}")
+                    current = root / name
+                    if previous.returncode != 0 or not current.is_file():
+                        continue  # Added or removed Cargo inputs always change the shell.
+                    lockfile = name == "Cargo.lock"
+                    if normalized_cargo(previous.stdout, before, lockfile=lockfile) == normalized_cargo(
+                        current.read_text(encoding="utf-8"), after, lockfile=lockfile
+                    ):
+                        files.remove(name)
+            except (ValueError, KeyError, TypeError, OSError) as error:
+                raise ShellInputsError(f"Cargo release identity cannot be compared: {error}.") from error
     # Untracked files are shell inputs too once they are added; a release is built from a commit,
     # so the working tree here equals HEAD and `git diff` against `base` is the whole answer.
     return sorted(files)

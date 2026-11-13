@@ -11,7 +11,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "release"))
 import shell_inputs as shell  # noqa: E402
 
-INPUTS = ["src", "build.rs", "ui/theme", "ui/config/background.json", "nsh.json"]
+INPUTS = ["src", "build.rs", "ui/theme", "ui/config/background.json", "nsh.json", "Cargo.toml", "Cargo.lock"]
 
 
 def write(root: Path, relative: str, text: str) -> None:
@@ -37,6 +37,8 @@ def repository() -> Path:
     write(root, "ui/features/Page.tsx", "export {};\n")
     write(root, "i18n/messages/en.json", "{}\n")
     write(root, "App.tsx", "export {};\n")
+    write(root, "Cargo.toml", '[package]\nname = "example"\nversion = "1.0.0"\n[dependencies]\ndep = "2"\n')
+    write(root, "Cargo.lock", 'version = 4\n[[package]]\nname = "example"\nversion = "1.0.0"\ndependencies = ["dep"]\n[[package]]\nname = "dep"\nversion = "2.0.0"\nsource = "registry+https://example.com"\nchecksum = "abc"\n')
     write(root, "nsh.json", json.dumps({"id": "com.example.app", "version": "1.0.0", "build": 1, "rust": "."}))
     git(root, "add", "-A")
     git(root, "commit", "-qm", "base")
@@ -116,6 +118,43 @@ class Changed(unittest.TestCase):
         git(root, "add", "-A")
         git(root, "commit", "-qm", "permissions")
         self.assertEqual(self.changed(root), ["nsh.json"])
+
+    def test_patch_release_with_all_version_files_can_ship_a_code_package(self):
+        root = repository()
+        for name in ("Cargo.toml", "Cargo.lock", "nsh.json"):
+            path = root / name
+            path.write_text(path.read_text().replace("1.0.0", "1.0.1"))
+        config = json.loads((root / "nsh.json").read_text())
+        config["build"] += 1
+        write(root, "nsh.json", json.dumps(config))
+        write(root, "App.tsx", "export const changed = true;\n")
+        git(root, "add", "-A")
+        git(root, "commit", "-qm", "patch release")
+        self.assertEqual(self.changed(root), [])
+        result = subprocess.run([sys.executable, str(Path(shell.__file__)), "changed", "--version", "1.0.1",
+                                 "--strict", "--root", str(root)], capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("shell_changed=false", result.stdout)
+
+    def test_cargo_dependency_and_configuration_changes_still_change_the_shell(self):
+        for name, before, after in [("Cargo.toml", 'dep = "2"', 'dep = "3"'),
+                                    ("Cargo.toml", 'name = "example"', 'name = "renamed"'),
+                                    ("Cargo.lock", 'version = "2.0.0"', 'version = "2.0.1"'),
+                                    ("Cargo.lock", 'checksum = "abc"', 'checksum = "def"'),
+                                    ("Cargo.lock", 'dependencies = ["dep"]', 'dependencies = []')]:
+            with self.subTest(name=name, after=after):
+                root = repository()
+                path = root / name
+                path.write_text(path.read_text().replace(before, after))
+                self.assertEqual(self.changed(root), [name])
+
+    def test_invalid_or_inconsistent_cargo_identity_is_rejected(self):
+        for name, content in [("Cargo.toml", "invalid ["), ("Cargo.lock", 'version = 4\n')]:
+            with self.subTest(name=name):
+                root = repository()
+                write(root, name, content)
+                with self.assertRaises(shell.ShellInputsError):
+                    self.changed(root)
 
     def test_field_order_in_nsh_json_does_not_matter(self):
         root = repository()

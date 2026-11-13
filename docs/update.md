@@ -81,6 +81,7 @@ NSH 原生体系有三类互相独立的材料，其中清单密钥与代码包�
 - `src/`、`platforms/`、`crates/`、`build.rs`、`Cargo.toml`、`Cargo.lock`。
 - `ui/theme/` 与 `ui/config/background.json`：它们被 `include_str!` 编进二进制，改动需要重编译。
 - `nsh.json`，比较时忽略 `version` 与 `build`，它们每次发布都会变。
+- 根 `Cargo.toml` 的 `package.version` 及 `Cargo.lock` 中同名本地根包的版本属于发布身份，比较时仅忽略这两处版本字段。依赖版本、来源、校验和、特性及其他 Cargo 配置仍属于外壳输入；根包名称取自 Cargo 清单，解析失败时拒绝判定。
 
 **版本线约束（D9）。** 门禁用 `shell_inputs.py changed --version <本次版本> --strict` 找到上一个正式版标签，外壳输入有改动且主次版本没有升高时，真实发布失败，演练只给警告。预发布标签与格式不对的标签不算发布，不会成为比较基准。补丁版本因此只能是 TSX 变更：
 
