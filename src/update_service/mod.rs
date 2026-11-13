@@ -5,10 +5,11 @@
 //!
 //! There is no cancel and no executor handover (docs/update.md, 8.2, option B): NSH cannot cancel
 //! an update operation, so the service does not model stopping one. The lease is held until the
-//! service closes; an operation that outlives a rebuilt window is met by NSH's own
-//! "already in progress" answer, which the machine classes as `Failure::Busy`.
+//! application scope closes. Borrowed windows do not own the service. Destroying the executor
+//! VM requires a process restart; a new view must not impersonate the previous executor.
 mod execution;
 mod registry;
+pub(crate) mod transport;
 pub use execution::{Claim, Completion, Lease};
 pub use registry::UpdateRegistry;
 
@@ -16,7 +17,7 @@ use std::{collections::VecDeque, sync::Mutex};
 use usher_state::{
     BackendFactory, Snapshot, StoreId, StoreReader, StoreWriter, Transition, create_store,
 };
-use usher_update::state::{Effect, Event, Machine, Phase, Trigger};
+use usher_update::state::{Effect, Event, Machine, Settings, Trigger};
 
 /// Stable application errors; transports must preserve the codes rather than format domain data.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -27,7 +28,9 @@ pub enum Error {
     Stale,
     Invalid,
     Exhausted,
-    Configuration,
+    /// The service exists but its machine has not been created yet: the installed shell's
+    /// version is not known until the controller reports it (docs/update.md, 8.1).
+    NotConfigured,
 }
 impl Error {
     pub fn code(self) -> &'static str {
@@ -38,13 +41,16 @@ impl Error {
             Self::Stale => "updates_stale_execution",
             Self::Invalid => "updates_invalid_command",
             Self::Exhausted => "updates_identity_exhausted",
-            Self::Configuration => "updates_configuration_mismatch",
+            Self::NotConfigured => "updates_not_configured",
         }
     }
 }
 /// User intent is separate from executor completion, so consumers cannot forge a result.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub enum Command {
+    /// Creates the machine. Allowed once: the shell's version does not change while the process
+    /// lives, and a code package restart is a new process.
+    Configure(Settings),
     Check(Trigger),
     Download,
     Install,
@@ -58,10 +64,23 @@ pub enum Execution {
     Available,
     Running,
 }
-/// Immutable projection of the legacy domain and its effect delivery status. Never persisted.
+/// Process-local runtime identity and check history shared by every update view.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct RuntimeInfo {
+    pub shell_build: Option<String>,
+    pub package_build: Option<String>,
+    pub last_checked: Option<String>,
+    pub last_result: Option<String>,
+    pub manual_url: Option<String>,
+    pub manual_check: bool,
+}
+
+/// Read-only domain, runtime metadata and delivery status; leases are never broadcast.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct State {
-    pub domain: Machine,
+    pub info: RuntimeInfo,
+    /// `None` until the service is configured. A consumer shows "preparing", never "up to date".
+    pub domain: Option<Machine>,
     pub execution: Execution,
     pub pending: usize,
 }
@@ -77,7 +96,8 @@ struct Job {
 }
 #[derive(Clone)]
 struct Model {
-    domain: Machine,
+    info: RuntimeInfo,
+    domain: Option<Machine>,
     queue: VecDeque<Job>,
     lease: Option<Lease>,
     active: Option<Claim>,
@@ -92,6 +112,7 @@ impl Model {
     }
     fn state(&self) -> State {
         State {
+            info: self.info.clone(),
             domain: self.domain.clone(),
             pending: self.queue.len(),
             execution: if self.active.is_some() {
@@ -101,12 +122,28 @@ impl Model {
             },
         }
     }
+    fn machine(&mut self) -> Result<&mut Machine, Error> {
+        self.domain.as_mut().ok_or(Error::NotConfigured)
+    }
     fn event(&mut self, event: Event) -> Result<(), Error> {
+        if let Event::CheckRequested(trigger) = &event {
+            let machine = self.domain.as_ref().ok_or(Error::NotConfigured)?;
+            if !machine.candidate_locked() && (*trigger == Trigger::Manual || machine.auto_check())
+            {
+                if machine.phase != usher_update::state::Phase::Checking {
+                    self.info.manual_check = *trigger == Trigger::Manual;
+                } else if *trigger == Trigger::Manual {
+                    self.info.manual_check = true;
+                }
+            }
+        }
+        let machine = self.machine()?;
         // The domain uses u64 tickets. Reject before its unchecked increment.
-        if self.domain.ticket() == u64::MAX {
+        if machine.ticket() == u64::MAX {
             return Err(Error::Exhausted);
         }
-        for effect in self.domain.handle(event) {
+        let effects = machine.handle(event);
+        for effect in effects {
             // A log record needs no executor: it is not work for the network or the disk, only
             // something to hand to the application's logger. The service keeps them in order and
             // hands them out through `take_logs`, so a caller that has no logger drops them.
@@ -135,15 +172,14 @@ pub struct UpdateService {
     reader: StoreReader<State>,
 }
 impl UpdateService {
-    /// Creates a fresh domain with an injected backend. Pass an idle Machine; recovery
-    /// from a previous process belongs to the host and must not silently replay effects.
-    pub fn new(domain: Machine, factory: &dyn BackendFactory<State>) -> Result<Self, Error> {
-        if domain.phase != Phase::Idle || domain.ticket() != 0 {
-            return Err(Error::Invalid);
-        }
+    /// Creates the service with an injected backend, not yet configured: it holds no machine
+    /// until `Command::Configure` arrives. Recovery from a previous process belongs to the host
+    /// and must not silently replay effects, so a configured machine always starts idle.
+    pub fn new(factory: &dyn BackendFactory<State>) -> Result<Self, Error> {
         let id = crate::app_state::next_store_id().map_err(|_| Error::Exhausted)?;
         let model = Model {
-            domain,
+            info: RuntimeInfo::default(),
+            domain: None,
             queue: VecDeque::new(),
             lease: None,
             active: None,
@@ -179,17 +215,39 @@ impl UpdateService {
         }
         self.reader.subscribe().map_err(|_| Error::Unavailable)
     }
+    /// Configures runtime identity and domain together before any executor can acquire.
+    pub(crate) fn configure_runtime(
+        &self,
+        settings: Settings,
+        info: RuntimeInfo,
+    ) -> Result<(), Error> {
+        self.change(|model| {
+            if model.domain.is_some() || settings.failure_limit == 0 {
+                return Err(Error::Invalid);
+            }
+            model.domain = Some(Machine::new(settings));
+            model.info = info;
+            Ok(())
+        })
+    }
     /// Serializes user intent without executing effects or accepting completion events.
     pub fn request(&self, command: Command) -> Result<(), Error> {
         self.change(|model| {
             let event = match command {
+                Command::Configure(settings) => {
+                    if model.domain.is_some() || settings.failure_limit == 0 {
+                        return Err(Error::Invalid);
+                    }
+                    model.domain = Some(Machine::new(settings));
+                    return Ok(());
+                }
                 Command::Check(trigger) => Event::CheckRequested(trigger),
                 Command::Download => Event::DownloadRequested,
                 Command::Install => Event::InstallRequested,
                 Command::ConfirmFirstLaunch => Event::FirstLaunchConfirmed,
                 Command::AutoCheck(on) => {
                     // Not a domain event: it only changes what the next check does.
-                    model.domain.set_auto_check(on);
+                    model.machine()?.set_auto_check(on);
                     return Ok(());
                 }
             };
@@ -207,7 +265,7 @@ impl UpdateService {
         Ok(std::mem::take(&mut guard.model.logs))
     }
     /// Closing only fences callbacks; it does not assert that native side effects stopped.
-    /// Hosts must drain/reconcile in-flight work before rebuilding this application scope.
+    /// Only the owning application/session may close this service, never a borrowed view.
     pub fn close(&self) {
         let mut guard = self
             .transaction
@@ -249,20 +307,122 @@ mod tests {
     use super::*;
     use usher_state::backends::WatchBackend;
     use usher_test_support::task::ready;
-    use usher_update::state::{Capability, Settings};
+    use usher_update::state::{Capability, Phase, Settings};
 
+    fn settings() -> Settings {
+        Settings {
+            shell: "1.0.0".parse().unwrap(),
+            running: "1.0.0".parse().unwrap(),
+            capability: Capability::InApp,
+            auto_check: true,
+            failure_limit: 2,
+        }
+    }
+    /// A service with its machine created, as it is once the controller has configured it.
     fn service() -> UpdateService {
-        UpdateService::new(
-            Machine::new(Settings {
-                shell: "1.0.0".parse().unwrap(),
-                running: "1.0.0".parse().unwrap(),
-                capability: Capability::InApp,
-                auto_check: true,
-                failure_limit: 2,
-            }),
-            &WatchBackend,
-        )
-        .unwrap()
+        let service = unconfigured();
+        service.request(Command::Configure(settings())).unwrap();
+        service
+    }
+    fn unconfigured() -> UpdateService {
+        UpdateService::new(&WatchBackend).unwrap()
+    }
+    fn phase(service: &UpdateService) -> Option<Phase> {
+        service
+            .snapshot()
+            .unwrap()
+            .state()
+            .domain
+            .as_ref()
+            .map(|machine| machine.phase.clone())
+    }
+
+    #[test]
+    fn a_new_service_is_not_configured_and_says_so_instead_of_claiming_it_is_up_to_date() {
+        let service = unconfigured();
+        let snapshot = service.snapshot().unwrap();
+        assert!(snapshot.state().domain.is_none());
+        assert_eq!(snapshot.state().pending, 0);
+        // It can be read and subscribed to before it is configured: the interface needs that to
+        // show "preparing".
+        service.subscribe().unwrap();
+        service.reader().snapshot().unwrap();
+    }
+    #[test]
+    fn everything_that_needs_a_machine_is_refused_until_it_is_configured() {
+        let service = unconfigured();
+        for command in [
+            Command::Check(Trigger::Manual),
+            Command::Check(Trigger::Background),
+            Command::Download,
+            Command::Install,
+            Command::ConfirmFirstLaunch,
+            Command::AutoCheck(false),
+        ] {
+            assert_eq!(
+                service.request(command.clone()),
+                Err(Error::NotConfigured),
+                "{command:?}"
+            );
+        }
+        assert_eq!(Error::NotConfigured.code(), "updates_not_configured");
+        // Nothing was published by the refusals.
+        assert_eq!(service.snapshot().unwrap().sequence(), 0);
+        assert_eq!(service.acquire(), Err(Error::NotConfigured));
+        let foreign = super::tests::service().acquire().unwrap();
+        assert_eq!(service.claim(foreign), Err(Error::NotConfigured));
+    }
+    #[test]
+    fn configuring_creates_an_idle_machine_and_is_published_to_subscribers() {
+        let service = unconfigured();
+        let mut subscription = service.subscribe().unwrap();
+        let before = service.snapshot().unwrap().sequence();
+        service.request(Command::Configure(settings())).unwrap();
+        let snapshot = ready(subscription.next()).unwrap();
+        assert!(snapshot.sequence() > before);
+        let machine = snapshot.state().domain.as_ref().expect("configured");
+        assert_eq!(machine.phase, Phase::Idle);
+        assert_eq!(machine.ticket(), 0);
+        assert_eq!(machine.shell().to_string(), "1.0.0");
+        assert!(machine.auto_check());
+    }
+    #[test]
+    fn a_service_can_be_configured_once_and_a_second_configuration_changes_nothing() {
+        let service = service();
+        let sequence = service.snapshot().unwrap().sequence();
+        let mut other = settings();
+        other.shell = "9.0.0".parse().unwrap();
+        assert_eq!(
+            service.request(Command::Configure(other)),
+            Err(Error::Invalid)
+        );
+        assert_eq!(service.snapshot().unwrap().sequence(), sequence);
+        assert_eq!(
+            service
+                .snapshot()
+                .unwrap()
+                .state()
+                .domain
+                .as_ref()
+                .unwrap()
+                .shell()
+                .to_string(),
+            "1.0.0"
+        );
+    }
+    #[test]
+    fn the_unconfigured_service_closes_like_any_other() {
+        let service = unconfigured();
+        let mut subscription = service.subscribe().unwrap();
+        service.close();
+        assert_eq!(
+            ready(subscription.next()).unwrap_err(),
+            usher_state::SubscriptionEnd::Closed
+        );
+        assert_eq!(
+            service.request(Command::Configure(settings())),
+            Err(Error::Closed)
+        );
     }
     #[test]
     fn exhausted_identity_does_not_publish_or_escape_as_a_lease() {
@@ -273,11 +433,9 @@ mod tests {
             service.request(Command::Check(Trigger::Manual)),
             Err(Error::Exhausted)
         );
-        assert_eq!(service.snapshot().unwrap().sequence(), 0);
-        assert_eq!(
-            service.snapshot().unwrap().state().domain.phase,
-            Phase::Idle
-        );
+        let sequence = service.snapshot().unwrap().sequence();
+        assert_eq!(service.snapshot().unwrap().sequence(), sequence);
+        assert_eq!(phase(&service), Some(Phase::Idle));
     }
     #[test]
     fn dropping_last_service_owner_closes_retained_subscription() {

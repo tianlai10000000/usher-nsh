@@ -144,7 +144,8 @@
             "test"
           ],
           "test_paths": [
-            "ui/state/__tests__"
+            "ui/state/__tests__",
+            "ui/features/updates/__tests__"
           ],
           "timeout_seconds": 120,
           "required_test_prefixes": [
@@ -157,7 +158,9 @@
             "state pending",
             "state malformed",
             "state borrowed",
-            "state explicit"
+            "state explicit",
+            "updates controller",
+            "updates projection"
           ]
         },
         {
@@ -177,7 +180,9 @@
             "bridge cancellation",
             "bridge engine",
             "bridge: foreign",
-            "bridge: destroying"
+            "bridge: destroying",
+            "update bridge",
+            "updates feature"
           ]
         }
       ]
@@ -501,6 +506,29 @@
           "timeout_seconds": 180,
           "required_test_prefixes": [
             "native VM reload"
+          ]
+        }
+      ]
+    },
+    "shell-update": {
+      "runs": [
+        {
+          "id": "shell-archive-macos",
+          "runner": "native",
+          "command": [
+            "python3",
+            "scripts/shell_update_acceptance.py"
+          ],
+          "test_paths": [
+            "tests/e2e/shell-update/driver.ts"
+          ],
+          "timeout_seconds": 2400,
+          "required_test_prefixes": [
+            "shell archive success",
+            "shell archive archive-tampered",
+            "shell archive wrong-identity",
+            "shell archive invalid-signature",
+            "shell archive install-denied"
           ]
         }
       ]

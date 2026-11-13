@@ -1,14 +1,15 @@
-/**
- * The contract between the frame layout and the update feature.
- *
- * The rail shows an update button and marks it when an update is available. The layout only
- * reads this projection and reports the press; the update state machine behind it lives
- * elsewhere, so the frame does not depend on how updates are checked or installed.
- */
-
+/** Layout-owned update projection; feature code supplies content without changing the rail's dependencies. */
+import type { JSX } from "nsh/jsx-runtime";
 export type UpdateIndicator = {
-  /** Whether an update is ready to be installed; the rail button shows a badge while true. */
-  available: () => boolean;
-  /** The user pressed the update button. */
-  request: () => void;
+  state(): {
+    shape: "quiet" | "emphasis" | "progress";
+    label: string;
+    disabled: boolean;
+    progress: number | null;
+    ready: boolean;
+    warning: boolean;
+    spinning: boolean;
+  };
+  /** Wraps the layout-owned trigger in the feature's library popover. */
+  present(trigger: JSX.Element): JSX.Element;
 };

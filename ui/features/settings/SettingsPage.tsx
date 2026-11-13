@@ -1,4 +1,6 @@
-/** Arranges general, theme and diagnostic settings through the shared appearance store. */
+/** Composes general, theme, diagnostic and update sections over shared Rust projections. */
+import { UpdatesSettings } from "../updates/UpdatesSettings";
+import type { Updates } from "../updates";
 import { signal, Text, View } from "nsh";
 import { Switch } from "nsh/base";
 import { isLocalePreference, type LocalePreference } from "../../i18n";
@@ -200,7 +202,7 @@ function GeneralSettings(props: { appearance: AppearanceStore }) {
  */
 const wideBreakpoint = 560;
 
-export function SettingsPage(props: { appearance: AppearanceStore }) {
+export function SettingsPage(props: { appearance: AppearanceStore; updates?: Updates }) {
   const { palette, t, busy, retryable, settingsSection } = props.appearance;
   // The page's own width, not the window's: the docked sidebar takes room too.
   const width = signal(0);
@@ -213,6 +215,9 @@ export function SettingsPage(props: { appearance: AppearanceStore }) {
       </If>
       <If when={settingsSection() === "theme"}>
         <ThemeSettings appearance={props.appearance} busy={busy} />
+      </If>
+      <If when={settingsSection() === "updates" && !!props.updates}>
+        <UpdatesSettings appearance={props.appearance} updates={props.updates!} />
       </If>
       <If when={settingsSection() === "diagnostics"}>
         <DiagnosticsSettings appearance={props.appearance} />

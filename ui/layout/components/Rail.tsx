@@ -17,6 +17,7 @@ import type { AppearanceStore } from "../../state/appearance";
 import { iconButtonLook } from "../../theme/look";
 import type { AccountEntry } from "../contracts/account";
 import type { UpdateIndicator } from "../contracts/updates";
+import { RailUpdate } from "./RailUpdate";
 import { ButtonTooltip } from "./ButtonTooltip";
 
 const primaryRoutes = routeList.filter(route => route.menu === "primary").map(route => route.id);
@@ -48,7 +49,6 @@ export function Rail(props: {
   }
 
   const look = () => iconButtonLook(palette);
-  const updateAvailable = () => props.updates?.available() === true;
 
   return (
     <View testID="application-rail" role="navigation" accessibilityLabel={t("nav.rail")}
@@ -59,22 +59,7 @@ export function Rail(props: {
         {(id) => routeButton(id(), routes[id()].titleKey, `rail-${id()}`, () => palette().metric.railIcon)}
       </Each>
       <View class="flex-1" />
-      <Button testID="rail-update" accessibilityLabel={t(updateAvailable() ? "nav.updateAvailable" : "nav.update")}
-        tooltip={<ButtonTooltip appearance={props.appearance} testID="rail-update-tooltip" placement="right"
-          label={t(updateAvailable() ? "nav.updateAvailable" : "nav.update")} />}
-        disabled={props.updates === undefined}
-        style={look().style} hoverStyle={look().hoverStyle} activeStyle={look().activeStyle}
-        focusStyle={look().focusStyle} disabledStyle={look().disabledStyle}
-        onPress={() => props.updates?.request()}>
-        <SystemIcon name={navigationIcons.update.symbol} fallback={navigationIcons.update.fallback}
-          size={palette().metric.railUtilityIcon}
-          color={palette().text} />
-        <If when={updateAvailable()}>
-          <View testID="rail-update-badge" class="absolute"
-            style={{ top: 4, right: 4, width: palette().metric.badge, height: palette().metric.badge,
-              borderRadius: palette().metric.badge / 2, backgroundColor: palette().accent }} />
-        </If>
-      </Button>
+      <RailUpdate appearance={props.appearance} updates={props.updates} />
       {routeButton("settings", "nav.openSettings", "rail-settings", () => palette().metric.railUtilityIcon)}
       <Button testID="rail-account" accessibilityLabel={t("nav.account")}
         tooltip={<ButtonTooltip appearance={props.appearance} testID="rail-account-tooltip" placement="right"

@@ -5,10 +5,8 @@ use std::{
     collections::HashMap,
     sync::{Arc, Mutex},
 };
-use usher_state::{StoreId, backends::WatchBackend};
-use usher_update::state::Machine;
+use usher_state::StoreId;
 
-type Entry = (Machine, Arc<UpdateService>);
 /// Application-owned registry. Keep one alongside SettingsRegistry for the application lifetime.
 #[derive(Default)]
 pub struct UpdateRegistry {
@@ -16,17 +14,15 @@ pub struct UpdateRegistry {
 }
 #[derive(Default)]
 struct Scopes {
-    entries: HashMap<StoreId, Entry>,
+    entries: HashMap<StoreId, Arc<UpdateService>>,
     closed: bool,
 }
 impl UpdateRegistry {
-    /// Borrows the same domain across windows sharing settings; contradictory initialization fails.
+    /// Borrows the same service across windows sharing settings. The service is created here, not
+    /// yet configured: the machine arrives with `Command::Configure`, once the controller knows
+    /// the installed shell's version, and a second configuration is refused by the service.
     /// Neither the directory nor the identity can be supplied by an untrusted UI command.
-    pub fn for_settings(
-        &self,
-        settings: &SettingsService,
-        initial: Machine,
-    ) -> Result<Arc<UpdateService>, Error> {
+    pub fn for_settings(&self, settings: &SettingsService) -> Result<Arc<UpdateService>, Error> {
         let id = settings
             .state_snapshot()
             .map_err(|_| Error::Closed)?
@@ -35,15 +31,12 @@ impl UpdateRegistry {
         if scopes.closed {
             return Err(Error::Closed);
         }
-        if let Some((original, service)) = scopes.entries.get(&id) {
-            if original != &initial {
-                return Err(Error::Configuration);
-            }
+        if let Some(service) = scopes.entries.get(&id) {
             service.snapshot()?;
             return Ok(service.clone());
         }
-        let service = Arc::new(UpdateService::new(initial.clone(), &WatchBackend)?);
-        scopes.entries.insert(id, (initial, service.clone()));
+        let service = settings.updates().map_err(|_| Error::Closed)?;
+        scopes.entries.insert(id, service.clone());
         Ok(service)
     }
     /// Explicit session/process teardown closes even services retained by consumers.
@@ -53,7 +46,7 @@ impl UpdateRegistry {
             .lock()
             .unwrap_or_else(|error| error.into_inner());
         scopes.closed = true;
-        for (_, service) in scopes.entries.values() {
+        for service in scopes.entries.values() {
             service.close();
         }
         scopes.entries.clear();

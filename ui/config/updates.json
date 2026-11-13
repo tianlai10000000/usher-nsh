@@ -1,0 +1,5 @@
+{
+  "startupDelayMs": 30000,
+  "checkIntervalMs": 21600000,
+  "failureLimit": 2
+}

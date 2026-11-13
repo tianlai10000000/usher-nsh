@@ -55,6 +55,8 @@ pub struct Offer {
     pub version: Version,
     /// Whether the release carries a code package this runtime can run.
     pub has_package: bool,
+    /// Whole-app installation permission reported by this check, not startup configuration.
+    pub can_install: bool,
 }
 
 /// A release that can be offered, and how it would be installed.
@@ -501,7 +503,9 @@ impl Machine {
         let notice = notice_for(&outcome, trigger);
         let download = self.auto_download(&outcome);
         self.phase = Phase::Checked(outcome);
-        effects.extend(notice.map(Effect::Notify));
+        if download.is_none() {
+            effects.extend(notice.map(Effect::Notify));
+        }
         if let Some(candidate) = download {
             effects.extend(self.start_download(candidate));
         }
@@ -541,7 +545,12 @@ impl Machine {
             version: offer.version,
             kind,
         };
-        match self.capability {
+        let capability = if self.capability == Capability::InApp && !offer.can_install {
+            Capability::ManualOnly
+        } else {
+            self.capability
+        };
+        match capability {
             Capability::InApp => match shell_reason {
                 None => Outcome::PackageUpdate(candidate),
                 Some(reason) => Outcome::ShellUpdate { candidate, reason },

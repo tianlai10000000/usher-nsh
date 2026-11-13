@@ -9,7 +9,7 @@ use usher_nsh::{
 use usher_state::{BackendFactory, SubscriptionEnd, backends::WatchBackend};
 use usher_test_support::task::ready;
 use usher_update::state::{
-    Capability, CheckResult, Effect, Failure, Machine, Offer, Outcome, Phase, Settings, Trigger,
+    Capability, CheckResult, Effect, Failure, Offer, Outcome, Phase, Settings, Trigger,
 };
 
 fn fixture() -> serde_json::Value {
@@ -38,14 +38,33 @@ fn machine_settings() -> Settings {
         failure_limit: fixture()["failure_limit"].as_u64().unwrap() as u32,
     }
 }
-fn machine() -> Machine {
-    Machine::new(machine_settings())
+/// The phase of a configured service's machine. Every service in these tests is configured by
+/// `configured`; the not-configured case is tested in `update_service`'s own unit tests.
+fn phase_of(state: &State) -> Phase {
+    state
+        .domain
+        .as_ref()
+        .expect("the service is configured")
+        .phase
+        .clone()
+}
+fn phase(service: &UpdateService) -> Phase {
+    phase_of(service.snapshot().unwrap().state())
+}
+/// A service with its machine created, as it is once the controller has configured it.
+fn configured(factory: &dyn BackendFactory<State>) -> UpdateService {
+    let service = UpdateService::new(factory).unwrap();
+    service
+        .request(Command::Configure(machine_settings()))
+        .unwrap();
+    service
 }
 /// An offer built from a fixture key. `package` says whether the release carries a code package.
 fn offer(key: &str, package: bool) -> Offer {
     Offer {
         version: fixture()[key].as_str().unwrap().parse().unwrap(),
         has_package: package,
+        can_install: true,
     }
 }
 fn both(run: impl Fn(&UpdateService)) {
@@ -53,7 +72,7 @@ fn both(run: impl Fn(&UpdateService)) {
         &WatchBackend as &dyn BackendFactory<State>,
         &memory::MemoryFactory::default(),
     ] {
-        run(&UpdateService::new(machine(), backend).unwrap());
+        run(&configured(backend));
     }
 }
 fn check(service: &UpdateService, lease: Lease) -> Claim {
@@ -96,7 +115,7 @@ fn updates_backend_contract_single_execution_shared_subscriptions_and_coalesced_
         service.request(Command::Check(Trigger::Manual)).unwrap();
         assert!(service.claim(lease).unwrap().is_none());
         assert_eq!(
-            ready(first.next()).unwrap().state().domain.phase,
+            phase_of(ready(first.next()).unwrap().state()),
             Phase::Checking
         );
         assert_eq!(
@@ -147,10 +166,7 @@ fn updates_backend_contract_download_progress_and_receipt_kinds_are_validated() 
         service.complete(&claim, Completion::Downloaded).unwrap();
         assert!(service.progress(&claim, 10, Some(10)).is_err());
         // The download is done and NSH accepted it: the update waits to be installed.
-        assert!(matches!(
-            service.snapshot().unwrap().state().domain.phase,
-            Phase::ReadyToInstall(_)
-        ));
+        assert!(matches!(phase(service), Phase::ReadyToInstall(_)));
         assert!(service.claim(lease).unwrap().is_none());
     });
 }
@@ -162,30 +178,21 @@ fn updates_backend_contract_an_update_installs_through_claims_and_waits_for_the_
         let lease = service.acquire().unwrap();
         let install = install(service, lease);
         assert!(matches!(install.effect(), Effect::StartInstall { .. }));
-        assert!(matches!(
-            service.snapshot().unwrap().state().domain.phase,
-            Phase::Installing(_)
-        ));
+        assert!(matches!(phase(service), Phase::Installing(_)));
         // A result of the wrong kind for this claim is refused and leaves it open.
         assert_eq!(
             service.complete(&install, Completion::Downloaded),
             Err(Error::Invalid)
         );
         service.complete(&install, Completion::Installed).unwrap();
-        assert!(matches!(
-            service.snapshot().unwrap().state().domain.phase,
-            Phase::AwaitingFirstLaunch(_)
-        ));
+        assert!(matches!(phase(service), Phase::AwaitingFirstLaunch(_)));
         // The same claim cannot complete twice: the second result is a stale one.
         assert_eq!(
             service.complete(&install, Completion::Installed),
             Err(Error::Stale)
         );
         service.request(Command::ConfirmFirstLaunch).unwrap();
-        assert_eq!(
-            service.snapshot().unwrap().state().domain.phase,
-            Phase::Idle
-        );
+        assert_eq!(phase(service), Phase::Idle);
     });
 }
 #[test]
@@ -197,7 +204,7 @@ fn updates_backend_contract_a_failed_install_is_a_failed_step_and_the_update_can
             .complete(&install, Completion::Failed(Failure::Disk))
             .unwrap();
         assert!(matches!(
-            service.snapshot().unwrap().state().domain.phase,
+            phase(service),
             Phase::InstallFailed {
                 failure: Failure::Disk,
                 ..
@@ -223,7 +230,7 @@ fn updates_backend_contract_a_rejected_download_is_a_failed_step_not_a_stuck_cla
             .complete(&claim, Completion::Failed(Failure::Rejected))
             .unwrap();
         assert!(matches!(
-            service.snapshot().unwrap().state().domain.phase,
+            phase(service),
             Phase::InstallFailed {
                 failure: Failure::Rejected,
                 ..
@@ -243,7 +250,7 @@ fn updates_backend_contract_a_foreign_scope_cannot_claim_and_the_lease_stays_wit
     both(|service| {
         let lease = service.acquire().unwrap();
         service.request(Command::Check(Trigger::Manual)).unwrap();
-        let other = UpdateService::new(machine(), &WatchBackend).unwrap();
+        let other = configured(&WatchBackend);
         let foreign = other.acquire().unwrap();
         // A lease from another service is not valid here.
         assert_eq!(service.claim(foreign), Err(Error::Stale));
@@ -282,10 +289,7 @@ fn updates_backend_contract_a_not_newer_or_pre_release_offer_is_up_to_date_and_a
                     Completion::Checked(CheckResult::Release(Some(offer(key, true)))),
                 )
                 .unwrap();
-            assert_eq!(
-                service.snapshot().unwrap().state().domain.phase,
-                Phase::Checked(Outcome::UpToDate)
-            );
+            assert_eq!(phase(service), Phase::Checked(Outcome::UpToDate));
             let notice = service.claim(lease).unwrap().unwrap();
             service.complete(&notice, Completion::Notified).unwrap();
         }
@@ -318,7 +322,7 @@ fn updates_backend_contract_the_machines_log_records_reach_the_caller_in_order_a
 #[test]
 fn updates_backend_contract_unread_log_records_cannot_grow_without_limit() {
     // A logger that is off or never collects must not make the service grow forever.
-    let service = UpdateService::new(machine(), &WatchBackend).unwrap();
+    let service = configured(&WatchBackend);
     let lease = service.acquire().unwrap();
     for _ in 0..200 {
         let claim = check(&service, lease);
@@ -338,9 +342,27 @@ fn updates_backend_contract_unread_log_records_cannot_grow_without_limit() {
 fn updates_backend_contract_auto_check_is_a_command_that_changes_the_next_check_only() {
     both(|service| {
         let lease = service.acquire().unwrap();
-        assert!(service.snapshot().unwrap().state().domain.auto_check());
+        assert!(
+            service
+                .snapshot()
+                .unwrap()
+                .state()
+                .domain
+                .as_ref()
+                .unwrap()
+                .auto_check()
+        );
         service.request(Command::AutoCheck(false)).unwrap();
-        assert!(!service.snapshot().unwrap().state().domain.auto_check());
+        assert!(
+            !service
+                .snapshot()
+                .unwrap()
+                .state()
+                .domain
+                .as_ref()
+                .unwrap()
+                .auto_check()
+        );
         service
             .request(Command::Check(Trigger::Background))
             .unwrap();
@@ -349,7 +371,16 @@ fn updates_backend_contract_auto_check_is_a_command_that_changes_the_next_check_
             "off: a background check is refused"
         );
         service.request(Command::AutoCheck(true)).unwrap();
-        assert!(service.snapshot().unwrap().state().domain.auto_check());
+        assert!(
+            service
+                .snapshot()
+                .unwrap()
+                .state()
+                .domain
+                .as_ref()
+                .unwrap()
+                .auto_check()
+        );
         // Now a background check goes through and a found package downloads without asking.
         service
             .request(Command::Check(Trigger::Background))
@@ -398,17 +429,14 @@ fn updates_backend_contract_close_ends_subscriptions_and_retained_readers_cannot
 #[test]
 fn updates_publication_failure_never_releases_or_loses_a_claim_or_domain_transition() {
     let backend = memory::MemoryFactory::default();
-    let service = UpdateService::new(machine(), &backend).unwrap();
+    let service = configured(&backend);
     let lease = service.acquire().unwrap();
     backend.0.fail_publish.store(true, Ordering::SeqCst);
     assert_eq!(
         service.request(Command::Check(Trigger::Manual)),
         Err(Error::Unavailable)
     );
-    assert_eq!(
-        service.snapshot().unwrap().state().domain.phase,
-        Phase::Idle
-    );
+    assert_eq!(phase(&service), Phase::Idle);
     assert!(service.claim(lease).unwrap().is_none());
     backend.0.fail_publish.store(false, Ordering::SeqCst);
     service.request(Command::Check(Trigger::Manual)).unwrap();
@@ -421,10 +449,7 @@ fn updates_publication_failure_never_releases_or_loses_a_claim_or_domain_transit
         service.complete(&claim, Completion::Checked(CheckResult::Release(None))),
         Err(Error::Unavailable)
     );
-    assert_eq!(
-        service.snapshot().unwrap().state().domain.phase,
-        Phase::Checking
-    );
+    assert_eq!(phase(&service), Phase::Checking);
     backend.0.fail_publish.store(false, Ordering::SeqCst);
     service
         .complete(&claim, Completion::Checked(CheckResult::Release(None)))
@@ -432,7 +457,7 @@ fn updates_publication_failure_never_releases_or_loses_a_claim_or_domain_transit
 }
 #[test]
 fn updates_concurrent_windows_claim_one_effect_and_receive_the_same_state() {
-    let service = UpdateService::new(machine(), &WatchBackend).unwrap();
+    let service = configured(&WatchBackend);
     let lease = service.acquire().unwrap();
     service.request(Command::Check(Trigger::Manual)).unwrap();
     let barrier = Barrier::new(2);
@@ -460,43 +485,38 @@ fn updates_registry_shares_only_host_settings_scope_and_preserves_persisted_byte
         .unwrap();
     let before = std::fs::read(&path).unwrap();
     let registry = UpdateRegistry::default();
-    let main = registry.for_settings(&first, machine()).unwrap();
+    let main = registry.for_settings(&first).unwrap();
     let second = registry
-        .for_settings(&settings.for_path(path.clone()).unwrap(), machine())
+        .for_settings(&settings.for_path(path.clone()).unwrap())
         .unwrap();
     assert!(Arc::ptr_eq(&main, &second));
     let isolated_settings = settings
         .for_path(directory.path().join("other/settings.toml"))
         .unwrap();
-    let isolated = registry
-        .for_settings(&isolated_settings, machine())
-        .unwrap();
+    let isolated = registry.for_settings(&isolated_settings).unwrap();
     assert_ne!(
         main.snapshot().unwrap().store_id(),
         isolated.snapshot().unwrap().store_id()
     );
+    assert!(main.snapshot().unwrap().state().domain.is_none());
+    main.request(Command::Configure(machine_settings()))
+        .unwrap();
     let lease = main.acquire().unwrap();
     let claim = check(&main, lease);
     main.complete(&claim, Completion::Failed(Failure::Network))
         .unwrap();
     assert_eq!(std::fs::read(&path).unwrap(), before);
-    assert_eq!(
-        isolated.snapshot().unwrap().state().domain.phase,
-        Phase::Idle
-    );
+    assert!(isolated.snapshot().unwrap().state().domain.is_none());
     // The same scope cannot be re-initialised with a different machine.
     let mut other = machine_settings();
     other.shell = "9.9.9".parse().unwrap();
     assert!(matches!(
-        registry.for_settings(&first, Machine::new(other)),
-        Err(Error::Configuration)
+        main.request(Command::Configure(other)),
+        Err(Error::Invalid)
     ));
     registry.close();
     assert_eq!(main.acquire(), Err(Error::Closed));
-    assert!(matches!(
-        registry.for_settings(&first, machine()),
-        Err(Error::Closed)
-    ));
+    assert!(matches!(registry.for_settings(&first), Err(Error::Closed)));
     assert_eq!(std::fs::read(path).unwrap(), before);
 }
 #[test]
@@ -505,15 +525,55 @@ fn updates_registry_drop_closes_retained_services_and_new_sessions_do_not_replay
     let service;
     {
         let registry = UpdateRegistry::default();
-        service = registry.for_settings(&settings, machine()).unwrap();
+        service = registry.for_settings(&settings).unwrap();
+        service
+            .request(Command::Configure(machine_settings()))
+            .unwrap();
         service.request(Command::Check(Trigger::Manual)).unwrap();
     }
     assert_eq!(service.acquire(), Err(Error::Closed));
-    let fresh = UpdateService::new(machine(), &WatchBackend).unwrap();
+    let fresh = configured(&WatchBackend);
     let lease = fresh.acquire().unwrap();
     assert!(fresh.claim(lease).unwrap().is_none());
     assert_ne!(
         service.reader().snapshot().unwrap().store_id(),
         fresh.snapshot().unwrap().store_id()
     );
+}
+
+#[test]
+fn configuration_publication_failure_can_retry_on_both_backends() {
+    let backend = memory::MemoryFactory::default();
+    let service = UpdateService::new(&backend).unwrap();
+    backend.0.fail_publish.store(true, Ordering::SeqCst);
+    assert_eq!(
+        service.request(Command::Configure(machine_settings())),
+        Err(Error::Unavailable)
+    );
+    assert!(service.snapshot().unwrap().state().domain.is_none());
+    backend.0.fail_publish.store(false, Ordering::SeqCst);
+    service
+        .request(Command::Configure(machine_settings()))
+        .unwrap();
+    assert_eq!(phase(&service), Phase::Idle);
+}
+
+#[test]
+fn dropping_window_borrows_keeps_application_configuration_and_lease() {
+    let settings = usher_nsh::app_state::SettingsService::session().unwrap();
+    let first = settings.updates().unwrap();
+    assert!(first.snapshot().unwrap().state().domain.is_none());
+    first
+        .request(Command::Configure(machine_settings()))
+        .unwrap();
+    let lease = first.acquire().unwrap();
+    drop(first);
+    let remounted = settings.updates().unwrap();
+    assert_eq!(remounted.acquire(), Err(Error::Busy));
+    let claim = check(&remounted, lease);
+    remounted
+        .complete(&claim, Completion::Checked(CheckResult::Release(None)))
+        .unwrap();
+    settings.close();
+    assert_eq!(remounted.acquire(), Err(Error::Closed));
 }

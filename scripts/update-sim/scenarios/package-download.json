@@ -1,0 +1,35 @@
+{
+  "description": "The production controller downloads a signed package and NSH promotes it on the next launch",
+  "checks": true,
+  "manifest": {
+    "version": "0.1.1",
+    "build": 2,
+    "package": true
+  },
+  "restartAfterDownload": true,
+  "expect": [
+    {
+      "kind": "requested",
+      "path": ".nshpkg"
+    },
+    {
+      "kind": "log-contains",
+      "text": "download_finished"
+    },
+    {
+      "kind": "has",
+      "name": "current.nshpkg"
+    },
+    {
+      "kind": "absent",
+      "name": "next.nshpkg"
+    },
+    {
+      "kind": "absent",
+      "name": "trying.nshpkg"
+    },
+    {
+      "kind": "no-partial"
+    }
+  ]
+}

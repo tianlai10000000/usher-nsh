@@ -75,6 +75,7 @@ pub enum Command {
     SetAccent(Option<String>),
     SetLocale(String),
     SetDiagnosticLevel(DiagnosticLevel),
+    SetUpdateAutoCheck(bool),
     SaveCustomTheme(Box<CustomTheme>),
     RemoveCustomTheme(String),
 }
@@ -126,6 +127,7 @@ pub struct Snapshot {
     pub accent: Option<String>,
     pub locale_preference: String,
     pub diagnostic_level: DiagnosticLevel,
+    pub update_auto_check: bool,
     pub custom_themes: Vec<CustomTheme>,
     pub style_themes: Vec<StyleTheme>,
     pub theme_file_issues: Vec<ThemeFileIssue>,
@@ -185,6 +187,8 @@ struct Document {
     general: General,
     #[serde(default, skip_serializing_if = "DiagnosticsSection::is_default")]
     diagnostics: DiagnosticsSection,
+    #[serde(default, skip_serializing_if = "UpdatesSection::is_default")]
+    updates: UpdatesSection,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     custom_themes: Vec<CustomTheme>,
 }
@@ -206,6 +210,7 @@ impl Default for Document {
             },
             general: General::default(),
             diagnostics: DiagnosticsSection::default(),
+            updates: UpdatesSection::default(),
             custom_themes: Vec::new(),
         }
     }
@@ -283,6 +288,25 @@ impl Default for General {
 impl General {
     fn is_default(&self) -> bool {
         self.locale_preference == SYSTEM_LOCALE
+    }
+}
+
+/// `[updates]` is omitted while automatic checks retain the established enabled default.
+#[derive(Deserialize, Serialize)]
+#[serde(default)]
+struct UpdatesSection {
+    auto_check: bool,
+}
+impl Default for UpdatesSection {
+    fn default() -> Self {
+        Self {
+            auto_check: default_enabled(),
+        }
+    }
+}
+impl UpdatesSection {
+    fn is_default(&self) -> bool {
+        self.auto_check == Self::default().auto_check
     }
 }
 
@@ -542,6 +566,7 @@ impl SettingsStore {
             accent: self.document.appearance.accent.clone(),
             locale_preference: self.document.general.locale_preference.clone(),
             diagnostic_level: self.document.diagnostics.level,
+            update_auto_check: self.document.updates.auto_check,
             custom_themes: self.themes.custom_themes.clone(),
             style_themes: self.resolved_themes(),
             theme_file_issues: self.themes.issues.clone(),
@@ -668,6 +693,9 @@ impl SettingsStore {
             Command::SetLocale(locale) => {
                 validate_locale(&locale)?;
                 update(&mut self.document.general.locale_preference, locale)
+            }
+            Command::SetUpdateAutoCheck(enabled) => {
+                update(&mut self.document.updates.auto_check, enabled)
             }
             Command::SetDiagnosticLevel(level) => {
                 update(&mut self.document.diagnostics.level, level)
@@ -1160,6 +1188,28 @@ mod tests {
             undocked
         );
         assert!(!SettingsStore::open(path).snapshot().sidebar_docked);
+    }
+
+    #[test]
+    fn update_preferences_round_trip_and_default_omission_preserve_legacy_documents() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("settings.toml");
+        let mut store = SettingsStore::open(path.clone());
+        assert!(store.snapshot().update_auto_check);
+        let disabled = store.apply(Command::SetUpdateAutoCheck(false)).unwrap();
+        assert!(disabled.saved);
+        let text = fs::read_to_string(&path).unwrap();
+        assert!(text.contains("[updates]") && text.contains("auto_check = false"));
+        let mut reopened = SettingsStore::open(path.clone());
+        assert!(!reopened.snapshot().update_auto_check);
+        assert!(
+            reopened
+                .apply(Command::SetUpdateAutoCheck(true))
+                .unwrap()
+                .saved
+        );
+        assert!(!fs::read_to_string(&path).unwrap().contains("[updates]"));
+        assert!(SettingsStore::open(path).snapshot().update_auto_check);
     }
 
     #[test]

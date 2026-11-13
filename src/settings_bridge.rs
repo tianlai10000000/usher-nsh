@@ -52,6 +52,8 @@ pub struct SettingsSnapshot {
     pub locale_preference: String,
     /// The diagnostic log level: OFF, ERROR, WARN, INFO, DEBUG or TRACE.
     pub diagnostic_level: String,
+    /// Persisted automatic update preference; execution is owned by the update controller.
+    pub update_auto_check: bool,
     /// A stable code when the log files cannot be written, else nothing.
     pub diagnostic_problem: Option<String>,
     /// Records dropped because the log queue was full since the app started.
@@ -237,6 +239,7 @@ impl From<Snapshot> for SettingsSnapshot {
             accent: snapshot.accent,
             locale_preference: snapshot.locale_preference,
             diagnostic_level: snapshot.diagnostic_level.as_str().to_owned(),
+            update_auto_check: snapshot.update_auto_check,
             // The log writer is process-wide, so its health is read where the snapshot is
             // handed out, not stored in the settings file.
             diagnostic_problem: crate::diagnostics::current()
@@ -570,7 +573,7 @@ async fn with_store(
     with_settings_store(sys, operation).await.map(Into::into)
 }
 
-async fn with_settings_store<T: Send + 'static>(
+pub(crate) async fn with_settings_store<T: Send + 'static>(
     sys: System,
     operation: impl FnOnce(&Arc<SettingsService>) -> Result<T, &'static str> + Send + 'static,
 ) -> Result<T, String> {

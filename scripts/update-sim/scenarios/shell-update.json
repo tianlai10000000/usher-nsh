@@ -1,6 +1,5 @@
 {
   "description": "The release has no code package: only a whole-app update is offered",
-  "pending": "the app does not call checkForUpdate or checkForPackage yet (docs/update.md batches 4 and 5); remove this field when the update controller exists",
   "manifest": {
     "version": "0.2.0",
     "build": 3,
@@ -23,5 +22,6 @@
       "kind": "absent",
       "name": "current.nshpkg"
     }
-  ]
+  ],
+  "checks": true
 }

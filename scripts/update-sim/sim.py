@@ -27,6 +27,7 @@ import uuid
 import fcntl
 import shutil
 import signal
+import socket
 import subprocess
 import sys
 import tarfile
@@ -172,7 +173,7 @@ def validate_app(app: Path, app_id: str) -> Path:
 
 def fake_archive(directory: Path, name: str, version: str) -> Path:
     """A minimal .tar.gz named by NSH's convention. The shell-update scenario only inspects its
-    hash and size on the way in; a real replacement needs `real_archive` instead."""
+    hash and size on the way in; real replacement is covered by scripts/shell_update_acceptance.py."""
     path = directory / name
     with tarfile.open(path, "w:gz") as archive:
         data = f"simulated shell {version}".encode()
@@ -420,13 +421,23 @@ def run_scenario(name: str, scenario: dict, keys: dict, config: dict, app: Path,
             while process.process.poll() is None:
                 time.sleep(1)
             raise RuntimeError('interactive app exited before the session ended')
-        for step in scenario.get('launches', [{'seconds': config['launchSeconds']}]):
+        duration = config['launchSeconds']
+        if scenario.get('checks'):
+            timers = json.loads((ROOT / 'ui/config/updates.json').read_text())
+            duration += timers['startupDelayMs'] / 1000
+        for step in scenario.get('launches', [{'seconds': duration}]):
             process.launch(step['seconds'])
+        if scenario.get('restartAfterDownload'):
+            if not (updates_dir(namespace.root / 'data') / 'next.nshpkg').is_file():
+                raise RuntimeError('controller did not stage a package before restart')
+            process.launch(config['launchSeconds'])
+        diagnostic_log = '\n'.join(path.read_text(errors='replace') for path in sorted((namespace.root / 'data').rglob('usher*.log')))
+        (evidence / 'diagnostics.log').write_text(diagnostic_log)
         state = state_of(updates_dir(namespace.root / 'data'))
         record['state'] = state
         record['expectations'] = len(scenario['expect'])
         problems = check_expectations(name, scenario['expect'], state,
-                                      {'log': process.log.read_text(errors='replace'),
+                                      {'log': process.log.read_text(errors='replace') + '\n' + diagnostic_log,
                                        'requests': list(source.requests) if source else []})
         if problems:
             raise RuntimeError('; '.join(problems))

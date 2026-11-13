@@ -1,6 +1,5 @@
 {
-  "description": "A rate-limited source, for watching progress and cancelling in the UI (use serve)",
-  "pending": "the app does not call checkForUpdate or checkForPackage yet (docs/update.md batches 4 and 5); remove this field when the update controller exists",
+  "description": "A rate-limited source shows progress; downloads cannot be cancelled",
   "manifest": {
     "version": "0.1.1",
     "build": 2,
@@ -13,6 +12,15 @@
     {
       "kind": "requested",
       "path": "latest.json"
+    },
+    {
+      "kind": "requested",
+      "path": "latest.json"
+    },
+    {
+      "kind": "requested",
+      "path": ".nshpkg"
     }
-  ]
+  ],
+  "checks": true
 }

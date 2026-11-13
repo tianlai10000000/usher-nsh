@@ -157,3 +157,88 @@ fn backend_creation_failure_does_not_create_a_live_service() {
         .is_ok()
     );
 }
+
+#[test]
+fn update_configuration_and_preferences_share_the_settings_transaction() {
+    let directory = tempfile::tempdir().unwrap();
+    let registry = SettingsRegistry::default();
+    let service = registry
+        .for_path(directory.path().join("settings.toml"))
+        .unwrap();
+    let updates = service.updates().unwrap();
+    assert!(updates.snapshot().unwrap().state().domain.is_none());
+    service.apply(Command::SetUpdateAutoCheck(false)).unwrap();
+    let config = crate::update_service::transport::parse(
+        r#"{"shell":"1.0.0","running":null,"capability":"in_app","failure_limit":"2"}"#,
+    )
+    .unwrap();
+    service.configure_updates(config).unwrap();
+    assert!(
+        !updates
+            .snapshot()
+            .unwrap()
+            .state()
+            .domain
+            .as_ref()
+            .unwrap()
+            .auto_check()
+    );
+    service.apply(Command::SetUpdateAutoCheck(true)).unwrap();
+    assert!(
+        updates
+            .snapshot()
+            .unwrap()
+            .state()
+            .domain
+            .as_ref()
+            .unwrap()
+            .auto_check()
+    );
+    service.close();
+    assert_eq!(updates.acquire(), Err(crate::update_service::Error::Closed));
+}
+
+#[test]
+fn unsaved_update_preference_still_stops_background_checks_and_can_retry() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("blocked/settings.toml");
+    let registry = SettingsRegistry::default();
+    let service = registry.for_path(path.clone()).unwrap();
+    let config = crate::update_service::transport::parse(
+        r#"{"shell":"1.0.0","running":null,"capability":"in_app","failure_limit":"2"}"#,
+    )
+    .unwrap();
+    service.configure_updates(config).unwrap();
+    // Block the file after loading, leaving a retryable persistence failure.
+    std::fs::create_dir_all(&path).unwrap();
+    let result = service.apply(Command::SetUpdateAutoCheck(false)).unwrap();
+    assert!(!result.saved);
+    let updates = service.updates().unwrap();
+    let lease = updates.acquire().unwrap();
+    updates
+        .request(crate::update_service::Command::Check(
+            usher_update::state::Trigger::Background,
+        ))
+        .unwrap();
+    assert!(updates.claim(lease).unwrap().is_none());
+    std::fs::remove_dir(&path).unwrap();
+    assert!(service.retry_save().unwrap().saved);
+    assert!(
+        std::fs::read_to_string(path)
+            .unwrap()
+            .contains("auto_check = false")
+    );
+}
+
+#[test]
+fn dropping_settings_owner_closes_retained_update_borrows() {
+    let settings = SettingsService::session().unwrap();
+    let updates = settings.updates().unwrap();
+    let mut subscription = updates.subscribe().unwrap();
+    drop(settings);
+    assert_eq!(
+        ready(subscription.next()).unwrap_err(),
+        SubscriptionEnd::Closed
+    );
+    assert_eq!(updates.acquire(), Err(crate::update_service::Error::Closed));
+}

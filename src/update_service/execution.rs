@@ -19,7 +19,16 @@ pub struct Claim {
     id: u64,
     effect: Effect,
 }
+impl Lease {
+    pub(crate) fn token(self) -> String {
+        format!("{}:{}", self.scope.value(), self.generation)
+    }
+}
 impl Claim {
+    pub(crate) fn token(&self) -> String {
+        format!("{}:{}", self.lease.token(), self.id)
+    }
+
     pub fn effect(&self) -> &Effect {
         &self.effect
     }
@@ -31,6 +40,7 @@ impl Claim {
 #[derive(Clone, Debug)]
 pub enum Completion {
     Checked(CheckResult),
+    CheckedWithUrl(CheckResult, Option<String>),
     /// The download finished and NSH accepted it (NSH verifies inside the download).
     Downloaded,
     Installed,
@@ -47,9 +57,41 @@ impl Model {
     }
 }
 impl UpdateService {
+    /// Resolves only a live service-issued identity; callers cannot submit raw Rust fields.
+    pub(crate) fn lease_token(&self, token: &str) -> Result<Lease, Error> {
+        let guard = self.transaction.lock().map_err(|_| Error::Unavailable)?;
+        if guard.closed {
+            return Err(Error::Closed);
+        }
+        if guard.model.domain.is_none() {
+            return Err(Error::NotConfigured);
+        }
+        guard
+            .model
+            .lease
+            .filter(|lease| lease.token() == token)
+            .ok_or(Error::Stale)
+    }
+    pub(crate) fn claim_token(&self, token: &str) -> Result<Claim, Error> {
+        let guard = self.transaction.lock().map_err(|_| Error::Unavailable)?;
+        if guard.closed {
+            return Err(Error::Closed);
+        }
+        if guard.model.domain.is_none() {
+            return Err(Error::NotConfigured);
+        }
+        guard
+            .model
+            .active
+            .as_ref()
+            .filter(|claim| claim.token() == token)
+            .cloned()
+            .ok_or(Error::Stale)
+    }
     /// Elects a single designated controller; ordinary consumers should never acquire a lease.
     pub fn acquire(&self) -> Result<Lease, Error> {
         self.change(|model| {
+            model.machine()?;
             if model.lease.is_some() {
                 return Err(Error::Busy);
             }
@@ -64,6 +106,7 @@ impl UpdateService {
     /// Atomically delivers one queued effect. None means no work or an existing in-flight claim.
     pub fn claim(&self, lease: Lease) -> Result<Option<Claim>, Error> {
         self.change(|model| {
+            model.machine()?;
             if model.lease != Some(lease) {
                 return Err(Error::Stale);
             }
@@ -98,7 +141,7 @@ impl UpdateService {
                 downloaded: previous,
                 total: known,
                 ..
-            } = model.domain.phase
+            } = model.machine()?.phase
             else {
                 return Err(Error::Invalid);
             };
@@ -119,6 +162,16 @@ impl UpdateService {
     pub fn complete(&self, claim: &Claim, completion: Completion) -> Result<(), Error> {
         self.change(|model| {
             model.validate(claim)?;
+            let completion = match completion {
+                Completion::CheckedWithUrl(result, url)
+                    if matches!(claim.effect, Effect::StartCheck { .. }) =>
+                {
+                    model.info.manual_url = url;
+                    Completion::Checked(result)
+                }
+                other => other,
+            };
+            let checking = matches!(claim.effect, Effect::StartCheck { .. });
             let event = match (&claim.effect, completion) {
                 (Effect::StartCheck { ticket, .. }, Completion::Checked(result)) => {
                     Some(Event::CheckFinished {
@@ -151,6 +204,22 @@ impl UpdateService {
             model.active = None;
             if let Some(event) = event {
                 model.event(event)?;
+            }
+            if checking {
+                use usher_update::state::{Outcome, Phase};
+                model.info.last_checked = Some(chrono::Utc::now().to_rfc3339());
+                model.info.last_result = Some(
+                    match &model.machine()?.phase {
+                        Phase::Downloading { .. } | Phase::Checked(Outcome::PackageUpdate(_)) => {
+                            "package_update"
+                        }
+                        Phase::Checked(Outcome::ShellUpdate { .. }) => "shell_update",
+                        Phase::Checked(Outcome::ManualUpgrade { .. }) => "manual_upgrade",
+                        Phase::Checked(Outcome::Failed(_)) => "failed",
+                        _ => "up_to_date",
+                    }
+                    .into(),
+                );
             }
             Ok(())
         })

@@ -79,7 +79,10 @@
       "layout-panel-inset": 8,
       "layout-title-bar": 44,
       "layout-wide-breakpoint": 680,
-      "motion-layout": 220
+      "motion-layout": 220,
+      "motion-update-spin": 1000,
+      "feedback-update-segment": 0.25,
+      "size-update-icon": 14
     },
     "light": {
       "background": "#ffffff",
@@ -124,7 +127,8 @@
       "finish-hover-edge": "transparent",
       "finish-pressed-edge": "transparent",
       "finish-accent-edge": "transparent",
-      "finish-accent-fill": "transparent"
+      "finish-accent-fill": "transparent",
+      "update-warning": "#b45309"
     },
     "dark": {
       "background": "#181818",
@@ -169,7 +173,8 @@
       "finish-hover-edge": "transparent",
       "finish-pressed-edge": "transparent",
       "finish-accent-edge": "transparent",
-      "finish-accent-fill": "transparent"
+      "finish-accent-fill": "transparent",
+      "update-warning": "#fbbf24"
     },
     "touch": {
       "size-button": 44,

@@ -25,7 +25,7 @@ test("every title-bar and rail icon has a hover tooltip, including disabled butt
     ["nav-forward", "Forward"],
     ["titlebar-color-mode", "Switch to dark mode"],
     ["rail-home", "Home"],
-    ["rail-update", "Check for updates"],
+    ["rail-update", "Updates are unavailable in this environment"],
     ["rail-settings", "Open settings"],
     ["rail-account", "Account"],
   ] as const;
@@ -72,7 +72,7 @@ test("tooltips follow the sidebar action, appearance action and selected languag
     ["nav-forward", "前进"],
     ["titlebar-color-mode", "切换到浅色模式"],
     ["rail-home", "主页"],
-    ["rail-update", "检查更新"],
+    ["rail-update", "当前环境不支持应用更新"],
     ["rail-settings", "打开设置"],
     ["rail-account", "账户"],
   ] as const;

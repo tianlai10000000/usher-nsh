@@ -2,7 +2,8 @@
   "sections": [
     "general",
     "theme",
-    "diagnostics"
+    "diagnostics",
+    "updates"
   ],
   "initialSection": "general",
   "initialClicks": 0

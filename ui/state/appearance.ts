@@ -12,7 +12,7 @@ import { defaultThemeId, isModernMac, resolveTheme, type ComponentFamily, type C
 import backgroundConfig from "../config/background.json";
 
 export type ColorMode = "system" | "light" | "dark";
-export type SettingsSection = "general" | "theme" | "diagnostics";
+export type SettingsSection = "general" | "theme" | "diagnostics" | "updates";
 export const settingsSections = sessionConfig.sections as readonly SettingsSection[];
 export function isSettingsSection(value: string): value is SettingsSection {
   return (settingsSections as readonly string[]).includes(value);

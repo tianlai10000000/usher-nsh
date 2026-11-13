@@ -39,6 +39,7 @@ fn offer(version: &str, has_package: bool) -> Offer {
     Offer {
         version: v(version),
         has_package,
+        can_install: true,
     }
 }
 
@@ -682,4 +683,45 @@ fn each_step_of_an_update_leaves_a_record_naming_it() {
             "first_launch_confirmed",
         ]
     );
+}
+
+#[test]
+fn automatic_package_download_stays_silent_until_ready() {
+    let mut machine = machine("0.1.0");
+    let ticket = check(&mut machine, Trigger::Background);
+    let effects = finish(&mut machine, ticket, Some(offer("0.1.1", true)));
+    assert!(notices(&effects).is_empty());
+    let (ticket, _) = started_download(&effects).unwrap();
+    machine.handle(Event::DownloadFinished { ticket });
+    assert!(matches!(machine.phase, Phase::ReadyToInstall(_)));
+}
+
+#[test]
+fn per_offer_install_permission_limits_shell_updates_but_not_compatible_packages() {
+    for (version, package, expected_package) in [
+        ("0.1.1", true, true),
+        ("0.1.1", false, false),
+        ("0.2.0", true, false),
+    ] {
+        let mut m = classifying("0.1.0", "0.1.0");
+        let ticket = check(&mut m, Trigger::Manual);
+        let mut release = offer(version, package);
+        release.can_install = false;
+        finish(&mut m, ticket, Some(release));
+        if expected_package {
+            assert!(matches!(m.phase, Phase::Checked(Outcome::PackageUpdate(_))));
+        } else {
+            assert!(matches!(
+                m.phase,
+                Phase::Checked(Outcome::ManualUpgrade { .. })
+            ));
+        }
+        // Permission is checked per release; a later installable release is not permanently blocked.
+        let ticket = check(&mut m, Trigger::Manual);
+        finish(&mut m, ticket, Some(offer("0.2.1", false)));
+        assert!(matches!(
+            m.phase,
+            Phase::Checked(Outcome::ShellUpdate { .. })
+        ));
+    }
 }

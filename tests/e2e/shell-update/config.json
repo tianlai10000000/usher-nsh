@@ -1,0 +1,40 @@
+{
+  "pollIntervalMs": 100,
+  "endpoint": "/__shell_acceptance",
+  "retiredResource": "acceptance-retired.txt",
+  "cases": [
+    "success",
+    "archive-tampered",
+    "wrong-identity",
+    "invalid-signature",
+    "install-denied"
+  ],
+  "settings": {
+    "schemaVersion": 1,
+    "colorMode": "dark",
+    "localePreference": "en",
+    "autoCheck": false
+  },
+  "evidenceLimitBytes": 65536,
+  "failureDetails": {
+    "archive-tampered": [
+      "sha-256"
+    ],
+    "wrong-identity": [
+      "the archive holds"
+    ],
+    "invalid-signature": [
+      "code signature"
+    ],
+    "install-denied": [
+      "permission denied",
+      "operation not permitted"
+    ]
+  },
+  "failureClasses": {
+    "archive-tampered": "rejected",
+    "wrong-identity": "rejected",
+    "invalid-signature": "rejected",
+    "install-denied": "disk"
+  }
+}

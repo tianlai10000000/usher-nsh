@@ -1,6 +1,6 @@
 # 单元、集成与端到端测试方案
 
-本文定义通用状态、独立路由和现有页面整改的测试组织、mock 数据、命令及分批验收。配合 [状态管理](state-management.md)、[路由](routing.md) 和 [项目实施清单](../scaffolding.md) 使用。**SM1 至 SM5、RT1 至 RT3、UT1 已完成应用服务范围。SM4 的 macOS 同 VM 多窗口、隔离数据目录、真实源码 HMR 和窗口关闭重开已通过；跨进程重启、目录升级及其他原生平台仍待后续批次。最新证据见第 15、16 节，历次记录保留当时的状态。** 测试必须随所属功能批次交付，不能等全部重构完成后再补。
+本文定义通用状态、独立路由和现有页面整改的测试组织、mock 数据、命令及分批验收。配合 [状态管理](state-management.md)、[路由](routing.md) 和 [项目实施清单](../scaffolding.md) 使用。**SM1 至 SM5、RT1 至 RT3、UT1 已完成应用服务范围。SM4 的 macOS 同 VM 多窗口、隔离数据目录、真实源码 HMR 和窗口关闭重开已通过；跨进程重启、目录升级及其他原生平台仍待后续批次。通用状态证据见第 15、16 节；更新整包的跨进程重启与设置保留见文末批次 6，历次记录保留当时的状态。** 测试必须随所属功能批次交付，不能等全部重构完成后再补。
 
 ## 1. GitHub 调研与采用范围
 
@@ -495,3 +495,57 @@ CI 已纳入更新应用集成和纯库平台矩阵，并保留契约 / 编译�
 | tampered-package | 拒绝被篡改签名，current / trying 不存在，日志确认签名错误 |
 
 合计 4 passed、0 failed、7 pending，未把中断诊断轮或人工 observed 累计为通过。最终命令日志为 sm6-update-simulation-final.log；每例保留 app.log、状态断言、隔离路径和 cleanup_errors=[]。独立复查报告 cleanup-audit.json 核对 16 个唯一隔离路径，全部不存在；临时源码、应用及一次性密钥所在整树已删除。真实 mock HTTP 源随每例关闭，子进程在解绑路径前回收。该结果验证本机 Apple Silicon 的预置代码包启动，不等同于检查 / 下载、整包实际替换、用户升级迁移或分发验收。SM6 仍为部分完成。
+
+## 更新批次 3 / 4：A 初始化与真实桥接（2026-11-13）
+
+本机 macOS arm64：`cargo test --locked --workspace` 214 项通过（含 20 项独立日志测试、29 项更新状态机契约、17 项更新应用集成）；`cargo clippy --locked --workspace --all-targets -- -D warnings` 与 `nsh check` 通过。`python3 scripts/test.py state-ui` 22 项通过，报告为 `target/test-reports/state-ui.json`；其中新增 `tests/integration/update_bridge.test.tsx` 通过真实 NSH 桥接验证未配置、重复配置拒绝、单执行租约、回执去重、进度校验与订阅释放后的服务保留。最终针对更新桥接的复验报告为 `target/test-reports/update-bridge-final.xml`。
+
+日志核心独立后由工作区测试进入现有 CI；真实桥接测试纳入 state-ui 的必需前缀。设置测试覆盖 auto_check 默认开启、旧文件缺省兼容、默认段省略、落盘重开、未保存状态即时阻止后台检查与重试保存。配置发布失败不创建半配置服务，两个后端共享既有执行契约。
+
+本轮无网络 / 安装执行器，原生结果由测试可控回报。未重跑真实更新模拟、原生多窗口 / VM reload、跨平台编译或发布构建成本，原记录仅代表此前版本。销毁执行 VM 后无租约交接，需重启应用；不能把普通订阅释放测试计作更新执行器的 HMR 验收。
+
+## 更新批次 5：控制器与产品界面（2026-11-13）
+
+用户确认的生产参数为启动延迟 30 秒、周期 6 小时、同版本失败阈值 2 次，统一来自 ui/config/updates.json。A 初始化及 auto_check 默认开启保持不变。
+
+| 验证 | 本机 macOS arm64 结果 |
+| --- | --- |
+| cargo test --locked --workspace | 216 项通过；新增候选 canInstall 降级及共享检查元数据契约 |
+| cargo clippy --locked --workspace --all-targets -- -D warnings；nsh check | 通过 |
+| python3 scripts/test.py state-ui | 38 项通过，含 11 项更新控制器 / 投影、5 项更新界面旅程；报告 target/test-reports/state-ui.json |
+| python3 scripts/test.py ui | 29 项通过；更新了开发环境提示及设置第四分区的键盘导航预期 |
+| python3 scripts/test.py e2e --target headless | 4 项通过 |
+| python3 -m unittest discover -s scripts/tests | 120 项通过，含 16 项模拟器隔离与清理契约 |
+
+控制器用确定性时钟和原生适配器覆盖串行检查、包与整包版本不一致拒绝、信任失败、Unsupported 配置、自动开关与周期、卸载 / 重挂时不重做下载、延迟订阅释放、迟到结束回调隔离、进度先于完成回执、安装失败、完成传输失败不重放，以及空领取与新工作并发时保留唤醒。
+
+`tests/integration/updates_feature.test.tsx` 使用真实 Rust UpdateState / 设置桥接和生产组件，只有 NSH 更新 I/O 可控；覆盖整包确认、代码包关闭自动后需确认、进度 / 未知总量、关闭浮层、只读设置禁止重启、手动升级、失败重试、跨分区保留与窄窗。新目录及用例前缀已注册 state-ui，沿现有 CI 执行。
+
+隔离 macOS 开发宿主使用临时源码、应用包装和 --data-dir，未借用真实用户设置。人工检查 Canvas 环、禁用但不淡出的进度按钮、锚定浮层、就绪勾选、安装失败反馈及 Progress 填充；在下载中热更新 UpdatesSettings 组件后状态与原生调用次数保留。该项使用可控原生 I/O，不计作真实下载，也不证明整个执行 VM 重建可恢复。完整 VM 销毁仍无执行者交接，须重启应用。
+
+本地模拟 12 场景通过，报告 target/test-reports/update-sim-d5xkzs26/report.json；中断下载夹具修正后的离线单项复验通过，报告 target/test-reports/update-sim-fozvm6x9/report.json。一次复验在构建阶段因 crates.io DNS 失败，未计入通过。真实本地源的代码包检查、签名下载、再启动晋升及清理细节见 docs/update.md 本轮验收记录。该模拟器的整包归档仍为占位文件；真实整包替换由下节批次 6 独立命令补验，正式 GitHub 发布和其余平台仍待验收。本轮未重测跨平台编译、发布成本或触发远端 CI。
+
+## 更新批次 6：真实整包归档替换（2026-11-13）
+
+`python3 scripts/test.py shell-update` 在解锁的 macOS arm64 桌面执行，脚本为 `scripts/shell_update_acceptance.py`，测试驱动和场景配置在 `tests/e2e/shell-update/`。与占位归档的发现测试分开统计：旧版 0.1.0 / build 1、新版 0.2.0 / build 3 均为实际构建的 standard 应用；归档保留真实签名、权限和符号链接，update-manifest 生成一次性签名清单。临时 App 调用生产门面，控制器、Rust 桥接、下载校验、安装器及重启均未替换。
+
+宿主逐文件比较安装后的 SHA-256 / 权限 / 链接，包含仅旧版有的资源被移除；从新进程的 shellInfo 和 Settings 快照验证运行版本、暗色 / 英文 / 关闭自动检查的测试偏好与已保存状态，同时验证设置文件字节未变。故障场景核对旧版不变且可重开，原生诊断必须匹配注入故障，产品失败分类必须符合文档。恢复正确归档或目录权限后重新执行正常更新动作。
+
+每轮使用唯一测试 ID，复用 AppDataNamespace 的隔离 data/cache/saved-state 链接，不改 HOME。旧进程、NSH 分离出的重启辅助进程和新进程都纳入清理；确认静默后注销测试路径的 LaunchServices 记录，再解绑数据。与本地模拟器共用命令锁。清理无法完成时保留隔离树并判失败；在进入场景前登记清理责任，避免清理期间中断被误判为无活动应用。单测覆盖实际归档、文件清单、会话隔离、延迟重启进程、无法停止、并发锁、启动前失败和清理期间中断；中断保护此轮按脚本单测验证，不计作原生进程中断验收。
+
+本轮控制器修复 NSH 的 `update install: the archive holds …, this app is …` 被通用 install 匹配误判为 Disk 的问题，应用身份不符现在归入 Rejected。`state-ui` 39 项通过（更新控制器 12 项、更新界面旅程 5 项），脚本测试 135 项通过；`nsh check`、actionlint 和 git diff --check 通过。Rust 领域规则和持久化格式本轮未修改，工作区测试结果沿用批次 5，未作为本轮新执行计数。
+
+该命令已注册 tests/config.json 的 5 个必需用例前缀和驱动来源，并加入手动 native_state CI；远端 CI 未触发。报告保留 JSON、JUnit、应用 / 原生诊断日志和构建命令。测试不覆盖 Gatekeeper 下载隔离标记、Apple 公证、真实 GitHub 分发、/Applications 权限组合、两次 rename 之间的崩溃或 AppKit 变体转换。
+
+最终原生完整运行 **5 项通过、0 失败、0 跳过**：success、archive-tampered、wrong-identity、invalid-signature、install-denied。报告 `target/test-reports/shell-update-yft7wbty/report.json` 与统一入口 `target/test-reports/shell-update.json` 均 passed，JUnit 来源和必需用例组齐全。独立 cleanup-audit.json 核对 19 个唯一隔离路径及运行进程，无残留。
+
+两次诊断轮不计入通过：shell-update-nywzbldb 的 JUnit 来源不匹配且发现身份错误误分类；shell-update-zpm_bsmy 的 SHA-256 日志断言和一次清理权限错误导致失败，保留目录经核对后安全回收（cleanup-recovery.json）。最终运行重新构建了全部产物并执行全部 5 项。持续清理权限拒绝会保留隔离；瞬时拒绝也必须经过后续完整静默确认才可清理，相关单测同时覆盖两种情况。
+
+
+## 23. 更新界面整改（2026-11-13）
+
+自动代码包下载现在显示边缘进度环，不自动弹出面板；新增可控慢下载旅程，验证下载按钮禁用、完成后显示重启 / 稍后、隐藏不可用检查按钮，以及关闭面板保留就绪状态。状态、说明与操作分行，英文长说明约束宽度并换行；强调图标使用默认 13pt 的 size-update-icon 主题 token。
+
+本轮 `state-ui` 40 项、`ui` 29 项、`cargo test --locked --workspace` 216 项通过，`nsh check` 与差异格式检查通过。隔离 macOS 原生宿主人工核对了 25% 下载环、最终箭头尺寸、设置页布局及弹层长说明换行 / 并排操作；使用可控原生 I/O，不计作真实安装验收。最终预览记录在 target/test-reports/update-layout-4c34n_gr，cleanup.json 确认临时源码、应用与数据树已删除。预览重建过程中一次网络解析失败、一次沙箱监听失败不计入验收通过。首次 UI 回归与 state-ui 并行时争用 NSH 测试生成产物，导致 appearance 用例错误加载更新夹具；最终结果采用单独串行完整重跑，失败轮不计入通过。
+
+后续图标与关闭入口调整：按系统图标优先的要求，macOS 改用 SF Symbols 的 square.and.arrow.down（size-update-icon 默认 14pt）；Popover 标题行使用组件库 View / Button 与现有 SystemIcon、iconButtonLook，右上角 × 替代底部关闭 / 稍后按钮。更新界面 6 项回归通过，覆盖错误与就绪状态的标题关闭入口、关闭后保留状态；nsh check 通过。隔离原生宿主人工确认系统符号显示、英文错误换行及 × 关闭操作，记录位于 target/test-reports/update-layout-parf4ohn；临时树已清理。本次未重跑整包安装或完整工作区测试。

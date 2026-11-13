@@ -2848,21 +2848,32 @@ dependencies = [
 ]
 
 [[package]]
+name = "usher-logging"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "flate2",
+ "libc",
+ "serde_json",
+ "tar",
+ "tempfile",
+]
+
+[[package]]
 name = "usher-nsh"
 version = "0.1.0"
 dependencies = [
  "block2",
  "chrono",
- "flate2",
  "libc",
  "nsh-core",
  "nsh-platform-macos",
  "objc2-app-kit",
  "serde",
  "serde_json",
- "tar",
  "tempfile",
  "toml 1.2.1+spec-1.1.0",
+ "usher-logging",
  "usher-router",
  "usher-state",
  "usher-test-support",

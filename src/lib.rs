@@ -14,6 +14,7 @@ mod settings_bridge;
 mod settings_service;
 mod state_bridge;
 mod style_themes;
+mod update_bridge;
 pub mod update_service;
 
 #[cfg(target_os = "macos")]
@@ -33,7 +34,8 @@ fn native(registry: &mut Registry) {
         .module::<settings_bridge::Settings>()
         .module::<settings_bridge::SettingsState>()
         .module::<router_bridge::WindowState>()
-        .module::<diagnostic_bridge::DiagnosticState>();
+        .module::<diagnostic_bridge::DiagnosticState>()
+        .module::<update_bridge::UpdateState>();
 }
 
 /// Greeting text shared with the TSX interface.

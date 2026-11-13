@@ -1,0 +1,14 @@
+[package]
+name = "usher-logging"
+version = "0.1.0"
+edition = "2024"
+license = "LicenseRef-Proprietary"
+publish = false
+
+[dependencies]
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+flate2 = "1"
+libc = "0.2"
+serde_json = "1"
+tar = { version = "0.4", default-features = false }
+tempfile = "3"

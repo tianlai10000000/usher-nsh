@@ -17,6 +17,7 @@ use crate::{
 /// its immutable published projection; it never owns persistence or domain rules.
 /// Disk-backed commands must run on a blocking worker, as the NSH bridge does.
 pub struct SettingsService {
+    updates: std::sync::Arc<crate::update_service::UpdateService>,
     transaction: Mutex<Transaction>,
     reader: StoreReader<Snapshot>,
     closed: AtomicBool,
@@ -33,6 +34,7 @@ struct Transaction {
 struct Mutation<'a> {
     transaction: &'a mut Transaction,
     closed: &'a AtomicBool,
+    updates: &'a crate::update_service::UpdateService,
     completed: bool,
 }
 
@@ -41,6 +43,7 @@ impl Drop for Mutation<'_> {
         if !self.completed {
             self.closed.store(true, Ordering::Release);
             self.transaction.writer.close();
+            self.updates.close();
         }
     }
 }
@@ -53,11 +56,41 @@ impl SettingsService {
     ) -> Result<Self, &'static str> {
         let (writer, reader) =
             create_store(id, domain.snapshot(), factory).map_err(|_| UNAVAILABLE)?;
+        let updates = std::sync::Arc::new(
+            crate::update_service::UpdateService::new(&usher_state::backends::WatchBackend)
+                .map_err(|_| UNAVAILABLE)?,
+        );
         Ok(Self {
+            updates,
             transaction: Mutex::new(Transaction { domain, writer }),
             reader,
             closed: AtomicBool::new(false),
         })
+    }
+
+    /// Borrows the service created with this settings scope, before versions are known.
+    pub fn updates(
+        &self,
+    ) -> Result<std::sync::Arc<crate::update_service::UpdateService>, &'static str> {
+        self.ensure_open()?;
+        Ok(self.updates.clone())
+    }
+
+    /// Serializes one-time version configuration against preference changes.
+    pub(crate) fn configure_updates(
+        &self,
+        config: crate::update_service::transport::Configuration,
+    ) -> Result<(), &'static str> {
+        let transaction = self.transaction.lock().map_err(|_| UNAVAILABLE)?;
+        self.ensure_open()?;
+        let preferences = transaction.domain.snapshot();
+        let info = config.info().map_err(crate::update_service::Error::code)?;
+        let config = config
+            .settings(preferences.update_auto_check)
+            .map_err(crate::update_service::Error::code)?;
+        self.updates
+            .configure_runtime(config, info)
+            .map_err(crate::update_service::Error::code)
     }
 
     /// Returns a read-only capability. Reads and subscriptions never acquire the
@@ -97,6 +130,15 @@ impl SettingsService {
         self.mutate(move |store| store.apply(command))
     }
 
+    /// Retries current preferences without overwriting a concurrent preference with a stale read.
+    pub(crate) fn retry_save(&self) -> Result<Snapshot, &'static str> {
+        self.mutate(|store| {
+            store.apply(Command::SetUpdateAutoCheck(
+                store.snapshot().update_auto_check,
+            ))
+        })
+    }
+
     /// Imports an image through the existing asset validation and persistence order.
     pub fn import_background_image(
         &self,
@@ -131,6 +173,7 @@ impl SettingsService {
             .lock()
             .unwrap_or_else(|error| error.into_inner());
         self.closed.store(true, Ordering::Release);
+        self.updates.close();
         transaction.writer.close();
     }
 
@@ -151,6 +194,7 @@ impl SettingsService {
         let mut mutation = Mutation {
             transaction: &mut transaction,
             closed: &self.closed,
+            updates: &self.updates,
             completed: false,
         };
         // Check capacity conservatively before any domain or file mutation. The
@@ -181,8 +225,31 @@ impl SettingsService {
                 .publish(candidate)
                 .map_err(|_| UNAVAILABLE)?
         };
+        // The settings transaction orders preference writes and one-time update configuration.
+        // Persisted settings remain authoritative, including unsaved in-memory preferences.
+        if self
+            .updates
+            .snapshot()
+            .map_err(|_| UNAVAILABLE)?
+            .state()
+            .domain
+            .is_some()
+        {
+            self.updates
+                .request(crate::update_service::Command::AutoCheck(
+                    committed.state().update_auto_check,
+                ))
+                .map_err(|_| UNAVAILABLE)?;
+        }
         mutation.completed = true;
         result.map(|_| committed.state().clone())
+    }
+}
+
+impl Drop for SettingsService {
+    fn drop(&mut self) {
+        // A retained window handle must not keep an orphaned update scope writable.
+        self.updates.close();
     }
 }
 

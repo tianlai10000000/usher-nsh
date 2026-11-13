@@ -1,6 +1,7 @@
 /** Composes application/window state, the router and the shell without page-ID branches. */
 import { ErrorBoundary, locale, mount, Text, View } from "nsh";
 import { Button } from "nsh/base";
+import { createUpdates } from "./ui/features/updates";
 import { Frame } from "./ui/layout/Frame";
 import { createRouter, RouterProvider } from "./ui/router";
 import { bindNativeRouting } from "./ui/router/native";
@@ -14,12 +15,13 @@ import { translate } from "./ui/i18n";
 function App() {
   const window = createWindowState();
   const appearance = createAppearanceStore(window.session);
+  const updates = createUpdates(appearance);
   const navigation = createRouter(window.routing);
   bindNativeRouting(navigation);
   return <SettingsProvider value={appearance.state}>
     <RouterProvider value={navigation}>
-      <Frame appearance={appearance} navigation={navigation}>
-        <RouterView pages={pages} appearance={appearance} navigation={navigation} session={window.session} />
+      <Frame appearance={appearance} navigation={navigation} updates={updates.indicator}>
+        <RouterView pages={pages} appearance={appearance} navigation={navigation} session={window.session} updates={updates} />
       </Frame>
     </RouterProvider>
   </SettingsProvider>;

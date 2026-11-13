@@ -1,6 +1,5 @@
 {
   "description": "The update source is unreachable",
-  "pending": "the app does not call checkForUpdate or checkForPackage yet (docs/update.md batches 4 and 5); remove this field when the update controller exists",
   "manifest": {
     "version": "0.1.1",
     "build": 2,
@@ -20,6 +19,11 @@
     },
     {
       "kind": "no-partial"
+    },
+    {
+      "kind": "log-contains",
+      "text": "native_failure"
     }
-  ]
+  ],
+  "checks": true
 }

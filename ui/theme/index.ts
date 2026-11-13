@@ -19,8 +19,15 @@ type RawTokens = Record<string, string | number>;
 export const touchDevice = !platform.desktop;
 
 /** Merges the shared table into a scheme's, as the registry does for the themes it sends. */
-function tokenTable(shared: RawTokens, scheme: RawTokens): Record<string, string> {
-  return Object.fromEntries(Object.entries({ ...shared, ...scheme }).map(([name, value]) => [name, String(value)]));
+function tokenTable(
+  shared: RawTokens,
+  scheme: RawTokens,
+): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries({ ...shared, ...scheme }).map((
+      [name, value],
+    ) => [name, String(value)]),
+  );
 }
 
 /**
@@ -34,13 +41,19 @@ export const fallbackTheme: StyleTheme = {
   material: rootThemeFile.material,
   cssVars: {
     touch: tokenTable({}, rootThemeFile.cssVars.touch),
-    light: tokenTable(rootThemeFile.cssVars.shared, rootThemeFile.cssVars.light),
+    light: tokenTable(
+      rootThemeFile.cssVars.shared,
+      rootThemeFile.cssVars.light,
+    ),
     dark: tokenTable(rootThemeFile.cssVars.shared, rootThemeFile.cssVars.dark),
   },
 };
 
 /** Reads the palette editor's four colors from a resolved theme. */
-export function editorPalette(theme: StyleTheme, scheme: Scheme): CustomPalette {
+export function editorPalette(
+  theme: StyleTheme,
+  scheme: Scheme,
+): CustomPalette {
   const tokens = theme.cssVars[scheme];
   return {
     background: tokens.background,
@@ -84,8 +97,8 @@ export function resolveTheme(
   // On a touch device a metric the theme states for touch wins over its pointer value.
   const token = (name: string): string =>
     (options.touch ?? touchDevice ? style.cssVars.touch[name] : undefined) ??
-    style.cssVars[scheme][name] ??
-    fallbackTheme.cssVars[scheme][name];
+      style.cssVars[scheme][name] ??
+      fallbackTheme.cssVars[scheme][name];
   const accent = options.accent ?? token("primary");
   // Metrics are whole points or ratios. The registry has validated them, and the root theme
   // defines every one, so a missing or malformed value can only come from a stale snapshot.
@@ -105,6 +118,8 @@ export function resolveTheme(
     text: token("foreground"),
     accent,
     accentText: accentForeground(accent),
+    updateWarning: token("update-warning"),
+    updateWarningText: accentForeground(token("update-warning")),
     border: token("border"),
     muted: token("muted-foreground"),
     sidebar: token("sidebar"),
@@ -141,6 +156,7 @@ export function resolveTheme(
       toolbarIcon: metric("size-toolbar-icon"),
       railIcon: metric("size-rail-icon"),
       railUtilityIcon: metric("size-rail-utility-icon"),
+      updateIcon: metric("size-update-icon"),
       toolbarButton: metric("size-toolbar-button"),
       titlebarIcon: metric("size-titlebar-icon"),
       titlebarButton: metric("size-titlebar-button"),
@@ -151,6 +167,8 @@ export function resolveTheme(
       titleBar: metric("layout-title-bar"),
       wideBreakpoint: metric("layout-wide-breakpoint"),
       layoutMs: metric("motion-layout"),
+      updateSpinMs: metric("motion-update-spin"),
+      updateSegment: metric("feedback-update-segment"),
       buttonPadX: metric("space-button-x"),
       buttonPadXSmall: metric("space-button-small-x"),
       buttonPadXLarge: metric("space-button-large-x"),
@@ -209,7 +227,8 @@ export function resolveTheme(
     borderStrong: token("border-strong"),
     /** Whether the theme lets the window material show through its surfaces. */
     glass: style.material === "glass",
-    nativeAppKit: options.componentFamily === "appkit" && options.appKitAvailable === true,
+    nativeAppKit: options.componentFamily === "appkit" &&
+      options.appKitAvailable === true,
   };
 }
 

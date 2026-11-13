@@ -1,4 +1,11 @@
 {
   "extends": "./.nsh/tsconfig.json",
-  "include": ["**/*.ts", "**/*.tsx"]
+  "include": [
+    "**/*.ts",
+    "**/*.tsx"
+  ],
+  "exclude": [
+    "target",
+    "node_modules"
+  ]
 }

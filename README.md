@@ -12,9 +12,9 @@ Usher NSH is a desktop and mobile application foundation built with Longbridge N
 - Custom desktop window chrome, collapsible sidebar, navigation history, breadcrumbs and an optional bottom status bar.
 - AppKit window material on macOS, plus a selectable native settings control family in supported enhanced builds.
 - Structured diagnostics with configurable log levels, daily files, retention and archive export.
-- A separate Rust crate for update state transitions and release signature validation.
+- Updates settings, automatic checks, code-package downloads, whole-app confirmation, progress and restart controls; Rust owns the shared state and NSH verifies signatures.
 
-Update UI, network and installation integration, system tray support, and remaining platform acceptance are tracked in the implementation plan. Diagnostic export currently writes to the application's `exports/` directory and reveals that folder. System save dialogs and mobile export integration are pending.
+Local whole-app replacement is verified on macOS arm64. Public release acceptance, system tray support, and remaining platform acceptance are tracked in the implementation plan. Diagnostic export currently writes to the application's `exports/` directory and reveals that folder. System save dialogs and mobile export integration are pending.
 
 ## Supported targets
 
@@ -43,7 +43,7 @@ The first run builds the Rust module and macOS development host. Press `Ctrl+C` 
 
 In **Settings → Appearance**, choose appearance, style theme and control family independently. The macOS development build includes AppKit settings controls by default. They are available on macOS 26 and later when the native components are registered.
 
-Navigation supports back, forward and breadcrumbs. Desktop shortcuts are `⌘+[` and `⌘+]` on macOS, or `Ctrl+[` and `Ctrl+]` on other desktop targets. The window is a full-width title bar (menu toggle, history, breadcrumbs and a light/dark switch), a narrow fixed rail (home, then update, settings and account buttons at the bottom), a secondary menu that can be shown or hidden, the content panel and an optional full-width bottom status bar. Hiding the secondary menu animates the content panel to the left. Narrow windows show the secondary menu as a drawer instead. The update and account buttons stay disabled until those features connect to the contracts in `ui/layout/contracts/`. Menu docking and bottom status bar visibility are saved locally.
+Navigation supports back, forward and breadcrumbs. Desktop shortcuts are `⌘+[` and `⌘+]` on macOS, or `Ctrl+[` and `Ctrl+]` on other desktop targets. The window is a full-width title bar (menu toggle, history, breadcrumbs and a light/dark switch), a narrow fixed rail (home, then update, settings and account buttons at the bottom), a secondary menu that can be shown or hidden, the content panel and an optional full-width bottom status bar. Hiding the secondary menu animates the content panel to the left. Narrow windows show the secondary menu as a drawer instead. The update button shows availability, progress and restart readiness; it is disabled when updates are unsupported (including development runs) or a visible download is in progress. The account button remains disabled. Menu docking and bottom status bar visibility are saved locally.
 
 The eight title-bar and rail icon buttons use NSH `Tooltip` hints on hover or keyboard focus, including disabled buttons. Labels follow the selected language and current action. Hints prefer the bottom of title-bar buttons and the right of rail buttons; NSH draws them above the window content and flips or shifts them within the safe area, with long labels wrapping to the available width. Breadcrumbs have no tooltip.
 
@@ -229,13 +229,21 @@ The macOS VM reload check uses real Cmd+R to replace the VM, restores persisted 
 python3 scripts/test.py native-reload
 ```
 
-Local update launch simulations use a unique test application ID and separate temporary data/cache roots for each scenario, without changing HOME. Four active scenarios cover package promotion, startup rollback, downgrade rejection and package tampering; seven pending scenarios do not count as passes. Run on an unlocked Apple Silicon macOS host:
+Local update launch simulations use a unique test application ID and separate temporary data/cache roots for each scenario, without changing HOME. Twelve scenarios cover checking, signed package download and next-launch promotion, interrupted downloads, trust failures, and startup rollback. Run on an unlocked Apple Silicon macOS host:
 
 ```sh
 scripts/update-sim/sim.sh run --all
 ```
 
-Logs and cleanup evidence are retained under `target/test-reports/update-sim-*/`. `serve <scenario>` owns the isolated app until Ctrl+C, then stops it and cleans up. This verifies preloaded package startup, not the complete download/install journey. See the [update simulation design](docs/update.md#12-本地更新模拟d14).
+Logs and cleanup evidence are retained under `target/test-reports/update-sim-*/`. `serve <scenario>` owns the isolated app until Ctrl+C, then stops it and cleans up. This covers controller-driven checks, signed package download and next-launch promotion, plus preloaded package recovery. Real whole-app replacement is covered by the separate `shell-update` command below. See the [update simulation design](docs/update.md#12-本地更新模拟d14).
+
+Whole-app archive acceptance builds two real standard apps and drives production check / download / install actions against a signed loopback source. It checks file replacement, NSH-initiated restart, settings retention, corrupt archives, inner identity/signature rejection and installation permission recovery:
+
+```sh
+python3 scripts/test.py shell-update
+```
+
+Run serially on an unlocked Apple Silicon macOS desktop. Every run uses a unique app ID, temporary source/app/data roots and disposable signing keys. Reports remain under `target/test-reports/shell-update-*/`; a failed cleanup retains the isolation tree and fails the suite. The command is included in the manual `native_state` CI job. It does not test downloaded-file quarantine, Developer ID notarization, public releases or AppKit-to-standard conversion.
 
 Existing native UI checks:
 
@@ -255,7 +263,8 @@ Headless UI checks use session settings and cannot validate disk persistence or 
 | --- | --- |
 | `App.tsx` | Application mount and shared view composition |
 | `src/` | Rust settings, theme files, diagnostics and NSH bridge |
-| `crates/usher-update/` | Update state machine and release signature logic |
+| `crates/usher-update/` | Pure code-package / whole-app update policy |
+| `crates/usher-logging/` | Independent logging, redaction, retention and export |
 | `crates/usher-state/`, `crates/usher-router/` | Replaceable state backend and independent routing rules |
 | `crates/usher-test-support/` | Generic development-only test helpers |
 | `tests/integration/`, `tests/e2e/` | Application contracts and real headless journeys |
@@ -279,7 +288,7 @@ The [routing design](docs/routing.md) records RT1–RT3 and current RT4 progress
 
 The [testing design](docs/testing.md) records upstream GitHub references, fixtures and actual results. UT1 is complete; integration, bridge and headless E2E coverage are implemented. Generic Rust helpers live in `usher-test-support` as development dependencies; business fixtures stay with their modules. Unit and crate contracts stay beside their owners; application integration and E2E are centralized. CI configuration includes the new commands, but remote GitHub runs have not been verified.
 
-SM5 adds an update application coordinator that publishes through usher-state, claims effects serially, fences old executor receipts, and blocks duplicate execution during handover or uncertain installation. Existing update APIs and settings files remain compatible. Product bridges, buttons and automatic downloads remain in the update plan's later batches. `update-state` uses reference/watch backends, isolated settings directories and local fixtures; it accesses no update server or installation. See the [SM6 audit](docs/state-audit.md) for state ownership and build costs.
+Updates now use A initialization: SettingsService owns an initially unconfigured service; Configure supplies versions once. Shared views do not close it. Rust UpdateState exposes snapshots, commands and single-executor claims; `[updates].auto_check` defaults to enabled and is omitted at its default. The controller and Updates settings section are connected: the first automatic check runs after 30 seconds, then every 6 hours; compatible code packages download quietly, whole-app downloads require confirmation, and restarts are always explicit. The rail indicator and popover share progress, retry and ready states. Automatic package downloads also show a progress ring without opening the popover. Ready views use a compact system download icon, wrapped descriptions and explicit restart actions. The popover closes through a themed × icon button in its top-right corner. There is no executor handover; destroying its VM requires an application restart. `usher-logging` provides independent logging with an application health observer. `update-state` and real bridge tests use isolated data and controlled native I/O. Local update simulation separately validates signed package downloads against a loopback source; a separate real-archive suite verifies local whole-app replacement, restart, settings retention and failure recovery. Public release and Gatekeeper acceptance remain pending.
 
 SM6 local regression passes; the latest RT4 checks include 229 Rust tests, 36 application integration tests, all UI/headless journeys and four isolated native checks. Pure libraries compile for seven targets, and the application library compiles for four Apple targets. Complete builds and hosts on other platforms, and remote CI, remain unverified, so SM6 is partially complete. Earlier SM6 isolated release builds show 1.10% more application file bytes than 06ed67e (not remeasured for RT4); measurement conditions and evidence are in the audit above.
 

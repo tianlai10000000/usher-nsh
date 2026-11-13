@@ -52,17 +52,17 @@ test("settings tabs use framework keyboard selection and one Tab stop", async ()
   await app.keyboard.press("down");
   await app.waitFor("id:theme-settings");
   await app.keyboard.press("end");
-  await app.waitFor("id:diagnostics-settings");
+  await app.waitFor("id:settings-updates");
   await app.keyboard.press("home");
   await app.waitFor("id:settings-general");
   await app.keyboard.press("up");
-  await app.waitFor("id:diagnostics-settings");
+  await app.waitFor("id:settings-updates");
   await app.keyboard.press("tab");
   await app.keyboard.press("down");
-  expect(app.shows("id:diagnostics-settings")).toBe(true);
+  expect(app.shows("id:settings-updates")).toBe(true);
   await app.keyboard.press("shift+tab");
   await app.keyboard.press("up");
-  await app.waitFor("id:theme-settings");
+  await app.waitFor("id:diagnostics-settings");
 });
 
 test("the layout follows the window when it is resized, and the section is kept", async () => {
