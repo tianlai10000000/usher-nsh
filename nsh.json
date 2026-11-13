@@ -1,8 +1,8 @@
 {
   "name": "Usher NSH",
   "id": "com.tianlai10000000.usher.nsh",
-  "version": "0.1.0",
-  "build": 1,
+  "version": "0.1.1",
+  "build": 2,
   "rust": ".",
   "schemes": ["usher"],
   "theme": "ui/theme/builtin/default/theme.json",

@@ -6,9 +6,15 @@ Keep work in progress under `Unreleased`.
 
 ## Unreleased
 
+## 0.1.1
+
+First public release, for validating signed whole-app updates from a local 0.1.0 baseline on macOS Apple Silicon.
+The application shell and UI behavior are unchanged; the version and build number advance
+so installed clients can discover, download and apply the release through the Updates controls.
+
 ## 0.1.0
 
-First release, installed by hand. Subsequent releases are discovered through signed GitHub update manifests; compatible code packages and whole-app upgrades use the application's Updates controls.
+Local baseline, not published as a GitHub Release. Subsequent releases are discovered through signed GitHub update manifests; compatible code packages and whole-app upgrades use the application's Updates controls.
 
 ### Added
 

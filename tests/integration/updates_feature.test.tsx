@@ -26,6 +26,7 @@ test("updates feature checks whole-app updates, renders progress and preserves r
     await app.press("id:rail-update");
     await app.waitFor("id:update-panel-close");
     await app.press("id:update-panel-close");
+    await app.waitFor("id:update-panel-close", { state: "gone" });
     await app.press("id:update-download");
     await app.waitFor("id:rail-update-progress");
     await app.waitFor("id:update-download >> id:update-download-loading");
@@ -92,6 +93,7 @@ test("updates feature reports manual installation, offline failures and successf
       "Could not reach the update source. Try again.",
     );
     await app.press("id:update-panel-close");
+    await app.waitFor("id:update-panel-close", { state: "gone" });
     expect(app.shows("id:rail-update-symbol")).toBe(true);
 
     await app.press("id:scenario-latest");
@@ -132,6 +134,7 @@ test("updates feature keeps its controls usable in a narrow window and opens an 
     await app.press("id:rail-update");
     await app.waitFor("id:update-panel-close");
     await app.press("id:update-panel-close");
+    await app.waitFor("id:update-panel-close", { state: "gone" });
     expect(app.shows("id:settings-updates")).toBe(true);
   } finally {
     app.dispose();
@@ -160,6 +163,7 @@ test("updates feature shows a ring for automatic package downloads and keeps res
     expect(app.texts().includes("Later")).toBe(false);
     expect(app.shows("id:update-check")).toBe(false);
     await app.press("id:update-panel-close");
+    await app.waitFor("id:update-panel-close", { state: "gone" });
     expect(app.texts()).toContain("Phase:ready_to_install");
   } finally {
     app.dispose();
@@ -240,6 +244,7 @@ test("updates feature shows busy feedback inside the popover action without chan
     expect(app.enabled("id:rail-update")).toBe(false);
 
     await app.press("id:update-panel-close");
+    await app.waitFor("id:update-panel-close", { state: "gone" });
     expect(app.shows("id:update-checking-ring")).toBe(true);
     expect(app.texts()).toContain("Checks:2");
     await app.press("id:finish-check");
