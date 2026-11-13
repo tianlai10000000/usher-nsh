@@ -10,10 +10,10 @@
 
 mod backend;
 mod error;
-mod machine;
 mod snapshot;
 mod store;
 mod subscription;
+mod transition;
 
 #[cfg(feature = "backend-watch")]
 pub mod backends;
@@ -23,7 +23,7 @@ pub use backend::{
     BackendWriter, SnapshotFuture,
 };
 pub use error::{StoreError, SubscriptionEnd};
-pub use machine::{StateMachine, Transition};
 pub use snapshot::{Snapshot, StoreId};
 pub use store::{Commit, StoreReader, StoreWriter, create_store};
 pub use subscription::{CancellationHandle, Subscription};
+pub use transition::Transition;

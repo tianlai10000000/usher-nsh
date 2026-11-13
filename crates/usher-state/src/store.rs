@@ -87,19 +87,6 @@ impl<S: Send + Sync + 'static> StoreWriter<S> {
         self.reader.snapshot()
     }
 
-    /// Checks writer lifetime and sequence capacity before a legacy domain performs I/O.
-    /// Keep exclusive ownership until publication. This does not reserve a commit or
-    /// guarantee backend success; adapters must fail closed on a subsequent backend fault.
-    pub fn preflight_publish(&self) -> Result<(), StoreError> {
-        if self.backend.is_none() {
-            return Err(StoreError::Closed);
-        }
-        self.sequence
-            .checked_add(1)
-            .ok_or(StoreError::SequenceExhausted)?;
-        Ok(())
-    }
-
     /// Publishes a state declared changed by the domain. Success is linearized
     /// at backend replacement; a failure does not advance the sequence.
     pub fn publish(&mut self, state: S) -> Result<Snapshot<S>, StoreError> {
@@ -179,10 +166,6 @@ mod tests {
             reader,
         };
         assert_eq!(
-            writer.preflight_publish(),
-            Err(StoreError::SequenceExhausted)
-        );
-        assert_eq!(
             writer.publish(()).unwrap_err(),
             StoreError::SequenceExhausted
         );
@@ -193,7 +176,6 @@ mod tests {
         assert_eq!(result.snapshot.sequence(), u64::MAX);
         assert_eq!(result.effects, vec![()]);
         writer.close();
-        assert_eq!(writer.preflight_publish(), Err(StoreError::Closed));
         assert_eq!(writer.publish(()).unwrap_err(), StoreError::Closed);
     }
 }

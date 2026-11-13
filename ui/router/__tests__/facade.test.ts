@@ -59,3 +59,25 @@ test("router guards return a terminal failure when their transport closes during
   expect(await router.navigate("settings")).toBe("failed");
   dispose();
 });
+
+test("router facade distinguishes invalid targets from unavailable unguarded transports", async () => {
+  const { router, binding, dispose } = setup();
+  for (const code of ["router_closed", "router_unavailable", "state_binding_closed", "router_capacity_exhausted"]) {
+    binding.navigate = async () => { throw new Error(code); };
+    expect(await router.navigate("settings")).toBe("failed");
+  }
+  binding.navigate = async () => { throw new Error("router_invalid_target"); };
+  expect(await router.navigate("settings")).toBe("invalid_target");
+  dispose();
+});
+
+test("router guards distinguish begin failures and never release an unissued ticket", async () => {
+  const { router, binding, calls, dispose } = setup();
+  router.beforeEach(() => true);
+  binding.begin = () => { throw new Error("router_unavailable"); };
+  expect(await router.navigate("settings")).toBe("failed");
+  binding.begin = () => { throw new Error("router_invalid_target"); };
+  expect(await router.navigate("settings")).toBe("invalid_target");
+  expect(calls.length).toBe(0);
+  dispose();
+});

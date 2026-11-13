@@ -16,6 +16,7 @@ export function UpdateDetails(
   props: {
     appearance: AppearanceStore;
     updates: UpdateActions;
+    testID?: string;
   },
 ) {
   const { palette, t } = props.appearance;
@@ -23,7 +24,7 @@ export function UpdateDetails(
   const view = updates.view;
   return (
     <View
-      testID="update-details"
+      testID={props.testID ?? "update-details"}
       style={{ ...spacing(palette).stack, width: "100%", minWidth: 0 }}
     >
       <Text

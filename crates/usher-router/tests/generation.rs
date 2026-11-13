@@ -65,3 +65,16 @@ fn generation_cli_check_rejects_stale_or_missing_output_without_writing_it() {
     fs::write(&output, include_str!("fixtures/routes.generated.ts")).unwrap();
     assert!(check().status.success());
 }
+
+#[test]
+fn generation_uses_computed_metadata_keys_for_special_route_names() {
+    let mut catalog = support::catalog();
+    let route = catalog
+        .routes
+        .iter_mut()
+        .find(|route| route.id == "about")
+        .unwrap();
+    route.id = "__proto__".into();
+    let router = Router::new(catalog, &support::Reference).unwrap();
+    assert!(router.typescript().contains("[\"__proto__\"]:"));
+}

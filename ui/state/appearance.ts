@@ -201,13 +201,17 @@ export function createAppearanceStore(session: WindowSession = createWindowState
   }
 
   async function setBackgroundImageOpacity(value: number) {
-    const ticket = await session.preview(true, value);
+    const receipt = await session.preview(true, value);
+    if (receipt.kind !== "ticket") throw new Error("window_invalid_receipt");
+    const ticket = receipt.ticket;
     try { return await sync(() => settings.dispatch({ type: "opacity", value })); }
     finally { if (!disposed) await session.preview(true, null, ticket); }
   }
 
   async function setContentBackgroundTransparency(value: number) {
-    const ticket = await session.preview(false, value);
+    const receipt = await session.preview(false, value);
+    if (receipt.kind !== "ticket") throw new Error("window_invalid_receipt");
+    const ticket = receipt.ticket;
     try { return await sync(() => settings.dispatch({ type: "transparency", value })); }
     finally { if (!disposed) await session.preview(false, null, ticket); }
   }

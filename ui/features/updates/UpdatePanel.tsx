@@ -84,6 +84,7 @@ export function UpdatePanel(
         </Button>
       </View>
       <UpdateDetails
+        testID="update-panel-details"
         appearance={props.appearance}
         updates={props.updates}
       />

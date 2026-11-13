@@ -16,7 +16,7 @@ test("every title-bar and rail icon has a hover tooltip, including disabled butt
   await app.waitUntil(() => app.enabled("id:titlebar-color-mode"));
   expect(app.enabled("id:nav-back")).toBe(false);
   expect(app.enabled("id:nav-forward")).toBe(false);
-  expect(app.enabled("id:rail-update")).toBe(false);
+  expect(app.shows("id:rail-update")).toBe(false);
   expect(app.enabled("id:rail-account")).toBe(false);
 
   const hints = [
@@ -25,7 +25,6 @@ test("every title-bar and rail icon has a hover tooltip, including disabled butt
     ["nav-forward", "Forward"],
     ["titlebar-color-mode", "Switch to dark mode"],
     ["rail-home", "Home"],
-    ["rail-update", "Updates are unavailable in this environment"],
     ["rail-settings", "Open settings"],
     ["rail-account", "Account"],
   ] as const;
@@ -72,7 +71,6 @@ test("tooltips follow the sidebar action, appearance action and selected languag
     ["nav-forward", "前进"],
     ["titlebar-color-mode", "切换到浅色模式"],
     ["rail-home", "主页"],
-    ["rail-update", "当前环境不支持应用更新"],
     ["rail-settings", "打开设置"],
     ["rail-account", "账户"],
   ] as const;

@@ -12,7 +12,7 @@ pub use crate::background::BackgroundImage;
 pub use crate::settings::{
     ColorMode, Command, ComponentFamily, CustomTheme, DiagnosticLevel, Palette, Snapshot,
 };
-pub use crate::settings_service::SettingsService;
+pub use crate::settings_service::{Error as SettingsError, SettingsService};
 pub use crate::style_themes::{
     Material, StyleCssVars, StyleTheme, ThemeFileIssue, ThemeSource, Tokens,
 };
@@ -32,7 +32,7 @@ pub(crate) fn next_store_id() -> Result<StoreId, &'static str> {
     Ok(StoreId::new(*next))
 }
 
-type ServiceCell = Arc<OnceLock<Result<Arc<SettingsService>, &'static str>>>;
+type ServiceCell = Arc<OnceLock<Result<Arc<SettingsService>, SettingsError>>>;
 
 /// Owns one settings service per host-resolved absolute settings file path.
 /// Paths are trusted application inputs, never supplied by JavaScript. Callers
@@ -46,9 +46,9 @@ pub struct SettingsRegistry {
 impl SettingsRegistry {
     /// Finds or initializes a service on a blocking worker. Registry locking only
     /// covers entry lookup; initialization and persistence use per-entry ownership.
-    pub fn for_path(&self, path: PathBuf) -> Result<Arc<SettingsService>, &'static str> {
+    pub fn for_path(&self, path: PathBuf) -> Result<Arc<SettingsService>, SettingsError> {
         self.resolve(path.clone(), || {
-            let id = next_store_id()?;
+            let id = next_store_id().map_err(SettingsError::Identity)?;
             SettingsService::new(SettingsStore::open(path), id, &WatchBackend).map(Arc::new)
         })
     }
@@ -56,15 +56,15 @@ impl SettingsRegistry {
     fn resolve(
         &self,
         path: PathBuf,
-        initialize: impl FnOnce() -> Result<Arc<SettingsService>, &'static str>,
-    ) -> Result<Arc<SettingsService>, &'static str> {
+        initialize: impl FnOnce() -> Result<Arc<SettingsService>, SettingsError>,
+    ) -> Result<Arc<SettingsService>, SettingsError> {
         if !path.is_absolute() {
-            return Err(UNAVAILABLE);
+            return Err(SettingsError::InvalidPath);
         }
         let entry = self
             .services
             .lock()
-            .map_err(|_| UNAVAILABLE)?
+            .map_err(|_| SettingsError::Poisoned)?
             .entry(path.clone())
             .or_default()
             .clone();
@@ -75,10 +75,10 @@ impl SettingsRegistry {
 impl SettingsService {
     /// Creates an isolated, memory-only engine session. Dropping its last owner
     /// closes subscriptions. This service is never inserted into the directory registry.
-    pub fn session() -> Result<Arc<Self>, &'static str> {
+    pub fn session() -> Result<Arc<Self>, SettingsError> {
         Self::new(
             SettingsStore::session_only(),
-            next_store_id()?,
+            next_store_id().map_err(SettingsError::Identity)?,
             &WatchBackend,
         )
         .map(Arc::new)
@@ -106,7 +106,7 @@ mod tests {
                     release_rx.recv().unwrap();
                     SettingsService::new(
                         SettingsStore::open(slow_path),
-                        next_store_id()?,
+                        next_store_id().map_err(SettingsError::Identity)?,
                         &WatchBackend,
                     )
                     .map(Arc::new)

@@ -27,8 +27,8 @@
 | --- | --- | --- |
 | 生效的用户偏好、主题和保存状态 | Rust `SettingsStore` | 按设置文件路径共享于进程内；无数据目录时使用引擎局部的会话 Store。 |
 | 设置只读投影 | `ui/state/projection.ts` | App 装配订阅，appearance 与借用门面读取同一投影。 |
-| 请求、预览、分类和主页计数 | `RouterService` 的 session | Rust 窗口 Store；TS 仅借用投影，回执与预览清理使用票据。 |
-| 路由、历史游标和面包屑 | `usher-router` / `RouterService` | 同一 VM 内每个宿主窗口各有唯一历史，动作绑定 Rust StoreId，关闭后身份失效。 |
+| 请求、预览、分类和主页计数 | `window_session` 规则 / `WindowService` 提交 | Rust 窗口 Store；TS 仅借用投影，回执与预览清理使用票据。 |
+| 路由、历史游标和面包屑 | `usher-router` / `WindowService` | 同一 VM 内每个宿主窗口各有唯一历史，动作绑定 Rust StoreId，关闭后身份失效。 |
 | 焦点、悬停、抽屉和组件临时状态 | TSX 组件及布局控制器 | 随所属组件挂载和释放。 |
 | 日志队列、写入线程和实时健康 | Rust 诊断模块 / `diagnostic_state` | 进程级管理，同一日志目录复用实例；健康和丢弃计数独立发布，旧管线代次不能回写。 |
 
@@ -61,7 +61,9 @@ flowchart LR
 
 设计与实施顺序以 [通用状态管理方案](docs/state-management.md) 为准，任务索引见 scaffolding 03.08 至 03.13。SM1 已实现独立核心，SM2 已将设置接入并保持请求—响应兼容。`app_state.rs` 装配目录注册表与独立会话，`settings_service.rs` 负责预检、串行提交、变化比较与异常关闭；SM3 已实现引擎局部订阅、独立 TS 传输及 NSH 适配器；SM4 已迁移窗口历史、分类、预览、操作反馈、导出与计数；macOS 原生同 VM 多窗口、真实源码 HMR 与关闭重开已在隔离数据目录验收。
 
-通用状态机与状态发布层已独立为内部 crate `crates/usher-state/`，提供纯转换契约、不可变快照、只读句柄与后端无关的订阅接口。应用通过工厂注入具体实现，`tokio::sync::watch` 仅为首个可选后端；公共接口不暴露通道、锁守卫或后端错误，更换实现以相同调用方通过契约测试为验收条件。crate 不依赖 NSH、平台、网络与文件系统。更新业务状态机继续归 `usher-update`；设置校验及持久化继续归设置模块，通过应用适配复用底座。
+通用转换结果与状态发布层已独立为内部 crate `crates/usher-state/`，提供纯转换契约、不可变快照、只读句柄与后端无关的订阅接口。应用通过工厂注入具体实现，`tokio::sync::watch` 仅为首个可选后端；公共接口不暴露通道、锁守卫或后端错误，更换实现以相同调用方通过契约测试为验收条件。crate 不依赖 NSH、平台、网络与文件系统。更新业务状态机继续归 `usher-update`；设置校验及持久化继续归设置模块，通过应用适配复用底座。
+
+窗口装配由 `src/window_service.rs` 承担，`src/window_session.rs` 隔离页面会话规则；历史与会话共用一个原子快照。窗口服务与设置服务使用带 code() 的错误枚举并保留内部原因，桥接负责兼容编码。窗口的纯候选发布失败允许重试；设置可能已完成持久化，内部发布故障仍关闭服务。通用 crate 不承载设置专用预检，也不要求领域实现统一状态机 trait。
 
 测试依赖独立于运行时架构：`crates/usher-test-support/` 仅提供不含业务依赖的 poll / 唤醒及夹具身份校验工具，由状态、路由和应用的开发依赖使用，不进入其生产依赖图。状态参考后端和场景夹具仍在 `usher-state/tests/`。单测与 crate 契约就近，跨模块应用集成及 E2E 分别集中在 `tests/integration/`、`tests/e2e/`；具体边界和当前实现见 [测试方案](docs/testing.md#3-测试分层与目录)。
 
@@ -171,7 +173,7 @@ Downloading → ReadyToInstall → Installing → AwaitingFirstLaunch
 
 NSH 在下载内完成校验，无独立验证回调。领域不依赖 NSH、状态库或日志实现。`UpdateState` Rust 桥接和 `ui/features/updates/` 控制器已接入。Rust 保存版本 / 构建号、检查时间 / 结果和下载状态；TSX 通过通用状态投影消费快照，持单执行租约串行调用 `nsh/updater`，配置及自动检查参数来自 `ui/config/updates.json`（30 秒 / 6 小时 / 2 次）。每个候选的 `canInstall` 决定整包是否只能手动升级，不阻止兼容代码包。
 
-`App.tsx` 将同一更新门面交给布局和设置页。Rail 通过布局契约显示安静、强调与 Canvas 进度环三种形态；设置分区与 Popover 共用详情组件，状态、可换行说明和操作分行排列，就绪时隐藏不可用的检查按钮。自动代码包下载同样投影为进度环，不自动打开面板；强调图标优先使用系统 square.and.arrow.down，大小由 size-update-icon 主题 token 控制。Popover 标题行组合 View、Button 和 SystemIcon 显示右上角关闭入口，使用现有 iconButtonLook 主题样式；关闭不改变共享更新状态。自动开启时静默下载代码包，整包下载与任何重启都需用户操作。视图释放停止订阅与计时器，同 VM 保留执行租约和在途 Promise；传输失败不重做原生操作。完整执行 VM 销毁仍无租约交接，须重启应用恢复。
+`App.tsx` 将同一更新门面交给布局和设置页。Rail 按布局契约的 visible 挂载更新入口：空闲、已是最新、不支持和后台检查失败时不挂载；手动检查失败使用警示色的实心下载图标并保留入口及已打开的面板，由共享快照中的 manual_check 判定，不另存业务状态；检查中使用无中心图标的 Canvas 不定进度环，有更新时使用强调图标，下载时使用带菱形的进度环；设置分区与 Popover 共用详情组件，状态、可换行说明和操作分行排列，就绪时隐藏不可用的检查按钮。自动代码包下载同样投影为进度环，不自动打开面板；强调图标优先使用系统 square.and.arrow.down，大小由 size-update-icon 主题 token 控制。Popover 标题行组合 View、Button 和 SystemIcon 显示右上角关闭入口，使用现有 iconButtonLook 主题样式；关闭不改变共享更新状态。自动开启时静默下载代码包，整包下载与任何重启都需用户操作。视图释放停止订阅与计时器，同 VM 保留执行租约和在途 Promise；传输失败不重做原生操作。完整执行 VM 销毁仍无租约交接，须重启应用恢复。
 
 ### 发布信任边界
 

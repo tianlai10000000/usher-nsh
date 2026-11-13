@@ -16,7 +16,7 @@ fn value_type(kind: &ValueKind) -> String {
     }
 }
 impl Router {
-    /// Emits only types: routes.json remains the single editable business catalog.
+    /// Emits types and literal metadata; the catalog remains the single editable source.
     /// Integer parameters are canonical decimal strings, validated at runtime as i64.
     pub fn typescript(&self) -> String {
         let mut output = String::from(
@@ -41,6 +41,15 @@ impl Router {
                 .collect::<Vec<_>>()
                 .join(" | ")
         ));
+        output.push_str("export const routeMetadata = {\n");
+        for route in &catalog.routes {
+            let metadata = serde_json::json!({
+                "id": route.id, "path": route.path, "page": route.page,
+                "titleKey": route.title_key, "parent": route.parent, "menu": route.menu,
+            });
+            output.push_str(&format!("  [{}]: {},\n", quoted(&route.id), metadata));
+        }
+        output.push_str("} as const;\n");
         output.push_str("export interface RouteParams {\n");
         for route in &catalog.routes {
             let params = route

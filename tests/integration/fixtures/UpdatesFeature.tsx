@@ -16,6 +16,8 @@ function Probe() {
   const navigation = createRouter(window.routing);
   const scenario = signal("shell");
   const calls = signal(0);
+  const checks = signal(0);
+  let finishCheck: (() => void) | undefined;
   let finish: (() => void) | undefined;
   const updater: Native = {
     shellInfo: () => ({
@@ -26,13 +28,19 @@ function Probe() {
     }),
     runningPackage: () => null,
     checkForPackage: async () => {
+      checks.update((count) => count + 1);
+      if (scenario() === "checking") {
+        await new Promise<void>((resolve) => {
+          finishCheck = resolve;
+        });
+      }
       if (scenario() === "offline") throw new Error("network offline");
       return scenario().startsWith("package")
         ? { version: "1.0.1", build: 2 }
         : null;
     },
     checkForUpdate: async () =>
-      scenario() === "latest" ? null : ({
+      ["latest", "checking"].includes(scenario()) ? null : ({
         version: scenario().startsWith("package") ? "1.0.1" : "1.1.0",
         canInstall: scenario() !== "manual",
         url: "https://example.test/update",
@@ -84,6 +92,7 @@ function Probe() {
                   "offline",
                   "manual",
                   "latest",
+                  "checking",
                   "unknown",
                   "disk",
                 ]}
@@ -97,11 +106,15 @@ function Probe() {
                   </Button>
                 )}
               </Each>
+              <Button testID="finish-check" onPress={() => finishCheck?.()}>
+                <Text>Finish check</Text>
+              </Button>
               <Button testID="finish-download" onPress={() => finish?.()}>
                 <Text>Finish download</Text>
               </Button>
             </View>
             <Text>Downloads:{calls()}</Text>
+            <Text>Checks:{checks()}</Text>
             <Text testID="feature-phase">
               Phase:{updates.data().domain?.phase.type ?? "preparing"}
             </Text>

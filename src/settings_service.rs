@@ -1,4 +1,6 @@
-//! Serializes legacy settings transactions and publishes immutable application state.
+//! Serializes settings transactions, checks application capacity and publishes immutable state.
+mod error;
+pub use error::Error;
 
 use std::sync::{
     Mutex,
@@ -7,10 +9,7 @@ use std::sync::{
 
 use usher_state::{BackendFactory, StoreId, StoreReader, StoreWriter, create_store};
 
-use crate::{
-    app_state::UNAVAILABLE,
-    settings::{Command, SettingsStore, Snapshot},
-};
+use crate::settings::{Command, SettingsStore, Snapshot};
 
 /// Application command boundary for one settings repository or engine session.
 /// The legacy store remains the sole mutable domain model. The state reader is
@@ -53,12 +52,12 @@ impl SettingsService {
         domain: SettingsStore,
         id: StoreId,
         factory: &dyn BackendFactory<Snapshot>,
-    ) -> Result<Self, &'static str> {
+    ) -> Result<Self, Error> {
         let (writer, reader) =
-            create_store(id, domain.snapshot(), factory).map_err(|_| UNAVAILABLE)?;
+            create_store(id, domain.snapshot(), factory).map_err(Error::Store)?;
         let updates = std::sync::Arc::new(
             crate::update_service::UpdateService::new(&usher_state::backends::WatchBackend)
-                .map_err(|_| UNAVAILABLE)?,
+                .map_err(Error::Synchronization)?,
         );
         Ok(Self {
             updates,
@@ -69,9 +68,7 @@ impl SettingsService {
     }
 
     /// Borrows the service created with this settings scope, before versions are known.
-    pub fn updates(
-        &self,
-    ) -> Result<std::sync::Arc<crate::update_service::UpdateService>, &'static str> {
+    pub fn updates(&self) -> Result<std::sync::Arc<crate::update_service::UpdateService>, Error> {
         self.ensure_open()?;
         Ok(self.updates.clone())
     }
@@ -80,17 +77,17 @@ impl SettingsService {
     pub(crate) fn configure_updates(
         &self,
         config: crate::update_service::transport::Configuration,
-    ) -> Result<(), &'static str> {
-        let transaction = self.transaction.lock().map_err(|_| UNAVAILABLE)?;
+    ) -> Result<(), Error> {
+        let transaction = self.transaction.lock().map_err(|_| Error::Poisoned)?;
         self.ensure_open()?;
         let preferences = transaction.domain.snapshot();
-        let info = config.info().map_err(crate::update_service::Error::code)?;
+        let info = config.info().map_err(Error::Update)?;
         let config = config
             .settings(preferences.update_auto_check)
-            .map_err(crate::update_service::Error::code)?;
+            .map_err(Error::Update)?;
         self.updates
             .configure_runtime(config, info)
-            .map_err(crate::update_service::Error::code)
+            .map_err(Error::Update)
     }
 
     /// Returns a read-only capability. Reads and subscriptions never acquire the
@@ -101,37 +98,37 @@ impl SettingsService {
     }
 
     /// Reads a versioned snapshot for transports without exposing a writer.
-    pub fn state_snapshot(&self) -> Result<usher_state::Snapshot<Snapshot>, &'static str> {
+    pub fn state_snapshot(&self) -> Result<usher_state::Snapshot<Snapshot>, Error> {
         self.ensure_open()?;
-        self.reader.snapshot().map_err(|_| UNAVAILABLE)
+        self.reader.snapshot().map_err(Error::Store)
     }
 
     /// Registers while the domain is live. Unlike a retained reader, a transport
     /// cannot establish a new binding to an already closed service.
-    pub fn subscribe(&self) -> Result<usher_state::Subscription<Snapshot>, &'static str> {
-        let _transaction = self.transaction.lock().map_err(|_| UNAVAILABLE)?;
+    pub fn subscribe(&self) -> Result<usher_state::Subscription<Snapshot>, Error> {
+        let _transaction = self.transaction.lock().map_err(|_| Error::Poisoned)?;
         self.ensure_open()?;
-        self.reader.subscribe().map_err(|_| UNAVAILABLE)
+        self.reader.subscribe().map_err(Error::Store)
     }
 
     /// Returns the published preferences in the legacy response shape.
-    pub fn snapshot(&self) -> Result<Snapshot, &'static str> {
+    pub fn snapshot(&self) -> Result<Snapshot, Error> {
         self.ensure_open()?;
         self.reader
             .snapshot()
             .map(|snapshot| snapshot.state().clone())
-            .map_err(|_| UNAVAILABLE)
+            .map_err(Error::Store)
     }
 
     /// Applies one validated preference command and persists it before publication.
     /// Write failures remain successful domain responses with saved=false; validation
     /// failures preserve their existing stable error code and do not publish.
-    pub fn apply(&self, command: Command) -> Result<Snapshot, &'static str> {
+    pub fn apply(&self, command: Command) -> Result<Snapshot, Error> {
         self.mutate(move |store| store.apply(command))
     }
 
     /// Retries current preferences without overwriting a concurrent preference with a stale read.
-    pub(crate) fn retry_save(&self) -> Result<Snapshot, &'static str> {
+    pub(crate) fn retry_save(&self) -> Result<Snapshot, Error> {
         self.mutate(|store| {
             store.apply(Command::SetUpdateAutoCheck(
                 store.snapshot().update_auto_check,
@@ -140,28 +137,27 @@ impl SettingsService {
     }
 
     /// Imports an image through the existing asset validation and persistence order.
-    pub fn import_background_image(
-        &self,
-        name: String,
-        bytes: Vec<u8>,
-    ) -> Result<Snapshot, &'static str> {
+    pub fn import_background_image(&self, name: String, bytes: Vec<u8>) -> Result<Snapshot, Error> {
         self.mutate(move |store| store.import_background_image(name, bytes))
     }
 
     /// Reads only the selected application-owned image through the original repository.
-    pub fn load_background_image(&self, id: &str) -> Result<Vec<u8>, &'static str> {
-        let transaction = self.transaction.lock().map_err(|_| UNAVAILABLE)?;
+    pub fn load_background_image(&self, id: &str) -> Result<Vec<u8>, Error> {
+        let transaction = self.transaction.lock().map_err(|_| Error::Poisoned)?;
         self.ensure_open()?;
-        transaction.domain.load_background_image(id)
+        transaction
+            .domain
+            .load_background_image(id)
+            .map_err(Error::Domain)
     }
 
     /// Refreshes and publishes the complete catalog only when its contents change.
-    pub fn rescan_themes(&self) -> Result<Snapshot, &'static str> {
+    pub fn rescan_themes(&self) -> Result<Snapshot, Error> {
         self.mutate(|store| Ok(store.rescan_themes()))
     }
 
     /// Clones a style using the existing retry-safe multi-file operation.
-    pub fn clone_style_theme(&self, id: String, name: String) -> Result<Snapshot, &'static str> {
+    pub fn clone_style_theme(&self, id: String, name: String) -> Result<Snapshot, Error> {
         self.mutate(move |store| store.clone_style_theme(id, name))
     }
 
@@ -177,9 +173,9 @@ impl SettingsService {
         transaction.writer.close();
     }
 
-    fn ensure_open(&self) -> Result<(), &'static str> {
+    fn ensure_open(&self) -> Result<(), Error> {
         if self.closed.load(Ordering::Acquire) {
-            Err(UNAVAILABLE)
+            Err(Error::Closed)
         } else {
             Ok(())
         }
@@ -188,8 +184,8 @@ impl SettingsService {
     fn mutate(
         &self,
         operation: impl FnOnce(&mut SettingsStore) -> Result<Snapshot, &'static str>,
-    ) -> Result<Snapshot, &'static str> {
-        let mut transaction = self.transaction.lock().map_err(|_| UNAVAILABLE)?;
+    ) -> Result<Snapshot, Error> {
+        let mut transaction = self.transaction.lock().map_err(|_| Error::Poisoned)?;
         self.ensure_open()?;
         let mut mutation = Mutation {
             transaction: &mut transaction,
@@ -197,20 +193,23 @@ impl SettingsService {
             updates: &self.updates,
             completed: false,
         };
-        // Check capacity conservatively before any domain or file mutation. The
-        // writer stays exclusively owned until commit; the selected watch backend
-        // cannot reject an in-lifetime publication. Unexpected faults fail closed.
-        mutation
-            .transaction
-            .writer
-            .preflight_publish()
-            .map_err(|_| UNAVAILABLE)?;
+        // This service owns writer lifetime under the transaction lock. Check the
+        // published sequence before legacy I/O; backend failures after I/O still close
+        // the service. This is an application compatibility policy, not a store reservation.
         let before = mutation
             .transaction
             .writer
             .snapshot()
-            .map_err(|_| UNAVAILABLE)?;
-        before.state().revision.checked_add(1).ok_or(UNAVAILABLE)?;
+            .map_err(Error::Store)?;
+        before
+            .sequence()
+            .checked_add(1)
+            .ok_or(Error::Store(usher_state::StoreError::SequenceExhausted))?;
+        before
+            .state()
+            .revision
+            .checked_add(1)
+            .ok_or(Error::RevisionExhausted)?;
         let result = operation(&mut mutation.transaction.domain);
         let candidate = match &result {
             Ok(snapshot) => snapshot.clone(),
@@ -223,14 +222,14 @@ impl SettingsService {
                 .transaction
                 .writer
                 .publish(candidate)
-                .map_err(|_| UNAVAILABLE)?
+                .map_err(Error::Store)?
         };
         // The settings transaction orders preference writes and one-time update configuration.
         // Persisted settings remain authoritative, including unsaved in-memory preferences.
         if self
             .updates
             .snapshot()
-            .map_err(|_| UNAVAILABLE)?
+            .map_err(Error::Synchronization)?
             .state()
             .domain
             .is_some()
@@ -239,10 +238,12 @@ impl SettingsService {
                 .request(crate::update_service::Command::AutoCheck(
                     committed.state().update_auto_check,
                 ))
-                .map_err(|_| UNAVAILABLE)?;
+                .map_err(Error::Synchronization)?;
         }
         mutation.completed = true;
-        result.map(|_| committed.state().clone())
+        result
+            .map(|_| committed.state().clone())
+            .map_err(Error::Domain)
     }
 }
 

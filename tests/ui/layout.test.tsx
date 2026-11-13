@@ -1,3 +1,4 @@
+/** Verifies persistent rail navigation and conditional update visibility. */
 import { expect, open, test } from "nsh/test";
 
 test("the rail stays while the secondary menu toggles", async () => {
@@ -17,11 +18,10 @@ test("the rail stays while the secondary menu toggles", async () => {
 
 test("the rail bottom holds the update, settings and account buttons", async () => {
   const app = await open("../../App.tsx", { platform: "macos", width: 900, height: 740, locale: "en-US" });
-  await app.waitFor("id:rail-update");
   await app.waitFor("id:rail-settings");
   await app.waitFor("id:rail-account");
-  // No update or account feature is connected yet, so those two buttons are inert.
-  expect(app.enabled("id:rail-update")).toBe(false);
+  // The development shell has no updater capability; no update entry should appear.
+  expect(app.shows("id:rail-update")).toBe(false);
   expect(app.enabled("id:rail-account")).toBe(false);
   expect(app.shows("id:rail-update-badge")).toBe(false);
 

@@ -45,6 +45,12 @@ impl Error {
         }
     }
 }
+impl std::fmt::Display for Error {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.code())
+    }
+}
+impl std::error::Error for Error {}
 /// User intent is separate from executor completion, so consumers cannot forge a result.
 #[derive(Clone, Debug)]
 pub enum Command {

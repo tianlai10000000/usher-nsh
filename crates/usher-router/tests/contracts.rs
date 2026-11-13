@@ -112,6 +112,34 @@ fn catalog_rejection(factory: &dyn MatcherFactory) {
         Some("home")
     );
 }
+
+fn indexed_catalog_contract(factory: &dyn MatcherFactory) {
+    let original = Router::new(catalog(), factory).unwrap();
+    let mut shuffled = catalog();
+    shuffled.routes.reverse();
+    let shuffled = Router::new(shuffled, factory).unwrap();
+    for case in cases().cases {
+        let target = Target::path(case.target);
+        assert_eq!(original.resolve(&target), shuffled.resolve(&target));
+    }
+    let target = Target::Named {
+        id: "user".into(),
+        params: BTreeMap::from([("id".into(), "alice".into())]),
+        query: BTreeMap::new(),
+    };
+    assert_eq!(original.resolve(&target), shuffled.resolve(&target));
+    let mut cyclic = catalog();
+    cyclic
+        .routes
+        .iter_mut()
+        .find(|route| route.id == "home")
+        .unwrap()
+        .parent = Some("user".into());
+    assert!(matches!(
+        Router::new(cyclic, factory),
+        Err(Error::InvalidCatalog)
+    ));
+}
 fn history_contract(factory: &dyn MatcherFactory) {
     let router = Router::new(catalog(), factory).unwrap();
     let initial = router.initial().unwrap();
@@ -236,6 +264,10 @@ macro_rules! contracts {
                 catalog_rejection(&$factory);
             }
             #[test]
+            fn indexed_catalog() {
+                indexed_catalog_contract(&$factory);
+            }
+            #[test]
             fn catalog_migration() {
                 migration_contract(&$factory);
             }
@@ -316,7 +348,22 @@ fn backend_failures_remain_stable_and_cannot_forge_a_route() {
     }
     assert!(matches!(
         Router::new(catalog(), &Forged),
-        Err(Error::BackendUnavailable)
+        Err(Error::InvalidMatch)
+    ));
+    struct Missing;
+    impl RouteMatcher for Missing {
+        fn recognize(&self, _: &str) -> Result<Option<Match>, Error> {
+            Ok(None)
+        }
+    }
+    impl MatcherFactory for Missing {
+        fn build(&self, _: &[Pattern]) -> Result<Box<dyn RouteMatcher>, Error> {
+            Ok(Box::new(Missing))
+        }
+    }
+    assert!(matches!(
+        Router::new(catalog(), &Missing),
+        Err(Error::InvalidMatch)
     ));
 }
 

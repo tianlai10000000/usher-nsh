@@ -3,7 +3,7 @@
 pub mod memory;
 
 use serde::Deserialize;
-use usher_state::{StateMachine, Transition};
+use usher_state::Transition;
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -47,17 +47,12 @@ pub enum Command {
 
 pub struct Machine;
 
-impl StateMachine for Machine {
-    type State = i64;
-    type Command = Command;
-    type Effect = String;
-    type Error = &'static str;
-
-    fn transition(
+impl Machine {
+    pub fn transition(
         &self,
         current: &i64,
         command: Command,
-    ) -> Result<Transition<i64, String>, Self::Error> {
+    ) -> Result<Transition<i64, String>, &'static str> {
         match command {
             Command::Reject => Err("fixture_rejection"),
             Command::Effect(effect) => Ok(Transition::Unchanged {

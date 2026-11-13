@@ -10,6 +10,8 @@ export function presentation(state: UpdateData) {
     ["unsupported", "system_managed"].includes(domain.capability);
   const ready = phase?.type === "ready_to_install";
   const failure = phase?.failure ?? outcome?.failure;
+  const manualCheckFailure = outcome?.type === "failed" &&
+    state.info.manual_check === true;
   const quietFailure = outcome?.type === "failed" && !state.info.manual_check; // Background errors are shown in settings, not as attention badges.
   const progress =
     phase?.type === "downloading" && phase.total && phase.total !== "0"
@@ -43,6 +45,12 @@ export function presentation(state: UpdateData) {
     outcome?.type === "shell_update";
   return {
     key,
+    indicatorKey: found || outcome?.type === "manual_upgrade"
+      ? "update.indicatorAvailable" as const
+      : key,
+    visible: !unavailable && (working || ready || !!found ||
+      outcome?.type === "manual_upgrade" || manualCheckFailure ||
+      (!!candidate && !!failure)),
     candidate,
     failure,
     progress,
@@ -53,14 +61,15 @@ export function presentation(state: UpdateData) {
     canDownload: !!found ||
       (phase?.type === "install_failed" && failure !== "rejected"),
     canRetryCheck: !!failure && !working,
-    shape: phase?.type === "downloading"
+    shape: phase?.type === "checking"
+      ? "checking" as const
+      : phase?.type === "downloading"
       ? "progress" as const
       : ready || found || outcome?.type === "manual_upgrade" ||
           (!!failure && !quietFailure)
       ? "emphasis" as const
       : "quiet" as const,
-    disabled: unavailable || (phase?.type === "downloading"),
-    spinning: phase?.type === "checking",
+    disabled: unavailable || working,
     warning: !!failure && !quietFailure,
   };
 }

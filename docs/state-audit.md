@@ -13,7 +13,7 @@
 | --- | --- | --- |
 | 外观、语言、主题、侧栏、状态栏、背景资源元数据 | SettingsService / SettingsStore → SettingsState → state/settings；命令集中在 state/transport | 设置集成、state-ui、原有 UI、原生多窗口偏好同步 |
 | 诊断等级与实时健康 | 等级写入 settings；健康和 dropped 由 diagnostic_state 发布，旧 DTO 只保留兼容读取 | 真实日志线程错误发布及订阅测试 |
-| 路由、历史、面包屑 | RouterService 中唯一 WindowSnapshot；ui/router 提供导航门面，pages 注册业务页面 | router、routes-check、router-ui、实际 App E2E |
+| 路由、历史、面包屑 | WindowService 中唯一 WindowSnapshot；ui/router 提供导航门面，pages 注册业务页面 | router、routes-check、router-ui、实际 App E2E |
 | 分类、计数、预览、操作票据、导出结果 | WindowSnapshot.session；旧 navigation 删除，页面与 Shell 借用同一投影 | 窗口集成、往返保留、真实 HMR / 关闭重开 |
 | 更新状态与待执行效果 | UpdateService 的 Machine + 私有领取队列，UpdateRegistry 按宿主设置身份共享 | 同一应用消费者在两个后端执行，隔离目录、并发领取、交接及恢复屏障；未接入产品 UI |
 | 消息 / 账户 | 尚无业务数据源；布局只定义契约 | 后续批次，不创建占位共享 Store |

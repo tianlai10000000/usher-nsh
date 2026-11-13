@@ -44,7 +44,7 @@
 | 位置 | 职责 |
 | --- | --- |
 | `crates/usher-state/src/lib.rs` | 公共导出与 crate 文档 |
-| `crates/usher-state/src/machine.rs` | `StateMachine` 与 `Transition`：纯转换、类型化命令、效果和错误 |
+| `crates/usher-state/src/transition.rs` | `Transition`：显式变化结果和提交后交付的效果；领域自行定义转换函数 |
 | `crates/usher-state/src/snapshot.rs` | 快照信封、Store 实例身份与发布序号 |
 | `crates/usher-state/src/store.rs` | 后端无关的只读句柄、唯一发布者、订阅及关闭接口 |
 | `crates/usher-state/src/backend.rs` | 后端工厂、读取、发布和订阅能力契约；不暴露具体通道类型 |
@@ -52,7 +52,8 @@
 | `crates/usher-state/tests/` | 不启动 NSH 的契约与并发测试，保留状态专用 mock 和夹具 |
 | `crates/usher-test-support/src/task.rs` | 仅开发依赖的通用 poll / 唤醒工具，不依赖状态或业务 crate |
 | `src/app_state.rs` | 已实现设置路径注册表、进程内 StoreId 分配和独立引擎会话，注入 watch 工厂；窗口域由引擎 Local 内的 Windows 表按宿主窗口注册；传输捕获 currentWindow，动作使用 Rust StoreId，关闭后不复用身份 |
-| `src/settings_service.rs` | 已实现设置命令串行、发布预检、快照比较、失败关闭与只读 StoreReader；持久化仍归 SettingsStore |
+| `src/settings_service.rs` | 设置命令串行、服务层容量检查、快照比较、失败关闭与类型化错误；持久化仍归 SettingsStore |
+| `src/window_service.rs`、`src/window_session.rs` | 唯一窗口快照提交与独立会话规则；会话回执及票据类型化，导航发布失败可重试 |
 | `src/state_bridge.rs` | 通用订阅生命周期、取消和有界投递；不依赖设置规则，版本 DTO 由领域桥接转换 |
 | `src/settings_bridge.rs`、`src/update_bridge.rs` | 各领域的类型化命令、快照 DTO 与适配 |
 | `ui/state/contracts.ts`、`ui/state/index.ts` | 框架无关的只读访问器、动作、selector 和访问入口；消费者门面不暴露释放权限 |
@@ -89,7 +90,6 @@ flowchart LR
 
 | 契约 | 语义 |
 | --- | --- |
-| `StateMachine` | 声明 `State`、`Command`、`Effect`、`Error`；根据当前只读状态与命令计算转换；无 I/O、无宿主调用 |
 | `Transition` | 返回 `Unchanged` 或 `Changed(next)` 与待执行效果；未改变状态也可产生效果；拒绝命令返回类型化错误 |
 | `Snapshot<S>` | 通过只读方法取得 `store_id`、`sequence` 与 `&S`；字段私有，领域 `revision` 保留在 `S` 中；内部首版用 `Arc` 共享 |
 | `StoreReader<S>` | 可克隆；只暴露 `snapshot()`、`subscribe()`；不暴露底层发送端或可变状态 |
@@ -109,7 +109,7 @@ flowchart LR
 
 替换承诺覆盖符合本接口语义的底层实现。首版支持构造时注入替换，不做运行中的后端热切换；外部协议或领域数据 schema 的变更仍需显式版本兼容，不能借更换后端改变订阅和错误语义。
 
-SM1 实际入口为 `create_store(StoreId, initial, &dyn BackendFactory<S>)`，返回唯一 `StoreWriter<S>` 和可克隆 `StoreReader<S>`。`StoreId` 包装应用分配的 `u128`，不使用全局注册表，也不替应用保证身份唯一性。领域先根据 `writer.snapshot()` 计算 `StateMachine::transition`，再 `writer.apply(transition)`；`Commit` 仅在成功时交付快照与效果，不执行效果。`publish` 表示领域已判定变化，核心不要求 `S: PartialEq` 或 `Clone`。
+SM1 实际入口为 `create_store(StoreId, initial, &dyn BackendFactory<S>)`，返回唯一 `StoreWriter<S>` 和可克隆 `StoreReader<S>`。`StoreId` 包装应用分配的 `u128`，不使用全局注册表，也不替应用保证身份唯一性。领域先根据 `writer.snapshot()` 通过自身规则计算 `Transition`，再 `writer.apply(transition)`；`Commit` 仅在成功时交付快照与效果，不执行效果。`publish` 表示领域已判定变化，核心不要求 `S: PartialEq` 或 `Clone`。
 
 `reader.subscribe()` 原子取得初始值与游标，`subscription.initial()` 是注册时已确认的快照，`next().await` 只返回之后的最新值。`cancel()` 立即释放游标；`cancellation_handle()` 可在另一线程唤醒正在等待的订阅，观察到取消后释放游标。丢弃 pending future 不消费值或保留等待任务，丢弃订阅取消自身；显式关闭或丢弃唯一 writer 后，读者仍可读取最终快照，订阅先交付未读最终值再返回 Closed。终止结果保持稳定。参考后端只在 `tests/support/memory.rs`，不会打入生产库。
 
@@ -135,7 +135,7 @@ TS 消费者门面定义项目自己的 `Readable<T>`（只读调用函数）、
 
 一次提交先校验关闭状态、序号容量和命令前置条件，再构造候选快照；后端替换成功是提交线性化点，之后才确认成功和交付效果。后端发布失败必须保持此前快照可读，不允许先提交领域状态后返回发布失败却继续处理命令。新纯转换领域以已发布状态为事实来源；兼容设置适配器因包含现有可变状态和落盘操作，须在变更前完成可失败的预检，并使用有效生命周期内不会返回可恢复发布错误的内存提交路径。若发生无法保证一致性的内部故障，关闭该领域服务并显式报错，重新从权威仓库装配后才恢复；不能回滚已成功落盘的文件来伪装事务。可替换后端必须满足该提交契约，远程存储后端不在首版替换承诺中。
 
-SM2 在每次可能变更的操作前持有实例串行锁，执行 `StoreWriter::preflight_publish()` 与领域 revision 容量检查；预检检查生命周期和容量，不保证任意后端后续成功。实例独占 writer，使用有效生命周期内不会返回可恢复提交错误的 watch 后端。成功和失败响应都与此前已发布完整快照比较，只有可观察变化才发布；校验拒绝及已保存的重复命令不通知。保存失败仍沿用原响应中的 `saved=false` 和错误码。
+SM2 在每次可能变更的操作前持有实例串行锁，由服务检查关闭标志、已发布快照 sequence 和领域 revision 的容量；检查与 I/O、发布共享同一锁和唯一 writer。该兼容策略不预留提交，也不保证任意后端后续成功，通用 Store 不再暴露预检方法。实例独占 writer，使用有效生命周期内不会返回可恢复提交错误的 watch 后端。成功和失败响应都与此前已发布完整快照比较，只有可观察变化才发布；校验拒绝及已保存的重复命令不通知。保存失败仍沿用原响应中的 `saved=false` 和错误码。
 
 后端发布失败或命令展开 panic 时关闭 writer，后续服务操作返回已有错误码 `settings_store_unavailable`，旧 reader 只保留最后已发布值；不回滚可能已成功写入的文件。SM2 没有自动恢复入口：生产应用重启后从仓库重新装配；测试通过结束旧服务后创建新注册表验证恢复。revision 或 sequence 耗尽时保守拒绝所有后续变更操作，读取最终快照仍可通过原 reader 完成。
 
@@ -314,7 +314,7 @@ SM1 已执行状态两种组合、工作区测试及 nsh check；更新 crate �
 
 ## 12. SM4 迁移记录
 
-2026-11-12 联合 RT2 / RT3 实施。`RouterService` 使用一个 StoreWriter<WindowSnapshot> 发布历史和 session；ui/router 是导航唯一动作入口，普通 session 门面无导航写能力。窗口 Store 由 NSH Local 持有：同 VM 的组件重挂载取得相同历史、entryKey、计数和预览，Local 关闭后拒绝写入；独立无头引擎互相隔离。真实宿主窗口与 VM 的映射及 HMR 尚未据此宣称已验证。
+2026-11-12 联合 RT2 / RT3 实施。`WindowService` 使用一个 StoreWriter<WindowSnapshot> 发布历史和 session；ui/router 是导航唯一动作入口，普通 session 门面无导航写能力。窗口 Store 由 NSH Local 持有：同 VM 的组件重挂载取得相同历史、entryKey、计数和预览，Local 关闭后拒绝写入；独立无头引擎互相隔离。真实宿主窗口与 VM 的映射及 HMR 尚未据此宣称已验证。
 
 appearance 中的共享 signals 已移除：分类、请求阶段 / 校验、目录与选择反馈、加载问题、透明度预览、导出和主页计数均在 Rust session；调色板、语言、主题和按钮状态只读派生。JS 仅保留执行器互斥、释放标志、重试闭包和资源句柄，不作为可写业务状态源。异步操作使用 Rust ticket，旧完成结果不能覆盖新请求；预览清理也核对 ticket，旧保存完成不能清除较新的草稿。导出由 Rust 持有执行与结果，活动导出拒绝第二次启动。
 
@@ -327,7 +327,7 @@ appearance 中的共享 signals 已移除：分类、请求阶段 / 校验、目
 
 ## 13. SM4 原生验收与窗口作用域修正
 
-原生验收发现 NSH 同一 VM 可以承载多个 Window，原每 VM 一个 RouterService 只能证明引擎隔离。本批改为 Windows Local 内按宿主窗口名称注册；window-transport 在渲染时捕获 currentWindow().id，取得 Rust 分配的 StoreId，后续读取、订阅、动作和完成回执均绑定此 StoreId。业务状态 / 路由门面签名不变，不暴露窗口选择能力。适配器是可信窗口身份边界，底层注册桥接接收宿主 ID，Rust 不假定 VM 等于窗口。
+原生验收发现 NSH 同一 VM 可以承载多个 Window，原每 VM 一个 WindowService 只能证明引擎隔离。本批改为 Windows Local 内按宿主窗口名称注册；window-transport 在渲染时捕获 currentWindow().id，取得 Rust 分配的 StoreId，后续读取、订阅、动作和完成回执均绑定此 StoreId。业务状态 / 路由门面签名不变，不暴露窗口选择能力。适配器是可信窗口身份边界，底层注册桥接接收宿主 ID，Rust 不假定 VM 等于窗口。
 
 窗口独占的 hostWindow.on(close) 监听关闭并移除这次 opening 的 Store；Rust 领取标志保证每个 opening 只有一个长期监听，按 StoreId 匹配使旧句柄不能关闭同名重开窗口。长期监听在 owner 外安装，由宿主关闭清理；同步临时监听覆盖注册当轮。普通 owner 清理或 HMR 只取消该投影订阅，即使最后一个内容 owner 已卸载，关闭仍会释放 Store。VM 结束时关闭表内所有服务。设置仍按数据目录共享，持久化和旧 Settings 桥接未修改。
 
@@ -352,3 +352,11 @@ appearance 中的共享 signals 已移除：分类、请求阶段 / 校验、目
 ## 15. SM6 全量审核
 
 逐项状态来源、局部例外、后端替换、平台矩阵与成本边界见 [状态管理验收审计](state-audit.md)。真实命令结果集中记录在 [测试方案](testing.md)，不把纯 crate 跨目标编译计作其他平台宿主验收。
+
+## 状态与窗口服务契约收敛（2026-11-13）
+
+移除没有生产实现的 StateMachine trait，保留 Transition 与 StoreWriter::apply；领域无需统一继承一种 reducer。设置发布前的容量检查由 SettingsService 在实例锁内完成，保存顺序、saved=false、失败后重试及 I/O 后内部故障关闭策略保持不变。SettingsError 保留 StoreError、领域错误码及更新同步失败原因，只有原生桥接转换为兼容错误码。
+
+WindowService 明确承担窗口作用域和原子提交；独立 window_session 模块维护分类、计数、预览及操作规则，复用 background 的校验函数，不读取其配置内部字段。仍保留一个 StoreWriter<WindowSnapshot>，避免拆开后引入多个版本或生命周期。窗口发布失败时，候选 session、票据计数、目录身份和待决守卫均保持旧值，可重试同一次操作；这一纯内存契约不复用设置 I/O 后的关闭策略。
+
+Session::apply 返回 Receipt::Applied / Superseded / Ticket。Ticket 在 Rust 内为数值新类型，serde 与桥接统一使用规范十进制字符串；尚未启动的观察操作在兼容快照中仍编码为空票据。WindowState.sessionResult 返回带 kind 的回执 JSON，新 TS 传输使用该入口；旧 session 入口保留原空串 / superseded / 数字字符串，仅作为桥接兼容层。设置文件、窗口 StoreId、导航守卫及关闭语义保持兼容。验证结果见测试方案本轮记录；此前原生和成本数据不视为本轮复验。

@@ -61,7 +61,7 @@ async fn with_service<T: Send + 'static>(
 ) -> Result<T, String> {
     with_settings_store(sys, move |settings| {
         let service = settings.updates()?;
-        let result = operation(&service).map_err(update_service::Error::code);
+        let result = operation(&service).map_err(crate::settings_service::Error::Update);
         // Drain only committed records. Invalid callbacks must not produce detail logs.
         logging::drain(&service);
         result
@@ -101,7 +101,7 @@ impl UpdateState {
                 .updates()?
                 .snapshot()
                 .map(Into::into)
-                .map_err(update_service::Error::code)
+                .map_err(crate::settings_service::Error::Update)
         })
         .await
     }
@@ -112,12 +112,12 @@ impl UpdateState {
             let service = settings.updates()?;
             if service
                 .snapshot()
-                .map_err(update_service::Error::code)?
+                .map_err(crate::settings_service::Error::Update)?
                 .state()
                 .domain
                 .is_none()
             {
-                return Err(update_service::Error::NotConfigured.code());
+                return Err(update_service::Error::NotConfigured.into());
             }
             match request {
                 Request::AutoCheck { enabled } => {
@@ -126,21 +126,25 @@ impl UpdateState {
                 Request::Install => {
                     let saved = settings.retry_save()?;
                     if !saved.saved {
-                        return Err("updates_settings_unsaved");
+                        return Err("updates_settings_unsaved".into());
                     }
                     service
                         .request(update_service::Command::Install)
-                        .map_err(update_service::Error::code)?;
+                        .map_err(crate::settings_service::Error::Update)?;
                 }
                 request => service
-                    .request(request.command().map_err(update_service::Error::code)?)
-                    .map_err(update_service::Error::code)?,
+                    .request(
+                        request
+                            .command()
+                            .map_err(crate::settings_service::Error::Update)?,
+                    )
+                    .map_err(crate::settings_service::Error::Update)?,
             }
             logging::drain(&service);
             service
                 .snapshot()
                 .map(Into::into)
-                .map_err(update_service::Error::code)
+                .map_err(crate::settings_service::Error::Update)
         })
         .await
     }

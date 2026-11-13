@@ -3,8 +3,8 @@
  *
  * Top: primary destinations. Bottom: the update button, the settings button and the account
  * button. It never hides; the wider secondary menu next to it is the part that toggles. The
- * update and account buttons are driven by optional contracts: without one the button is shown
- * disabled instead of pretending to work. System symbols come from the shared icon catalog;
+ * update and account buttons are driven by optional contracts: updates appear only for active
+ * work or an available update; an unavailable account remains disabled. System symbols come from the shared icon catalog;
  * bottom utility icons use a smaller theme metric than primary destinations.
  */
 import { View } from "nsh";
@@ -59,7 +59,9 @@ export function Rail(props: {
         {(id) => routeButton(id(), routes[id()].titleKey, `rail-${id()}`, () => palette().metric.railIcon)}
       </Each>
       <View class="flex-1" />
-      <RailUpdate appearance={props.appearance} updates={props.updates} />
+      <If when={props.updates?.state().visible}>
+        <RailUpdate appearance={props.appearance} updates={props.updates} />
+      </If>
       {routeButton("settings", "nav.openSettings", "rail-settings", () => palette().metric.railUtilityIcon)}
       <Button testID="rail-account" accessibilityLabel={t("nav.account")}
         tooltip={<ButtonTooltip appearance={props.appearance} testID="rail-account-tooltip" placement="right"

@@ -6,6 +6,7 @@ mod generate;
 mod history;
 mod location;
 pub mod matcher;
+mod resolve;
 mod schema;
 
 pub use catalog::Router;
@@ -29,6 +30,8 @@ pub enum Error {
     InvalidHistory,
     CapacityExhausted,
     BackendUnavailable,
+    /// A matcher returned a result inconsistent with the validated catalog.
+    InvalidMatch,
 }
 impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

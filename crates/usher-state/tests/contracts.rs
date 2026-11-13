@@ -8,8 +8,7 @@ use std::{
 };
 use support::{Machine, fixtures};
 use usher_state::{
-    BackendFactory, Snapshot, StateMachine, StoreError, StoreId, SubscriptionEnd, Transition,
-    create_store,
+    BackendFactory, Snapshot, StoreError, StoreId, SubscriptionEnd, Transition, create_store,
 };
 use usher_test_support::task::{WakeCounter, poll, ready};
 

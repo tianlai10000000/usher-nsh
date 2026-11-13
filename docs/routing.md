@@ -30,7 +30,8 @@
 
 ```text
 crates/usher-router/        # Pure routing contracts, matching and transitions
-src/router_service.rs      # Window scope, commands, guards and state commits
+src/window_service.rs      # Window scope, guards and atomic state commits
+src/window_session.rs      # Page session rules and typed operation receipts
 src/router_bridge.rs       # NSH DTOs and typed commands
 ui/router/                 # Public facade, transport and NSH RouterView binding
 ui/pages/
@@ -52,9 +53,9 @@ ui/features/               # Feature views, services and reusable business piece
 
 ## 4. 依赖和状态归属
 
-`usher-router` 不依赖 NSH、应用根 crate、文件系统或 `usher-state`，提供给定 RouteCatalog、RouterState、NavigationCommand 的纯转换。应用服务持有不可变目录和唯一窗口 `StoreWriter<RouterState>`，把转换结果交给通用状态模块提交；Router 不再保存一份独立的可写历史。
+`usher-router` 不依赖 NSH、应用根 crate、文件系统或 `usher-state`，提供给定 RouteCatalog、RouterState、NavigationCommand 的纯转换。应用服务持有不可变目录和唯一窗口 `StoreWriter<WindowSnapshot>`，把转换结果交给通用状态模块提交；Router 不再保存一份独立的可写历史。
 
-TSX `ui/router/` 通过公共状态适配机制投影快照，只从此模块导出路由动作和查询。通用 state 门面不得公开改写 navigation 的 dispatch；所有程序、菜单、快捷键与原生返回入口经过 router_service。UI 组件使用只读布局契约，不能绕过 Router 直接修改历史。
+TSX `ui/router/` 通过公共状态适配机制投影快照，只从此模块导出路由动作和查询。通用 state 门面不得公开改写 navigation 的 dispatch；所有程序、菜单、快捷键与原生返回入口经过 window_service。UI 组件使用只读布局契约，不能绕过 Router 直接修改历史。
 
 目录属于业务配置；参数、当前 location、历史条目、游标与 pending navigation 属于窗口 RouterState；网络数据属于业务 Store；组件、原生栈句柄及离开确认回调归界面适配器。路由不会保存页面函数、任意闭包或用户凭据。路径参数及 query 不作为业务数据仓库。
 
@@ -97,7 +98,7 @@ NavigationResult 区分 committed、duplicated、cancelled、superseded、not-fo
 | 批次 / 项目任务 | 前置 | 交付和验收 | 状态 |
 | --- | --- | --- | --- |
 | RT1 / 04.10 | 已获授权 | 建立独立 usher-router；matchit 可替换适配、目录 schema、生成契约、解析格式化、纯历史转换与导航结果；依赖许可证和目标编译验证 | 已完成，见第 9 节 |
-| RT2 / 04.11 | RT1、SM1 至 SM3 | router_service / bridge、唯一窗口 Store、目录注册、并发票据与守卫；验证拒绝不改历史、旧回执、窗口隔离、目录版本及关闭 | 已完成，见第 10 节 |
+| RT2 / 04.11 | RT1、SM1 至 SM3 | window_service / bridge、唯一窗口 Store、目录注册、并发票据与守卫；验证拒绝不改历史、旧回执、窗口隔离、目录版本及关闭 | 已完成，见第 10 节 |
 | RT3 / 04.12 | RT2；与 SM4 联合验收 | ui/router、ui/pages 集中目录、注册生成及 RouterView；迁移首页、设置、菜单、快捷键、面包屑与历史按钮；清除 App 路由分支和旧可写 navigation；全共享状态验收 | 已完成代码迁移和无头验收；SM4 macOS 原生验收见测试方案第 14 节 |
 | RT4 / 04.13 | RT3、目标宿主可用 | 深链接、原生返回 / NavStack 适配、HMR 与目录变更、各平台宿主及发布回归；明确未支持能力与成本 | 部分完成：代码、无头与 macOS 开发宿主通过；macOS 发布包 URL 与完整 VM reload 验收通过，其他宿主和剩余发布场景待办，见第 11 至 13 节 |
 
@@ -145,14 +146,14 @@ RT1 不依赖状态管理实现；RT2 复用 SM1 至 SM3；RT3 是 SM4 导航迁
 
 ## 10. RT2 / RT3 与现有页面整改记录
 
-为继续 SM4，先完成其导航依赖 RT2 / RT3。src/router_service.rs 组合纯 Router 与 usher-state，用唯一写入器提交 WindowSnapshot；历史和 session 在同一不可变快照中发布。守卫尚未完成时保留当前页面，Rust ticket 与历史 revision 拒绝迟到回执，session 变化不会误废弃导航；重定向只提交最终目的地，保留 replace 语义并检测环和目录配置的上限。
+为继续 SM4，先完成其导航依赖 RT2 / RT3。src/window_service.rs 组合纯 Router 与 usher-state，用唯一写入器提交 WindowSnapshot；历史和 session 在同一不可变快照中发布。守卫尚未完成时保留当前页面，Rust ticket 与历史 revision 拒绝迟到回执，session 变化不会误废弃导航；重定向只提交最终目的地，保留 replace 语义并检测环和目录配置的上限。
 
 WindowState 使用引擎 Local 内的 Windows 服务表装配；窗口 ID 由可信 TS 传输适配器捕获 currentWindow，业务门面不暴露窗口选择，动作绑定 Rust StoreId；同目录重复注册复用服务，不同目录内容拒绝且不改变当前历史。订阅复用 SM3 的有界回调与 Stop 清理。VM 关闭主动关闭服务，普通页面仅借用查询 / 导航能力。宿主同 VM 窗口映射、真实源码 HMR 和关闭重开已在 macOS 通过；原子目录升级 / HMR、深链接及原生返回仍待 RT4。
 
 | 原入口 | 当前入口与职责 | 已通过的验证 |
 | --- | --- | --- |
 | App.tsx 条件页面与计数 signal | ui/pages/home/Page.tsx、settings/Page.tsx；App 仅组合 Frame / RouterView；计数在 Rust session | e2e 实际 App 往返保留计数与分类；ui 29 项 |
-| ui/navigation/index.ts 可写历史 | 已删除；ui/router/index.ts 门面 → WindowState → RouterService → usher-router 规则 | router 9 / 14、integration 窗口 8、router-ui 8 项 |
+| ui/navigation/index.ts 可写历史 | 已删除；ui/router/index.ts 门面 → WindowState → WindowService → usher-router 规则 | router 9 / 14、integration 窗口 8、router-ui 8 项 |
 | 手工页面目录与元数据 | ui/pages/routes.json 单一来源，生成 RouteId / PageKey / 参数类型；index.ts 穷尽注册 | routes-check 3 项 + 真实目录检查、nsh check、双语 titleKey 集成 |
 | Frame、Rail、TitleBar、SecondaryMenu、Navigation | 全部使用 ui/router；菜单 / 面包屑从目录派生，快捷键和按钮提交同一历史 | 原有 window-shell / tooltips 与 e2e 菜单、快捷键、前进分支 |
 | 未知目标回主页 | 合法未知路径渲染 not-found/Page.tsx，无效名称返回 invalid_target 保留旧页 | router 两后端同契约、RouterProbe 真实 NotFound / back |
@@ -199,3 +200,11 @@ macOS 发布包系统 scheme 注册、外部启动与唤醒已在第 12 节补�
 官方原生 runner 给每个 open 创建独立 data/cache 目录；本用例不读写真实用户设置，不改 HOME。独立套件进入手工 native_state CI；无头 E2E 明确列出两个可运行文件，macOS 专用 reload 文件不进入无头发现。
 
 本机 iOS 检查发现当前 Xcode 的 simctl 包装器要求 CoreSimulator 1174.21，已安装 1174.9.2；包装器触发首次启动组件安装并停住，`xcodebuild -checkFirstLaunchStatus` 返回 69。已终止本任务的安装查询，未安装组件、创建设备或修改现有模拟器。直接读取已安装 simctl 的可用设备清单成功，但这不算宿主验收。待 Xcode 环境就绪后再创建专用模拟器运行；本轮没有连接 Android 设备、Windows/Linux 宿主或远端 runner，用户确认先推进本机可验证部分。iOS 交互式滑动返回仍未实现，不以环境修复替代功能实现。
+
+## 路由结构与错误契约整改（2026-11-13）
+
+目录构建按目录元数据、ID 索引、路径 / 参数约束、祖先关系分别校验。Router 预建 HashMap ID 索引和祖先链，resolve.rs 独立负责目标格式化、匹配结果检查、参数与 query 校验、Location 构造；目录顺序不影响解析。命名导航仍在生成路径后经过 matcher，以拒绝被静态路由抢占的目标。真实后端故障使用 BackendUnavailable；无效索引、参数集合或无法匹配自身命名路径使用 InvalidMatch。
+
+应用窗口适配名为 WindowService，会话业务规则位于 window_session。错误保留来源，到 bridge 转为 code；非法目标与后端 / 生命周期失败分别映射。窗口提交失败保留原快照、票据计数与守卫元数据，恢复后可重试；不关闭整个窗口。History 只支持界面投影序列化，不是可反序列化的持久化格式。
+
+生成器同时输出 RouteId / PageKey / 参数类型及 routeMetadata 字面量，routes.json 仍是唯一编辑来源；TS 以 satisfies 校验页面、标题文案和父级类型，无双重类型断言。生成格式变化不改变目录内容，现有 identity 保持不变。门面分离守卫求值、重定向循环和票据清理；无票据时只有明确的 router_invalid_target 映射 invalid_target，服务关闭、容量或后端失败均为 failed。

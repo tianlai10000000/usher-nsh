@@ -58,15 +58,15 @@ fn publication_fault_closes_service_without_rolling_back_a_successful_write() {
     let before = reader.snapshot().unwrap();
     assert_eq!(
         service.apply(Command::SetColorMode(ColorMode::Dark)),
-        Err(UNAVAILABLE)
+        Err(Error::Store(StoreError::BackendUnavailable))
     );
     assert!(closed.load(Ordering::Acquire));
     assert_eq!(reader.snapshot().unwrap().state(), before.state());
-    assert_eq!(service.snapshot(), Err(UNAVAILABLE));
+    assert_eq!(service.snapshot(), Err(Error::Closed));
     let saved = fs::read(&path).unwrap();
     assert_eq!(
         service.apply(Command::SetColorMode(ColorMode::Light)),
-        Err(UNAVAILABLE)
+        Err(Error::Closed)
     );
     assert_eq!(fs::read(&path).unwrap(), saved);
     let recovered = SettingsRegistry::default().for_path(path).unwrap();
@@ -93,7 +93,7 @@ fn unwinding_a_mutation_closes_waiters_and_rejects_the_poisoned_service() {
     assert_eq!(service.reader().snapshot().unwrap().state(), &initial);
     assert_eq!(
         service.apply(Command::SetColorMode(ColorMode::Light)),
-        Err(UNAVAILABLE)
+        Err(Error::Poisoned)
     );
     service.close();
 }
@@ -145,7 +145,7 @@ fn backend_creation_failure_does_not_create_a_live_service() {
             StoreId::new(u128::MAX),
             &Unavailable
         ),
-        Err(UNAVAILABLE)
+        Err(Error::Store(StoreError::BackendUnavailable))
     ));
     // Confirm the same domain can be assembled with the configured production backend.
     assert!(

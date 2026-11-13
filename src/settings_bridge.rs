@@ -14,10 +14,10 @@ use std::collections::BTreeMap;
 
 use crate::style_themes::{StyleCssVars, StyleTheme, ThemeFileIssue};
 
-use crate::app_state::{SETTINGS, SettingsService};
+use crate::app_state::{SETTINGS, SettingsError, SettingsService};
 
 #[derive(Default)]
-struct SessionSettings(OnceCell<Result<Arc<SettingsService>, &'static str>>);
+struct SessionSettings(OnceCell<Result<Arc<SettingsService>, SettingsError>>);
 
 impl Local for SessionSettings {
     fn close(&self) {
@@ -568,14 +568,14 @@ async fn dispatch(sys: System, command: Command) -> Result<SettingsSnapshot, Str
 
 async fn with_store(
     sys: System,
-    operation: impl FnOnce(&Arc<SettingsService>) -> Result<Snapshot, &'static str> + Send + 'static,
+    operation: impl FnOnce(&Arc<SettingsService>) -> Result<Snapshot, SettingsError> + Send + 'static,
 ) -> Result<SettingsSnapshot, String> {
     with_settings_store(sys, operation).await.map(Into::into)
 }
 
 pub(crate) async fn with_settings_store<T: Send + 'static>(
     sys: System,
-    operation: impl FnOnce(&Arc<SettingsService>) -> Result<T, &'static str> + Send + 'static,
+    operation: impl FnOnce(&Arc<SettingsService>) -> Result<T, SettingsError> + Send + 'static,
 ) -> Result<T, String> {
     // NSH supplies the application data path, including the sandbox on mobile.
     // The JavaScript caller cannot select a file or a directory to write to.
@@ -588,7 +588,7 @@ pub(crate) async fn with_settings_store<T: Send + 'static>(
             .get_or_init(SettingsService::session)
             .as_ref()
             .map_err(|code| (*code).to_owned())?;
-        return operation(service).map_err(str::to_owned);
+        return operation(service).map_err(String::from);
     };
     let path = directory.join("settings.toml");
 
@@ -600,7 +600,7 @@ pub(crate) async fn with_settings_store<T: Send + 'static>(
     })
     .await
     .map_err(|_| "settings_store_unavailable")?
-    .map_err(str::to_owned)
+    .map_err(String::from)
 }
 
 /// Event and module names are short identifiers, so the interface cannot smuggle

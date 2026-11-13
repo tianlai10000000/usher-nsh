@@ -234,6 +234,7 @@ test("updates controller never retries native work when its completion transport
 });
 test("updates projection distinguishes preparing, download rings, manual failures and unknown progress", () => {
   expect(presentation(initial).key).toBe("update.preparing");
+  expect(presentation(initial).visible).toBe(false);
   const state: UpdateData = {
     ...initial,
     info: {},
@@ -263,8 +264,25 @@ test("updates projection distinguishes preparing, download rings, manual failure
     outcome: { type: "failed", failure: "network" },
   };
   expect(presentation(state).shape).toBe("quiet");
+  expect(presentation(state).visible).toBe(false);
   state.info.manual_check = true;
   expect(presentation(state).shape).toBe("emphasis");
+  expect(presentation(state).warning).toBe(true);
+  expect(presentation(state).visible).toBe(true);
+  expect(presentation(state).canRetryCheck).toBe(true);
+  state.domain!.phase = { type: "checking" };
+  expect(presentation(state).visible).toBe(true);
+  expect(presentation(state).shape).toBe("checking");
+  expect(presentation(state).disabled).toBe(true);
+  state.domain!.phase = { type: "checked", outcome: { type: "up_to_date" } };
+  expect(presentation(state).visible).toBe(false);
+  state.domain!.phase = {
+    type: "install_failed",
+    candidate: { version: "1.0.1", kind: "package" },
+    failure: "network",
+  };
+  expect(presentation(state).visible).toBe(true);
+  expect(presentation(state).warning).toBe(true);
 });
 
 test("updates controller configures unsupported environments and schedules no network work", async () => {

@@ -8,7 +8,7 @@ use std::{
     thread,
 };
 use support::{FUTURE, LEGACY, Repository, THEME};
-use usher_nsh::app_state::{ColorMode, Command, SettingsRegistry, SettingsService};
+use usher_nsh::app_state::{ColorMode, Command, SettingsError, SettingsRegistry, SettingsService};
 use usher_state::SubscriptionEnd;
 use usher_test_support::task::{WakeCounter, poll, ready};
 
@@ -30,15 +30,15 @@ fn settings_initialization_noops_and_validation_preserve_the_published_state() {
     );
     assert_eq!(
         service.apply(Command::SetLocale("invalid-locale".into())),
-        Err("invalid_locale")
+        Err(SettingsError::Domain("invalid_locale"))
     );
     assert_eq!(
         service.apply(Command::SetTheme("custom-missing".into())),
-        Err("unknown_theme")
+        Err(SettingsError::Domain("unknown_theme"))
     );
     assert_eq!(
         service.import_background_image("bad.png".into(), b"invalid image".to_vec()),
-        Err("background_image_invalid")
+        Err(SettingsError::Domain("background_image_invalid"))
     );
     assert_eq!(reader.snapshot().unwrap().sequence(), initial.sequence());
     assert!(poll(std::pin::pin!(sub.next()), &Arc::default()).is_pending());
@@ -344,10 +344,10 @@ fn settings_cancellation_is_local_and_close_prevents_further_file_writes() {
     assert_eq!(ready(live.next()).unwrap_err(), SubscriptionEnd::Closed);
     assert_eq!(
         service.apply(Command::SetColorMode(ColorMode::Light)),
-        Err("settings_store_unavailable")
+        Err(SettingsError::Closed)
     );
-    assert_eq!(service.rescan_themes(), Err("settings_store_unavailable"));
-    assert_eq!(service.snapshot(), Err("settings_store_unavailable"));
+    assert_eq!(service.rescan_themes(), Err(SettingsError::Closed));
+    assert_eq!(service.snapshot(), Err(SettingsError::Closed));
     assert_eq!(reader.snapshot().unwrap().state(), &changed);
     assert_eq!(fs::read_to_string(&repo.path).unwrap(), LEGACY);
 }
@@ -384,6 +384,6 @@ fn settings_background_assets_publish_after_persistence_and_remain_readable() {
     assert_eq!(ready(sub.next()).unwrap().state(), &cleared);
     assert_eq!(
         reopened.load_background_image(&image.id),
-        Err("background_image_unavailable")
+        Err(SettingsError::Domain("background_image_unavailable"))
     );
 }

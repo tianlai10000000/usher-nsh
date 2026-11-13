@@ -158,6 +158,7 @@
   "update.check": "Check for updates",
   "update.checking": "Checking for updates…",
   "update.upToDate": "You’re up to date",
+  "update.indicatorAvailable": "Update available",
   "update.available": "Version {version} is available",
   "update.shellNeeded": "Update the application to {version}",
   "update.manual": "Version {version} requires manual installation",

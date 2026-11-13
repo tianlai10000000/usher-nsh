@@ -105,6 +105,7 @@
           "timeout_seconds": 120,
           "required_test_prefixes": [
             "router_catalog_",
+            "router_publication_fault_",
             "router_cancel_",
             "router_out_of_order_",
             "router_redirects_",

@@ -158,6 +158,7 @@
   "update.check": "检查更新",
   "update.checking": "正在检查更新…",
   "update.upToDate": "已是最新版本",
+  "update.indicatorAvailable": "有可用更新",
   "update.available": "发现新版本 {version}",
   "update.shellNeeded": "需要将应用更新至 {version}",
   "update.manual": "版本 {version} 需要手动安装",

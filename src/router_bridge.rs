@@ -1,10 +1,8 @@
 //! Window-scoped routing/session registration within an engine and versioned subscription transport.
 use crate::{
-    router_service::{
-        Decision, RouterService, WindowSnapshot,
-        session::{OperationKind, SessionCommand, Stage},
-    },
     state_bridge::{Binding, Event},
+    window_service::{Decision, WindowService, WindowSnapshot},
+    window_session::{OperationKind, Receipt, SessionCommand, Stage, Ticket},
 };
 use nsh_core::{
     element::{CallCx, Callback, Local, Stop, System},
@@ -18,7 +16,7 @@ use std::{
 use usher_router::{Catalog, NavigationCommand, Target};
 #[derive(Default)]
 struct Windows {
-    services: RefCell<BTreeMap<String, Arc<RouterService>>>,
+    services: RefCell<BTreeMap<String, Arc<WindowService>>>,
     close_listeners: RefCell<BTreeSet<String>>,
 }
 impl Local for Windows {
@@ -29,7 +27,7 @@ impl Local for Windows {
         }
     }
 }
-fn service(sys: &System, scope: &str) -> Result<Arc<RouterService>, String> {
+fn service(sys: &System, scope: &str) -> Result<Arc<WindowService>, String> {
     let (store, catalog) = scope
         .split_once(':')
         .map_or((scope, None), |(store, catalog)| (store, Some(catalog)));
@@ -99,7 +97,7 @@ impl WindowState {
                 existing.clone()
             }
             None => {
-                let service = RouterService::new(catalog)?;
+                let service = WindowService::new(catalog)?;
                 windows.insert(window, service.clone());
                 service
             }
@@ -122,7 +120,7 @@ impl WindowState {
                 existing.clone()
             }
             None => {
-                let service = RouterService::new(catalog)?;
+                let service = WindowService::new(catalog)?;
                 windows.insert(window, service.clone());
                 service
             }
@@ -178,9 +176,25 @@ impl WindowState {
         let command: SessionCommand =
             serde_json::from_str(&command).map_err(|_| "session_invalid_command")?;
         let service = service(&sys, &scope)?;
-        let receipt = service.session(command)?;
+        let receipt = match service.session(command)? {
+            Receipt::Applied => String::new(),
+            Receipt::Superseded => "superseded".into(),
+            Receipt::Ticket(ticket) => ticket.to_string(),
+        };
         Ok(Reply {
             receipt,
+            snapshot: service.snapshot()?.into(),
+        })
+    }
+    /// Returns a tagged session receipt for typed clients; session keeps the legacy wire shape.
+    pub fn session_result(scope: String, command: String, sys: System) -> Result<Reply, String> {
+        let command: SessionCommand =
+            serde_json::from_str(&command).map_err(|_| "session_invalid_command")?;
+        let service = service(&sys, &scope)?;
+        let receipt = service.session(command)?;
+        Ok(Reply {
+            receipt: serde_json::to_string(&receipt)
+                .expect("session receipts serialize infallibly"),
             snapshot: service.snapshot()?.into(),
         })
     }
@@ -205,7 +219,7 @@ impl WindowState {
     pub fn begin(scope: String, command: String, sys: System) -> Result<String, String> {
         let command: NavigationCommand =
             serde_json::from_str(&command).map_err(|_| "router_invalid_target")?;
-        Ok(service(&sys, &scope)?.begin(command)?)
+        Ok(service(&sys, &scope)?.begin(command)?.to_string())
     }
     /// Completes only the current ticket; null means a redirect still needs guards.
     pub fn complete(
@@ -225,8 +239,12 @@ impl WindowState {
             ),
             _ => return Err("router_invalid_guard".into()),
         };
-        serde_json::to_string(&service(&sys, &scope)?.complete(&ticket, decision)?)
-            .map_err(|_| "router_unavailable".into())
+        let service = service(&sys, &scope)?;
+        let result = match Ticket::try_from(ticket) {
+            Ok(ticket) => service.complete(&ticket, decision)?,
+            Err(_) => Some(usher_router::NavigationResult::Superseded),
+        };
+        serde_json::to_string(&result).map_err(|_| "router_unavailable".into())
     }
     /// Returns an idempotent Stop tied to the reactive owner and VM lifetime.
     pub fn subscribe(
@@ -240,7 +258,7 @@ impl WindowState {
         cx.start(async move {
             binding
                 .run(crate::state_bridge::forward(
-                    async { service(&sys, &scope)?.subscribe().map_err(str::to_owned) },
+                    async { service(&sys, &scope)?.subscribe().map_err(String::from) },
                     move |event| {
                         let event = match event {
                             Event::Snapshot(snapshot) => Notification {
@@ -274,10 +292,13 @@ impl WindowState {
         sys: System,
     ) -> Result<(), String> {
         let window = service(&sys, &scope)?;
-        let ticket = window.session(SessionCommand::Begin {
+        let Receipt::Ticket(ticket) = window.session(SessionCommand::Begin {
             operation: OperationKind::Export,
             stage: Stage::Running,
-        })?;
+        })?
+        else {
+            unreachable!("begin returns a ticket on success")
+        };
         let result = crate::settings_bridge::Settings::export_diagnostics(from, to, sys).await;
         let (stage, error, value, failed) = match result {
             Ok(name) => (Stage::Done, None, Some(name), false),
@@ -300,6 +321,43 @@ impl WindowState {
 mod tests {
     use super::*;
     const CATALOG: &str = include_str!("../ui/pages/routes.json");
+    #[test]
+    fn typed_session_receipts_preserve_legacy_clients_and_fence_late_results() {
+        let sys = System::default();
+        let state = WindowState::attach(CATALOG.into(), "main".into(), sys.clone()).unwrap();
+        let call = |command: serde_json::Value| {
+            WindowState::session_result(state.scope.clone(), command.to_string(), sys.clone())
+                .unwrap()
+        };
+        let changed = call(serde_json::json!({"kind": "increment"}));
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&changed.receipt).unwrap(),
+            serde_json::json!({"kind": "applied"})
+        );
+        let legacy = WindowState::session(
+            state.scope.clone(),
+            r#"{"kind":"increment"}"#.into(),
+            sys.clone(),
+        )
+        .unwrap();
+        assert_eq!(legacy.receipt, "");
+        let begun =
+            call(serde_json::json!({"kind": "begin", "operation": "settings", "stage": "saving"}));
+        let begun: serde_json::Value = serde_json::from_str(&begun.receipt).unwrap();
+        assert_eq!(begun["kind"], "ticket");
+        assert!(begun["ticket"].is_string());
+        let finish = serde_json::json!({"kind": "finish", "operation": "settings", "ticket": begun["ticket"],
+            "stage": "saved", "error": null, "value": null, "failed": false});
+        let completed = call(finish.clone());
+        let stale = call(finish.clone());
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&stale.receipt).unwrap(),
+            serde_json::json!({"kind": "superseded"})
+        );
+        assert_eq!(completed.snapshot.sequence, stale.snapshot.sequence);
+        let legacy = WindowState::session(state.scope, finish.to_string(), sys).unwrap();
+        assert_eq!(legacy.receipt, "superseded");
+    }
     #[test]
     fn catalog_attachments_fence_old_bindings_but_keep_window_lifetime() {
         let sys = System::default();

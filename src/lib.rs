@@ -8,7 +8,6 @@ mod diagnostic_bridge;
 mod diagnostic_state;
 mod diagnostics;
 mod router_bridge;
-pub mod router_service;
 mod settings;
 mod settings_bridge;
 mod settings_service;
@@ -16,6 +15,8 @@ mod state_bridge;
 mod style_themes;
 mod update_bridge;
 pub mod update_service;
+pub mod window_service;
+pub mod window_session;
 
 #[cfg(target_os = "macos")]
 #[path = "../platforms/macos/mod.rs"]

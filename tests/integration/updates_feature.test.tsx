@@ -1,5 +1,6 @@
 /** Real update bridge/controller/UI journeys; native I/O is controlled and never installs an app. */
 import { expect, open, test } from "nsh/test";
+import updateConfig from "../../ui/config/updates.json";
 const entry = "./fixtures/UpdatesFeature.tsx";
 const options = {
   platform: "macos",
@@ -19,6 +20,9 @@ test("updates feature checks whole-app updates, renders progress and preserves r
     await settings(app);
     await app.press("id:update-check");
     await app.waitFor("id:update-download");
+    await app.hover("id:rail-update");
+    await app.waitFor("id:rail-update-tooltip");
+    expect(app.texts()).toContain("Update available");
     await app.press("id:rail-update");
     await app.waitFor("id:update-panel-close");
     await app.press("id:update-panel-close");
@@ -67,15 +71,26 @@ test("updates feature reports manual installation, offline failures and successf
     await app.press("id:scenario-offline");
     await app.press("id:update-check");
     await app.waitFor("text:Could not reach the update source. Try again.");
+    await app.waitFor("id:rail-update-symbol");
+    expect(app.enabled("id:rail-update")).toBe(true);
     await app.press("id:rail-update");
-    await app.waitFor("id:update-panel-header >> id:update-panel-close");
-    expect(app.shows("id:update-actions >> id:update-panel-close")).toBe(false);
+    await app.waitFor("id:update-panel-close");
+    await app.press("id:update-panel-details >> id:update-check");
+    await app.waitUntil(() =>
+      app.texts().includes("Checks:3") && app.texts().includes("Phase:checked")
+    );
+    await app.waitFor("id:rail-update-symbol");
+    expect(app.shows("id:update-panel-close")).toBe(true);
+    expect(app.texts()).toContain(
+      "Could not reach the update source. Try again.",
+    );
     await app.press("id:update-panel-close");
-    expect(app.shows("id:update-panel-header")).toBe(false);
-    expect(app.texts()).toContain("Could not reach the update source. Try again.");
+    expect(app.shows("id:rail-update-symbol")).toBe(true);
+
     await app.press("id:scenario-latest");
     await app.press("id:update-check");
     await app.waitFor("text:You’re up to date");
+    expect(app.shows("id:rail-update")).toBe(false);
   } finally {
     app.dispose();
   }
@@ -139,6 +154,47 @@ test("updates feature shows a ring for automatic package downloads and keeps res
     expect(app.shows("id:update-check")).toBe(false);
     await app.press("id:update-panel-close");
     expect(app.texts()).toContain("Phase:ready_to_install");
+  } finally {
+    app.dispose();
+  }
+});
+
+test("updates feature hides an idle rail entry, shows a checking ring and hides it after an up-to-date result", async () => {
+  const app = await open(entry, { ...options, reducedMotion: true });
+  try {
+    await settings(app);
+    expect(app.shows("id:rail-update")).toBe(false);
+    await app.press("id:scenario-checking");
+    await app.press("id:update-check");
+    await app.waitFor("id:update-checking-ring");
+    expect(app.enabled("id:rail-update")).toBe(false);
+    expect(app.shows("id:rail-update-progress")).toBe(false);
+    expect(app.shows("id:rail-update-symbol")).toBe(false);
+    await app.hover("id:rail-update");
+    await app.waitFor("id:rail-update-tooltip");
+    expect(app.texts()).toContain("Checking for updates…");
+    await app.press("id:finish-check");
+    await app.waitFor("text:You’re up to date");
+    await app.waitFor("id:rail-update", { state: "gone" });
+    expect(app.enabled("id:update-check")).toBe(true);
+  } finally {
+    app.dispose();
+  }
+});
+
+test("updates feature keeps background check failures quiet while preserving the reason in settings", async () => {
+  const app = await open(entry, { ...options, clock: {} });
+  try {
+    await settings(app);
+    await app.press("id:scenario-offline");
+    await app.clock!.runFor(updateConfig.startupDelayMs);
+    await app.waitFor("text:Could not reach the update source. Try again.");
+    expect(app.shows("id:rail-update")).toBe(false);
+    expect(app.shows("id:update-panel-close")).toBe(false);
+    expect(app.enabled("id:update-check")).toBe(true);
+    await app.press("id:update-check");
+    await app.waitFor("id:rail-update-symbol");
+    expect(app.enabled("id:rail-update")).toBe(true);
   } finally {
     app.dispose();
   }

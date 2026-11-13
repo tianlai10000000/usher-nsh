@@ -549,3 +549,55 @@ CI 已纳入更新应用集成和纯库平台矩阵，并保留契约 / 编译�
 本轮 `state-ui` 40 项、`ui` 29 项、`cargo test --locked --workspace` 216 项通过，`nsh check` 与差异格式检查通过。隔离 macOS 原生宿主人工核对了 25% 下载环、最终箭头尺寸、设置页布局及弹层长说明换行 / 并排操作；使用可控原生 I/O，不计作真实安装验收。最终预览记录在 target/test-reports/update-layout-4c34n_gr，cleanup.json 确认临时源码、应用与数据树已删除。预览重建过程中一次网络解析失败、一次沙箱监听失败不计入验收通过。首次 UI 回归与 state-ui 并行时争用 NSH 测试生成产物，导致 appearance 用例错误加载更新夹具；最终结果采用单独串行完整重跑，失败轮不计入通过。
 
 后续图标与关闭入口调整：按系统图标优先的要求，macOS 改用 SF Symbols 的 square.and.arrow.down（size-update-icon 默认 14pt）；Popover 标题行使用组件库 View / Button 与现有 SystemIcon、iconButtonLook，右上角 × 替代底部关闭 / 稍后按钮。更新界面 6 项回归通过，覆盖错误与就绪状态的标题关闭入口、关闭后保留状态；nsh check 通过。隔离原生宿主人工确认系统符号显示、英文错误换行及 × 关闭操作，记录位于 target/test-reports/update-layout-parf4ohn；临时树已清理。本次未重跑整包安装或完整工作区测试。
+
+## 状态与路由审查整改（2026-11-13）
+
+删除闲置 StateMachine trait 与 StoreWriter::preflight_publish，保留 Transition / apply；设置服务自行检查容量并保持既有保存顺序。WindowService 负责窗口提交，window_session 独立维护页面会话规则；回执、票据及服务错误类型化，桥接保留旧入口和错误码。Router 按阶段验证目录与目标，预建 ID 索引及祖先链；生成强类型元数据，拆分 TS 守卫流程并区分非法目标与服务故障。
+
+新增回归覆盖两个 matcher 的乱序目录及父级环、无效匹配结果、特殊元数据键、窗口发布失败后的重试、守卫 / 目录迁移原子性、票据精度与规范编码、旧新桥接回执兼容，以及无守卫导航和启动守卫时的错误分类。业务 mock 继续留在所属测试模块；usher-test-support 无需改动。
+
+本机 macOS arm64 的最终验证：
+
+| 命令 | 结果 |
+| --- | --- |
+| cargo test --locked --workspace | 224 项通过，含 2 项编译失败 doctest；设置 / 窗口 / 更新集成为 11 / 13 / 17 项 |
+| python3 scripts/test.py state | 无默认后端 20 项、Watch 后端 35 项通过，分别包含 doctest |
+| python3 scripts/test.py router | 无默认 matcher 12 项、matchit 19 项通过 |
+| python3 scripts/test.py routes-check | 4 项生成测试及真实目录新鲜度检查通过 |
+| cargo clippy --locked --workspace --all-targets -- -D warnings | 通过 |
+| cargo fmt --all --check；nsh check；git diff --check | 通过 |
+| python3 scripts/test.py router-ui | 13 项通过 |
+| python3 scripts/test.py state-ui | 41 项通过 |
+| python3 scripts/test.py ui | 29 项通过 |
+| python3 scripts/test.py e2e --target headless | 4 项通过 |
+
+共享工作区运行期间另有更新界面源码修改，state-ui 的更新页面用例曾超时，该轮不计通过。最终把当时完整源码冻结到独立临时目录，以独立 .nsh 生成目录串行执行 nsh check、state-ui、ui 与无头 E2E。隔离首轮因 crates.io DNS 失败未完成；使用已缓存依赖并设置 CARGO_NET_OFFLINE=true 后，四项完整通过。记录位于 target/test-reports/refactor-isolated-nhz_50q3/：results.json、suites/、workspace-*.log、inputs.json 和 source.tar.gz 分别保存结果、JUnit / 套件报告、工作区检查日志及冻结源码证据。更新界面改动保留并参与该快照验证，不计作本次状态 / 路由实现。
+
+索引改动使用相同 release 配置比较当前实现与提交 39f517a 的路由源码：opt-level=z、LTO=fat、codegen-units=1、strip=symbols、panic=unwind。输入为实际两条路由目录，以及由同一元数据确定性生成的 256 条路由目录；预热 1,000 次，每轮解析 20,000 次 / 构建 30 次，取 5 轮中位数。
+
+| 输入 | 目录构建：修改前 → 后 | 命名解析：修改前 → 后 |
+| --- | --- | --- |
+| 当前应用，2 条路由 | 2,863 → 3,309 ns | 438 → 478 ns |
+| 合成目录，256 条路由 | 463,213 → 378,133 ns | 1,790 → 609 ns |
+
+基准源码、完整输入、构建日志和原始结果在 target/test-reports/router-refactor-cost-nw0d2nmi/，以 cargo run --offline --release --bin router-cost 可复验。小目录有约 40 ns 的解析开销，较大目录收益明显；这不是实际宿主帧耗时或包体积结论。
+
+保留公开 matcher 命名空间、History 的只读投影序列化、useRoute 的即时读取投影，以及主页正在使用的计数状态；这些不是本轮确认的缺陷。设置发生不可回滚 I/O 后的内部故障仍关闭服务，窗口纯内存发布失败则保持原状态供重试，两者不抽成统一关闭策略。本轮未重跑原生窗口 / VM reload、跨平台编译、发布包或远端 CI，此前记录仅代表对应历史快照。
+
+
+## 24. 更新入口显隐与检查状态（2026-11-13）
+
+Rail 根据投影的 visible 在组件边界挂载更新入口：未检查、已是最新、未配置、不支持及无候选检查失败时隐藏；检查中显示无中心图标的灰色不定进度环，并禁用重复触发；有更新时显示系统下载图标，提示“有可用更新”。下载继续显示带菱形的进度环；有候选的下载 / 安装失败保留警示入口。错误详情仍保留在设置页。检查和下载的动效遵循减少动效偏好。
+
+受控检查夹具增加完成信号，新增旅程覆盖初始隐藏、检查细环、禁用按钮和提示、已是最新后隐藏；已有旅程补充失败隐藏、有可用更新提示及重复出现 / 隐藏。最终 state-ui 41 项（含更新界面 7 项）、ui 29 项及 nsh check 通过。首次尝试在 RailUpdate 内包裹已构造的触发器导致旅程停滞，已改为在 Rail 的组件边界条件挂载，随后完整重跑通过；中断轮不计成功。
+
+隔离 macOS 原生预览人工确认灰环在两次截图中持续旋转、无中心图标、检查完成后入口消失且设置 / 账户位置保持。使用可控原生 I/O，未执行真实升级。最终记录在 target/test-reports/update-layout-p7ucdq4p，cleanup.json 确认临时树删除。前置预览因缓存宿主与当前接口不匹配作废；重新构建生成的 macOS 宿主后完成验证，未修改框架。Rust 领域规则未改，本轮未重跑工作区测试。
+
+
+## 25. 手动检查失败保留入口（2026-11-13）
+
+检查失败按 Rust 快照的 manual_check 区分来源：后台失败不显示侧栏入口或自动弹出面板，设置页保留原因；手动失败保留侧栏警示入口，使用系统感叹号图标，与可用更新的下载图标区分。设置页和已打开的更新面板保留具体原因与重试动作。关闭面板不清除失败入口，重新检查确认已是最新后才隐藏。
+
+最终 state-ui 42 项通过（含 8 项更新界面旅程），nsh check 与差异格式检查通过。新增自动时钟旅程覆盖后台失败静默、转为手动重试后显示入口；原有离线旅程覆盖弹层内再次检查失败仍保留弹层、关闭后入口仍在、成功后隐藏。检查调用计数保证断言发生在新的检查完成后。初轮错误的弹层选择器，以及点击面板外夹具按钮导致正常关闭的断言失败已修正，最终完整重跑通过。使用可控原生 I/O；本次未重跑真实下载、安装或原生截图验收。
+
+同日样式回调：手动检查失败恢复为实心警示色圆底加系统下载图标，复用原强调形态和主题配色，移除感叹号专用形态及资源配置。按钮保留、弹层重试及后台静默逻辑不变。12 项更新控制器 / 投影测试、8 项更新界面旅程及 nsh check 通过；未重新执行整套 state-ui 或原生截图验收。

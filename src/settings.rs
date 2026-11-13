@@ -934,11 +934,14 @@ mod tests {
         let initial = reader.snapshot().unwrap();
         assert_eq!(
             service.apply(Command::SetColorMode(ColorMode::Dark)),
-            Err(crate::app_state::UNAVAILABLE)
+            Err(crate::settings_service::Error::RevisionExhausted)
         );
         assert_eq!(reader.snapshot().unwrap().state(), initial.state());
         assert!(!path.exists());
-        assert_eq!(service.snapshot(), Err(crate::app_state::UNAVAILABLE));
+        assert_eq!(
+            service.snapshot(),
+            Err(crate::settings_service::Error::Closed)
+        );
     }
 
     #[test]

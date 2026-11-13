@@ -97,7 +97,7 @@ export function createUpdates(
     indicator: {
       state: () => ({
         ...view(),
-        label: appearance.t(view().key, {
+        label: appearance.t(view().indicatorKey, {
           version: view().candidate?.version ?? "",
         }),
       }),

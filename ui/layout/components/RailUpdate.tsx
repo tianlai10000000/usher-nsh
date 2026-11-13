@@ -13,6 +13,8 @@ export function RailUpdate(
   const { palette, t } = props.appearance;
   const state = () => props.updates?.state();
   const look = () => iconButtonLook(palette);
+  const checking = () => state()?.shape === "checking";
+  const ring = () => checking() || state()?.shape === "progress";
   const emphasis = () => state()?.shape === "emphasis";
   const color = () =>
     state()?.warning ? palette().updateWarning : palette().accent;
@@ -41,12 +43,10 @@ export function RailUpdate(
         : look().hoverStyle}
       activeStyle={look().activeStyle}
       focusStyle={look().focusStyle}
-      disabledStyle={state()?.shape === "progress"
-        ? { opacity: 1 }
-        : look().disabledStyle}
+      disabledStyle={ring() ? { opacity: 1 } : look().disabledStyle}
     >
       <If
-        when={state()?.shape === "progress"}
+        when={ring()}
         else={
           <View
             testID="rail-update-symbol"
@@ -56,7 +56,6 @@ export function RailUpdate(
               height: palette().metric.buttonHeightSmall,
               borderRadius: palette().metric.buttonHeightSmall / 2,
               backgroundColor: emphasis() ? color() : "transparent",
-              ...(state()?.spinning ? spin() : {}),
             }}
           >
             <SystemIcon
@@ -77,7 +76,7 @@ export function RailUpdate(
         }
       >
         <View
-          testID="rail-update-progress"
+          testID={checking() ? "rail-update-checking" : "rail-update-progress"}
           class="items-center justify-center"
           style={{
             width: palette().metric.buttonHeightSmall,
@@ -85,13 +84,15 @@ export function RailUpdate(
           }}
         >
           <Canvas
-            testID="update-progress-ring"
+            testID={checking()
+              ? "update-checking-ring"
+              : "update-progress-ring"}
             role="progressbar"
             accessibilityLabel={state()?.label}
             style={{
               width: palette().metric.buttonHeightSmall,
               height: palette().metric.buttonHeightSmall,
-              ...(state()?.progress === null ? spin() : {}),
+              ...(checking() || state()?.progress === null ? spin() : {}),
             }}
             draw={(cx, size) => {
               const radius = (Math.min(size.width, size.height) -
@@ -110,24 +111,28 @@ export function RailUpdate(
                 radius,
                 -Math.PI / 2,
                 -Math.PI / 2 +
-                  (state()?.progress ?? palette().metric.updateSegment) *
+                  (checking()
+                      ? palette().metric.updateSegment
+                      : (state()?.progress ?? palette().metric.updateSegment)) *
                     Math.PI * 2,
               );
               cx.stroke();
             }}
           />
-          <View
-            class="absolute"
-            accessibilityElementsHidden
-            style={{ pointerEvents: "none" }}
-          >
-            <SystemIcon
-              name={icons.update.progressSymbol}
-              fallback={icons.update.progressFallback}
-              size={palette().metric.badge}
-              color={palette().border}
-            />
-          </View>
+          <If when={!checking()}>
+            <View
+              class="absolute"
+              accessibilityElementsHidden
+              style={{ pointerEvents: "none" }}
+            >
+              <SystemIcon
+                name={icons.update.progressSymbol}
+                fallback={icons.update.progressFallback}
+                size={palette().metric.badge}
+                color={palette().border}
+              />
+            </View>
+          </If>
         </View>
       </If>
     </Button>

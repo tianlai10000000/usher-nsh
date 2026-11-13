@@ -1,7 +1,8 @@
 //! Owns one engine/window store for routing and page session data, with guarded commits.
-pub mod session;
+mod error;
+use crate::window_session::{Receipt, Session, SessionCommand, Ticket};
+pub use error::Error;
 use serde::Serialize;
-use session::{Session, SessionCommand};
 use std::{
     collections::BTreeSet,
     sync::{Arc, Mutex},
@@ -19,12 +20,13 @@ use usher_state::{
 pub struct WindowSnapshot {
     pub history: History,
     pub session: Session,
-    pub pending: Option<String>,
+    pub pending: Option<Ticket>,
     pub navigation_result: NavigationResult,
 }
+#[derive(Clone)]
 struct Pending {
     replace: bool,
-    id: u64,
+    id: Ticket,
     source_revision: u64,
     outcome: Outcome,
     visited: BTreeSet<String>,
@@ -35,7 +37,6 @@ struct Inner {
     writer: StoreWriter<WindowSnapshot>,
     pending: Option<Pending>,
     next_navigation: u64,
-    next_operation: u64,
     closed: bool,
     retired_catalogs: BTreeSet<String>,
 }
@@ -46,65 +47,72 @@ pub enum Decision {
     Fail,
     Redirect(Target),
 }
-pub struct RouterService {
+/// Owns one window lifetime and serializes navigation and session snapshot commits.
+pub struct WindowService {
     inner: Mutex<Inner>,
     reader: StoreReader<WindowSnapshot>,
 }
-impl RouterService {
-    pub fn new(catalog: Catalog) -> Result<Arc<Self>, &'static str> {
-        let router = Router::new(catalog, &Matchit).map_err(|_| "router_invalid_catalog")?;
-        let history = router.initial().map_err(|_| "router_invalid_catalog")?;
+impl WindowService {
+    pub fn new(catalog: Catalog) -> Result<Arc<Self>, Error> {
+        Self::with_backend(catalog, &WatchBackend)
+    }
+    /// Injects a backend with atomic failed-publication semantics; failures can be retried.
+    pub fn with_backend(
+        catalog: Catalog,
+        factory: &dyn usher_state::BackendFactory<WindowSnapshot>,
+    ) -> Result<Arc<Self>, Error> {
+        let router = Router::new(catalog, &Matchit).map_err(Error::Catalog)?;
+        let history = router.initial().map_err(Error::Catalog)?;
         let (writer, reader) = create_store(
-            crate::app_state::next_store_id()?,
+            crate::app_state::next_store_id().map_err(Error::Identity)?,
             WindowSnapshot {
                 history,
                 session: Session::default(),
                 pending: None,
                 navigation_result: NavigationResult::Committed,
             },
-            &WatchBackend,
+            factory,
         )
-        .map_err(|_| "router_unavailable")?;
+        .map_err(Error::Store)?;
         Ok(Arc::new(Self {
             inner: Mutex::new(Inner {
                 router,
                 writer,
                 pending: None,
                 next_navigation: 0,
-                next_operation: 0,
                 closed: false,
                 retired_catalogs: BTreeSet::new(),
             }),
             reader,
         }))
     }
-    fn lock(&self) -> Result<std::sync::MutexGuard<'_, Inner>, &'static str> {
-        let inner = self.inner.lock().map_err(|_| "router_unavailable")?;
+    fn lock(&self) -> Result<std::sync::MutexGuard<'_, Inner>, Error> {
+        let inner = self.inner.lock().map_err(|_| Error::Poisoned)?;
         if inner.closed {
-            return Err("router_closed");
+            return Err(Error::Closed);
         }
         Ok(inner)
     }
-    pub fn snapshot(&self) -> Result<Snapshot<WindowSnapshot>, &'static str> {
+    pub fn snapshot(&self) -> Result<Snapshot<WindowSnapshot>, Error> {
         let _inner = self.lock()?;
-        self.reader.snapshot().map_err(|_| "router_unavailable")
+        self.reader.snapshot().map_err(Error::Store)
     }
-    pub fn subscribe(&self) -> Result<Subscription<WindowSnapshot>, &'static str> {
+    pub fn subscribe(&self) -> Result<Subscription<WindowSnapshot>, Error> {
         let _inner = self.lock()?;
-        self.reader.subscribe().map_err(|_| "router_unavailable")
+        self.reader.subscribe().map_err(Error::Store)
     }
     /// Registration is idempotent for the exact catalog. A reused identity with
     /// different content is rejected; replacement is an explicit separate operation.
-    pub fn register(&self, catalog: &Catalog) -> Result<(), &'static str> {
+    pub fn register(&self, catalog: &Catalog) -> Result<(), Error> {
         if self.lock()?.router.catalog() == catalog {
             Ok(())
         } else {
-            Err("router_catalog_mismatch")
+            Err(Error::CatalogMismatch)
         }
     }
     /// Atomically replaces a catalog and fences pending guards. Old identities cannot
     /// reattach after HMR; a reused identity must retain exactly the same content.
-    pub fn replace_catalog(&self, catalog: Catalog) -> Result<(), &'static str> {
+    pub fn replace_catalog(&self, catalog: Catalog) -> Result<(), Error> {
         let mut inner = self.lock()?;
         if inner.router.catalog() == &catalog {
             return Ok(());
@@ -112,14 +120,14 @@ impl RouterService {
         if inner.router.catalog().identity == catalog.identity
             || inner.retired_catalogs.contains(&catalog.identity)
         {
-            return Err("router_catalog_mismatch");
+            return Err(Error::CatalogMismatch);
         }
-        let router = Router::new(catalog, &Matchit).map_err(|_| "router_invalid_catalog")?;
-        let current = inner.writer.snapshot().map_err(|_| "router_unavailable")?;
+        let router = Router::new(catalog, &Matchit).map_err(Error::Catalog)?;
+        let current = inner.writer.snapshot().map_err(Error::Store)?;
         let mut next = current.state().clone();
         next.history = router
             .migrate_history(&next.history)
-            .map_err(|_| "router_invalid_catalog")?;
+            .map_err(Error::Catalog)?;
         next.navigation_result = if next.pending.is_some() {
             NavigationResult::Superseded
         } else if next.history.current().location.id.is_none() {
@@ -135,54 +143,47 @@ impl RouterService {
         inner.pending = None;
         Ok(())
     }
-    pub fn resolve(&self, target: &Target) -> Result<usher_router::Location, &'static str> {
-        self.lock()?
-            .router
-            .resolve(target)
-            .map_err(|_| "router_invalid_target")
+    pub fn resolve(&self, target: &Target) -> Result<usher_router::Location, Error> {
+        self.lock()?.router.resolve(target).map_err(Error::Target)
     }
     /// Starts the latest navigation. The old page remains committed while guards run.
-    pub fn begin(&self, command: NavigationCommand) -> Result<String, &'static str> {
+    pub fn begin(&self, command: NavigationCommand) -> Result<Ticket, Error> {
         let mut inner = self.lock()?;
-        let current = inner.writer.snapshot().map_err(|_| "router_unavailable")?;
+        let current = inner.writer.snapshot().map_err(Error::Store)?;
         let outcome = inner
             .router
             .transition(&current.state().history, &command)
-            .map_err(|_| "router_invalid_target")?;
+            .map_err(Error::Target)?;
         let id = inner
             .next_navigation
             .checked_add(1)
-            .ok_or("router_capacity_exhausted")?;
+            .ok_or(Error::CapacityExhausted)?;
         let pending = Pending {
             replace: matches!(command, NavigationCommand::Replace(_)),
-            id,
+            id: Ticket::new(id),
             source_revision: current.state().history.revision(),
             visited: BTreeSet::from([outcome.state.current().location.url()]),
             redirects: 0,
             outcome,
         };
         let mut next = current.state().clone();
-        next.pending = Some(id.to_string());
+        next.pending = Some(Ticket::new(id));
         Self::publish(&mut inner, next)?;
         inner.next_navigation = id;
         inner.pending = Some(pending);
-        Ok(id.to_string())
+        Ok(Ticket::new(id))
     }
     /// Rejects old tickets after supersession/close. Guard cancellation never moves history.
     pub fn complete(
         &self,
-        ticket: &str,
+        ticket: &Ticket,
         decision: Decision,
-    ) -> Result<Option<NavigationResult>, &'static str> {
+    ) -> Result<Option<NavigationResult>, Error> {
         let mut inner = self.lock()?;
-        let Some(pending) = inner
-            .pending
-            .as_ref()
-            .filter(|p| p.id.to_string() == ticket)
-        else {
+        let Some(mut pending) = inner.pending.as_ref().filter(|p| &p.id == ticket).cloned() else {
             return Ok(Some(NavigationResult::Superseded));
         };
-        let current = inner.writer.snapshot().map_err(|_| "router_unavailable")?;
+        let current = inner.writer.snapshot().map_err(Error::Store)?;
         if pending.source_revision != current.state().history.revision() {
             return Ok(Some(NavigationResult::Superseded));
         }
@@ -195,9 +196,8 @@ impl RouterService {
             let outcome = inner
                 .router
                 .transition(&current.state().history, &command)
-                .map_err(|_| "router_invalid_target")?;
+                .map_err(Error::Target)?;
             let limit = inner.router.catalog().redirect_limit;
-            let pending = inner.pending.as_mut().expect("ticket was checked");
             if pending.redirects >= limit
                 || !pending
                     .visited
@@ -212,6 +212,7 @@ impl RouterService {
             }
             pending.outcome = outcome;
             pending.redirects += 1;
+            inner.pending = Some(pending);
             return Ok(None);
         }
         let mut next = current.state().clone();
@@ -230,39 +231,35 @@ impl RouterService {
         inner.pending = None;
         Ok(Some(result))
     }
-    pub fn navigate(&self, command: NavigationCommand) -> Result<NavigationResult, &'static str> {
+    pub fn navigate(&self, command: NavigationCommand) -> Result<NavigationResult, Error> {
         let ticket = self.begin(command)?;
         self.complete(&ticket, Decision::Allow)?
-            .ok_or("router_pending")
+            .ok_or(Error::Pending)
     }
-    pub fn session(&self, command: SessionCommand) -> Result<String, &'static str> {
+    pub fn session(&self, command: SessionCommand) -> Result<Receipt, Error> {
         let mut inner = self.lock()?;
         let mut next = inner
             .writer
             .snapshot()
-            .map_err(|_| "router_unavailable")?
+            .map_err(Error::Store)?
             .state()
             .clone();
-        let mut counter = inner.next_operation;
-        let receipt = next.session.apply(command, &mut counter)?;
+        let receipt = next.session.apply(command).map_err(Error::Session)?;
         Self::publish(&mut inner, next)?;
-        inner.next_operation = counter;
         Ok(receipt)
     }
-    fn publish(inner: &mut Inner, next: WindowSnapshot) -> Result<(), &'static str> {
-        let current = inner.writer.snapshot().map_err(|_| "router_unavailable")?;
-        if *current.state() != next && inner.writer.publish(next).is_err() {
-            inner.closed = true;
-            inner.writer.close();
-            return Err("router_unavailable");
+    fn publish(inner: &mut Inner, next: WindowSnapshot) -> Result<(), Error> {
+        let current = inner.writer.snapshot().map_err(Error::Store)?;
+        if *current.state() != next {
+            // Both the candidate and pending metadata remain private until publication succeeds.
+            inner.writer.publish(next).map_err(Error::Store)?;
         }
         Ok(())
     }
     pub fn close(&self) {
-        if let Ok(mut inner) = self.inner.lock() {
-            inner.closed = true;
-            inner.pending = None;
-            inner.writer.close();
-        }
+        let mut inner = self.inner.lock().unwrap_or_else(|error| error.into_inner());
+        inner.closed = true;
+        inner.pending = None;
+        inner.writer.close();
     }
 }

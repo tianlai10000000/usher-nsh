@@ -1,8 +1,10 @@
 //! Real window store, guarded route commits and retained session integration contracts.
 use std::{cell::Cell, future::poll_fn, task::Poll};
-use usher_nsh::router_service::{
-    Decision, RouterService,
-    session::{OperationKind as Kind, SessionCommand as Session, Stage},
+#[path = "../../crates/usher-state/tests/support/memory.rs"]
+mod memory;
+use usher_nsh::window_service::{Decision, WindowService};
+use usher_nsh::window_session::{
+    OperationKind as Kind, Receipt, SessionCommand as Session, Stage, Ticket,
 };
 use usher_router::{Catalog, NavigationCommand as Command, NavigationResult as ResultKind, Target};
 use usher_test_support::task::{poll, ready};
@@ -12,13 +14,13 @@ fn catalog() -> Catalog {
     ))
     .unwrap()
 }
-fn service() -> std::sync::Arc<RouterService> {
-    RouterService::new(catalog()).unwrap()
+fn service() -> std::sync::Arc<WindowService> {
+    WindowService::new(catalog()).unwrap()
 }
 fn push(path: &str) -> Command {
     Command::Push(Target::path(path))
 }
-fn finish(kind: Kind, ticket: String, stage: Stage, failed: bool) -> Session {
+fn finish(kind: Kind, ticket: Ticket, stage: Stage, failed: bool) -> Session {
     Session::Finish {
         operation: kind,
         ticket,
@@ -226,10 +228,10 @@ fn router_session_fields_survive_navigation_and_invalid_mutations_are_atomic() {
             .session(Session::Preview {
                 opacity: true,
                 value: None,
-                expected: Some(older)
+                expected: Some(ticket(older))
             })
             .unwrap(),
-        "superseded"
+        Receipt::Superseded
     );
     assert_eq!(
         service.snapshot().unwrap().state().session.opacity_preview,
@@ -239,7 +241,7 @@ fn router_session_fields_survive_navigation_and_invalid_mutations_are_atomic() {
         .session(Session::Preview {
             opacity: true,
             value: Some(45),
-            expected: Some(latest),
+            expected: Some(ticket(latest)),
         })
         .unwrap();
     let before = service.snapshot().unwrap();
@@ -289,12 +291,17 @@ fn router_operation_tickets_fence_late_feedback_and_exports_have_one_executor() 
         .unwrap();
     assert_eq!(
         service
-            .session(finish(Kind::Settings, old, Stage::Saved, false))
+            .session(finish(Kind::Settings, ticket(old), Stage::Saved, false))
             .unwrap(),
-        "superseded"
+        Receipt::Superseded
     );
     service
-        .session(finish(Kind::Settings, current, Stage::Invalid, true))
+        .session(finish(
+            Kind::Settings,
+            ticket(current),
+            Stage::Invalid,
+            true,
+        ))
         .unwrap();
     service
         .session(Session::ObserveSettings {
@@ -320,7 +327,7 @@ fn router_operation_tickets_fence_late_feedback_and_exports_have_one_executor() 
             .is_err()
     );
     service
-        .session(finish(Kind::Export, export, Stage::Done, false))
+        .session(finish(Kind::Export, ticket(export), Stage::Done, false))
         .unwrap();
     assert_eq!(
         service.snapshot().unwrap().state().session.operations[&Kind::Export].stage,
@@ -362,7 +369,7 @@ fn router_application_catalog_and_wire_snapshot_match_the_page_contract() {
         assert!(english[&route.title_key].is_string());
         assert!(chinese[&route.title_key].is_string());
     }
-    let service = RouterService::new(catalog).unwrap();
+    let service = WindowService::new(catalog).unwrap();
     let value = serde_json::to_value(service.snapshot().unwrap().state()).unwrap();
     assert_eq!(value["history"]["entries"][0]["location"]["id"], "home");
     assert!(value["history"]["entries"][0]["key"].is_string());
@@ -441,5 +448,112 @@ fn router_catalog_invalid_replacement_preserves_pending_ticket_and_snapshot() {
     assert_eq!(
         service.complete(&ticket, Decision::Allow).unwrap(),
         Some(ResultKind::Committed)
+    );
+}
+
+fn ticket(receipt: Receipt) -> Ticket {
+    match receipt {
+        Receipt::Ticket(ticket) => ticket,
+        other => panic!("expected ticket, got {other:?}"),
+    }
+}
+
+#[test]
+fn router_publication_fault_preserves_session_tickets_and_allows_retry() {
+    use std::sync::atomic::Ordering;
+    use usher_nsh::window_service::Error;
+    use usher_state::StoreError;
+    let backend = memory::MemoryFactory::default();
+    let service = WindowService::with_backend(catalog(), &backend).unwrap();
+    let before = service.snapshot().unwrap();
+    let begin = Session::Begin {
+        operation: Kind::Settings,
+        stage: Stage::Saving,
+    };
+    backend.0.fail_publish.store(true, Ordering::SeqCst);
+    let error = service.session(begin.clone()).unwrap_err();
+    assert_eq!(error, Error::Store(StoreError::BackendUnavailable));
+    assert_eq!(error.code(), "router_unavailable");
+    assert!(std::error::Error::source(&error).is_some());
+    assert_eq!(service.snapshot().unwrap().sequence(), before.sequence());
+    assert_eq!(service.snapshot().unwrap().state(), before.state());
+    backend.0.fail_publish.store(false, Ordering::SeqCst);
+    let receipt = service.session(begin.clone()).unwrap();
+    let reference = WindowService::new(catalog()).unwrap();
+    assert_eq!(receipt, reference.session(begin).unwrap());
+    service
+        .session(finish(Kind::Settings, ticket(receipt), Stage::Saved, false))
+        .unwrap();
+}
+
+#[test]
+fn router_publication_fault_keeps_guard_outcome_and_redirect_tracking_retryable() {
+    use std::sync::atomic::Ordering;
+    let backend = memory::MemoryFactory::default();
+    let service = WindowService::with_backend(catalog(), &backend).unwrap();
+    let ticket = service.begin(push("/about")).unwrap();
+    let before = service.snapshot().unwrap();
+    backend.0.fail_publish.store(true, Ordering::SeqCst);
+    assert!(service.complete(&ticket, Decision::Allow).is_err());
+    assert_eq!(service.snapshot().unwrap().state(), before.state());
+    backend.0.fail_publish.store(false, Ordering::SeqCst);
+    assert_eq!(
+        service.complete(&ticket, Decision::Allow).unwrap(),
+        Some(ResultKind::Committed)
+    );
+
+    let ticket = service.begin(push("/users/alice")).unwrap();
+    assert_eq!(
+        service
+            .complete(&ticket, Decision::Redirect(Target::path("/")))
+            .unwrap(),
+        None
+    );
+    let before = service.snapshot().unwrap();
+    backend.0.fail_publish.store(true, Ordering::SeqCst);
+    assert!(
+        service
+            .complete(&ticket, Decision::Redirect(Target::path("/users/alice")))
+            .is_err()
+    );
+    assert_eq!(service.snapshot().unwrap().state(), before.state());
+    backend.0.fail_publish.store(false, Ordering::SeqCst);
+    assert_eq!(
+        service.complete(&ticket, Decision::Allow).unwrap(),
+        Some(ResultKind::Committed)
+    );
+    assert_eq!(
+        service
+            .snapshot()
+            .unwrap()
+            .state()
+            .history
+            .current()
+            .location
+            .path,
+        "/"
+    );
+}
+
+#[test]
+fn router_publication_fault_does_not_retire_a_catalog_or_cancel_its_guard() {
+    use std::sync::atomic::Ordering;
+    let backend = memory::MemoryFactory::default();
+    let original = catalog();
+    let service = WindowService::with_backend(original.clone(), &backend).unwrap();
+    let ticket = service.begin(push("/about")).unwrap();
+    let before = service.snapshot().unwrap();
+    let mut replacement = original.clone();
+    replacement.identity.push_str("-replacement");
+    backend.0.fail_publish.store(true, Ordering::SeqCst);
+    assert!(service.replace_catalog(replacement.clone()).is_err());
+    assert_eq!(service.snapshot().unwrap().state(), before.state());
+    service.register(&original).unwrap();
+    backend.0.fail_publish.store(false, Ordering::SeqCst);
+    service.replace_catalog(replacement.clone()).unwrap();
+    service.register(&replacement).unwrap();
+    assert_eq!(
+        service.complete(&ticket, Decision::Allow).unwrap(),
+        Some(ResultKind::Superseded)
     );
 }

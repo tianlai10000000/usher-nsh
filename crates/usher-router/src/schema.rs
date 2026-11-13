@@ -73,11 +73,17 @@ impl Parameter {
         }
     }
     pub(crate) fn valid_schema(&self) -> bool {
-        (!matches!(&self.kind, ValueKind::Enum(values) if values.is_empty() || values.iter().collect::<std::collections::BTreeSet<_>>().len() != values.len()))
-            && (self.multiple || self.defaults.len() <= 1)
-            && self
-                .defaults
-                .iter()
-                .all(|value| self.validate(value).is_ok())
+        if let ValueKind::Enum(values) = &self.kind {
+            let unique: std::collections::BTreeSet<_> = values.iter().collect();
+            if values.is_empty() || unique.len() != values.len() {
+                return false;
+            }
+        }
+        if !self.multiple && self.defaults.len() > 1 {
+            return false;
+        }
+        self.defaults
+            .iter()
+            .all(|value| self.validate(value).is_ok())
     }
 }
