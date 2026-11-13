@@ -6,6 +6,9 @@ import sessionConfig from "../config/session.json";
 import { createSettingsOwner } from "./app";
 import { settingsEffects } from "./transport";
 import type { Immutable } from "./contracts";
+import diagnosticConfig from "../config/diagnostics.json";
+import type { DiagnosticLevel, DiagnosticOutput } from "./settings";
+export type { DiagnosticLevel, DiagnosticOutput } from "./settings";
 import type { SettingsData } from "./settings";
 import { isLocalePreference, resolveLocale, translate, type LocalePreference, type MessageKey, type Translate } from "../i18n";
 import { defaultThemeId, isModernMac, resolveTheme, type ComponentFamily, type CustomTheme, type StyleTheme } from "../theme";
@@ -17,8 +20,7 @@ export const settingsSections = sessionConfig.sections as readonly SettingsSecti
 export function isSettingsSection(value: string): value is SettingsSection {
   return (settingsSections as readonly string[]).includes(value);
 }
-export const diagnosticLevels = ["OFF", "ERROR", "WARN", "INFO", "DEBUG", "TRACE"] as const;
-export type DiagnosticLevel = (typeof diagnosticLevels)[number];
+export const diagnosticLevels = diagnosticConfig.levels as DiagnosticLevel[];
 const diagnosticErrorKeys: Record<string, true> = {
   "diagnostics.error.diagnostics_directory_unavailable": true,
   "diagnostics.error.diagnostics_export_empty": true,
@@ -75,6 +77,9 @@ export function createAppearanceStore(session: WindowSession = createWindowState
     contentBackgroundTransparency: backgroundConfig.contentTransparency.default,
     localePreference: "system",
     diagnosticLevel: "INFO",
+    diagnosticConsole: false,
+    diagnosticFile: true,
+    diagnosticStructured: false,
     diagnosticDropped: 0,
     customThemes: [],
     styleThemes: [],
@@ -287,6 +292,8 @@ export function createAppearanceStore(session: WindowSession = createWindowState
     setSidebarDocked: (docked: boolean) => sync(() => settings.dispatch({ type: "sidebarDocked", value: docked })),
     chooseLanguage: (preference: LocalePreference) => sync(() => settings.dispatch({ type: "locale", value: preference })),
     diagnosticLevel: () => snapshot().diagnosticLevel as DiagnosticLevel,
+    diagnosticOutput: (output: DiagnosticOutput) => ({ console: snapshot().diagnosticConsole, file: snapshot().diagnosticFile, structured: snapshot().diagnosticStructured })[output],
+    chooseDiagnosticOutput: (output: DiagnosticOutput, value: boolean) => sync(() => settings.dispatch({ type: "diagnosticOutput", output, value })),
     diagnosticProblem: () => diagnostics.value().problem ?? null,
     diagnosticDropped: () => Number(diagnostics.value().dropped),
     chooseDiagnosticLevel: (level: DiagnosticLevel) => sync(() => settings.dispatch({ type: "diagnosticLevel", value: level })),

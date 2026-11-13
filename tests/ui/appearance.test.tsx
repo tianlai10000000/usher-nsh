@@ -1,3 +1,4 @@
+/** Verifies shared appearance, custom theme editing and locale persistence across pages. */
 import { expect, open, test } from "nsh/test";
 
 test("shares the appearance across Home and Settings", async () => {
@@ -31,7 +32,7 @@ test("shares the appearance across Home and Settings", async () => {
 });
 
 test("applies themes and language changes without resetting Home", async () => {
-  const app = await open("../../App.tsx", { platform: "macos", width: 900, colorScheme: "light", locale: "en-US" });
+  const app = await open("../../App.tsx", { platform: "macos", width: 900, height: 1400, colorScheme: "light", locale: "en-US" });
   await app.press("Click me");
   await app.press("id:route-settings");
   await app.press("id:settings-section-theme");

@@ -137,9 +137,11 @@ cargo test --locked --lib
 
 ## 诊断日志
 
-设置页的诊断区域支持 `ERROR`、`WARN`、`INFO`、`DEBUG`、`TRACE` 和 `OFF`，默认 `INFO`。修改等级即时生效，并保存供下次启动恢复。
+设置页顺序为更新在前、诊断在后。诊断页分为日志输出、详细程度、专项诊断和归档：应用文件日志默认开启，控制台和结构化诊断可独立开关，默认关闭；终端详细日志与内存诊断显示禁用开关并注明“尚未接入”。
 
-日志由后台写入器按本地日期记录，单文件达到 8 MiB 后分片，按 14 天保留策略与 256 MiB 磁盘配额清理。支持导出今天、最近 7 天或最近 14 天的 `.tar.gz`，跳过符号链接，单个源文件上限 8 MiB，源数据总上限 64 MiB。导出目录保留最近五个归档。平台验收缺口见[批次 05](scaffolding.md#批次-05--诊断日志--部分完成)。
+所有类型共用 `ERROR`、`WARN`、`INFO`、`DEBUG`、`TRACE` 和 `OFF` 等级，默认 INFO。等级及输出开关即时生效并保存供下次启动恢复，OFF 保留开关偏好。结构化诊断是独立事件流，与 TRACE 等级无关，当前记录诊断配置与更新状态转换。
+
+后台写入器按本地日期记录 JSONL：应用事件写 `usher.log`，结构化事件写 `usher_tracing.log`，各自 8 MiB 分片，共享 14 天 / 256 MiB 保留清理；不会为了配额删除当天目录。凭据脱敏，主目录替换为 `~`。支持导出今天、最近 7 天或最近 14 天的 `.tar.gz`，包括已关闭输出的历史文件；跳过符号链接，单个源文件上限 8 MiB，源数据总上限 64 MiB，导出目录保留最近五个归档。独立门面、后端接口与测试矩阵见[日志设计](docs/log.md)，平台验收缺口见[批次 05](scaffolding.md#批次-05--诊断日志--部分完成)。
 
 ## macOS 打包
 
@@ -183,6 +185,8 @@ cargo test --locked -p usher-update
 
 ```sh
 python3 scripts/test.py test-support
+python3 scripts/test.py logging
+python3 scripts/test.py logging-mock
 python3 scripts/test.py state
 python3 scripts/test.py router
 python3 scripts/test.py routes-check
@@ -195,7 +199,7 @@ python3 scripts/test.py e2e --target headless
 python3 scripts/test.py ui
 ```
 
-`test-support`、`state` 和 `router` 不需要 NSH。状态和路由以参考及真实后端运行同一消费者契约，路由属性测试使用夹具中的固定种子。`integration` 运行 11 项设置、13 项窗口 / 路由与 17 项更新测试，使用真实服务和隔离数据。`state-ui` 验证 TS 投影及真实订阅桥接，`router-ui` 验证路由门面及真实页面生命周期。`e2e --target headless` 使用隔离内存会话，运行实际 App 到 Rust 服务的四项旅程。macOS 原生验收命令已验证同 VM 窗口共享持久偏好、窗口会话隔离、真实源码 HMR 及关闭重开身份。
+`test-support`、`logging`、`logging-mock`、`state` 和 `router` 不需要 NSH。日志规则单测就近放置，公共契约通过注入后端捕捉全部类型和等级，并将真实文件适配器与 capture 后端对照。状态和路由以参考及真实后端运行同一消费者契约，路由属性测试使用夹具中的固定种子。`integration` 运行 11 项设置、13 项窗口 / 路由、17 项更新与 3 项诊断测试，使用真实服务和隔离数据。`state-ui` 验证 TS 投影及真实订阅桥接，`router-ui` 验证路由门面及真实页面生命周期。`e2e --target headless` 使用隔离内存会话，运行实际 App 到 Rust 服务的四项旅程。macOS 原生验收命令已验证同 VM 窗口共享持久偏好、窗口会话隔离、真实源码 HMR 及关闭重开身份。
 
 窗口状态由 `WindowService` 原子提交，页面会话规则位于 `src/window_session.rs`。Rust 服务保留类型化错误，桥接输出稳定错误码。生成的路由契约包含字面量元数据，并校验页面与文案类型。旧会话桥接保持兼容。
 
@@ -215,7 +219,7 @@ macOS 原生检查会打开真实窗口，需要解锁的图形会话。状态�
 python3 scripts/test.py e2e --target macos
 ```
 
-该命令运行三项生命周期探针和一项原生返回 / 守卫测试，使用生产状态 / 路由适配器及 RouterView；不包含进程重启或所有原生输入路径。报告包括 e2e-macos.json、native-state.xml、native-isolation.json 和逐轮日志。CI 通过手动 native_state 开关在带 usher-native 标签的 self-hosted macOS runner 上运行；需预先配置并保持桌面解锁，远端运行尚未验证。
+该命令运行三项生命周期探针、一项原生返回 / 守卫测试和诊断布局 / 控件与保存过程样式测试，使用生产状态 / 路由适配器及 RouterView；不包含进程重启或所有原生输入路径。报告包括 e2e-macos.json、native-state.xml、native-isolation.json 和逐轮日志。CI 通过手动 native_state 开关在带 usher-native 标签的 self-hosted macOS runner 上运行；需预先配置并保持桌面解锁，远端运行尚未验证。
 
 发布包深链接验收使用 ad-hoc 签名的 release 应用与唯一测试 ID；专属数据 / 缓存命名空间映射到临时目录，仅在隔离源码副本的产品入口加入只读路由观察器。命令验证 LaunchServices 注册、外部 URL 冷启动和同进程唤醒，然后注销测试应用并清理隔离数据：
 

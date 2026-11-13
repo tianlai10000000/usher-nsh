@@ -26,6 +26,7 @@ export function createSettingsTransport(): StateTransport<SettingsData, Settings
         case "componentFamily": await Settings.setComponentFamily(command.value); break;
         case "theme": await Settings.setTheme(command.value); break;
         case "locale": await Settings.setLocale(command.value); break;
+        case "diagnosticOutput": await Settings.setDiagnosticOutput(command.output, command.value); break;
         case "diagnosticLevel": await Settings.setDiagnosticLevel(command.value); break;
         case "accent": await Settings.setAccent(command.value); break;
         case "saveTheme": await Settings.saveCustomTheme(command.value); break;

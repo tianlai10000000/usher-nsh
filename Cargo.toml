@@ -40,6 +40,10 @@ path = "tests/integration/state_router.rs"
 name = "settings_state"
 path = "tests/integration/settings_state.rs"
 
+[[test]]
+name = "diagnostics"
+path = "tests/integration/diagnostics.rs"
+
 [target.'cfg(target_os = "macos")'.dependencies]
 block2 = "0.6.2"
 nsh-platform-macos = { version = "=0.5.0", default-features = false }

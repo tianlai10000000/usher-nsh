@@ -231,13 +231,10 @@ export function SettingsPage(props: { appearance: AppearanceStore; updates?: Upd
       <Text role="header" style={headingLook(palette, "display")}>
         {t("settings.title")}
       </Text>
-      <View class="flex-row flex-wrap items-center" style={spacing(palette).wrap}>
-        <Text testID="settings-status" style={{ color: palette().muted }}>{t(props.appearance.statusKey())}</Text>
-        <If when={retryable()}>
-          <ThemeButton palette={palette} label={t("settings.retry")} testID="settings-retry"
-            onPress={() => void props.appearance.retry()} />
-        </If>
-      </View>
+      <If when={retryable()}>
+        <ThemeButton palette={palette} label={t("settings.retry")} testID="settings-retry"
+          onPress={() => void props.appearance.retry()} />
+      </If>
       <If
         when={wide()}
         else={

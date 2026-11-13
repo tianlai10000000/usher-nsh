@@ -8,7 +8,8 @@ use nsh_core::{
 };
 
 use crate::settings::{
-    ColorMode, Command, ComponentFamily, CustomTheme, DiagnosticLevel, Palette, Snapshot,
+    ColorMode, Command, ComponentFamily, CustomTheme, DiagnosticLevel, DiagnosticOutput, Palette,
+    Snapshot,
 };
 use std::collections::BTreeMap;
 
@@ -52,6 +53,9 @@ pub struct SettingsSnapshot {
     pub locale_preference: String,
     /// The diagnostic log level: OFF, ERROR, WARN, INFO, DEBUG or TRACE.
     pub diagnostic_level: String,
+    pub diagnostic_console: bool,
+    pub diagnostic_file: bool,
+    pub diagnostic_structured: bool,
     /// Persisted automatic update preference; execution is owned by the update controller.
     pub update_auto_check: bool,
     /// A stable code when the log files cannot be written, else nothing.
@@ -239,14 +243,17 @@ impl From<Snapshot> for SettingsSnapshot {
             accent: snapshot.accent,
             locale_preference: snapshot.locale_preference,
             diagnostic_level: snapshot.diagnostic_level.as_str().to_owned(),
+            diagnostic_console: snapshot.diagnostic_console,
+            diagnostic_file: snapshot.diagnostic_file,
+            diagnostic_structured: snapshot.diagnostic_structured,
             update_auto_check: snapshot.update_auto_check,
             // The log writer is process-wide, so its health is read where the snapshot is
             // handed out, not stored in the settings file.
             diagnostic_problem: crate::diagnostics::current()
-                .and_then(|logger| logger.health().code())
+                .and_then(|logger| logger.snapshot().health.code())
                 .map(str::to_owned),
             diagnostic_dropped: crate::diagnostics::current()
-                .map_or(0.0, |logger| logger.dropped() as f64),
+                .map_or(0.0, |logger| logger.snapshot().dropped as f64),
             custom_themes: snapshot.custom_themes.into_iter().map(Into::into).collect(),
             style_themes: snapshot.style_themes.into_iter().map(Into::into).collect(),
             theme_file_issues: snapshot
@@ -403,41 +410,29 @@ impl Settings {
         let level: DiagnosticLevel = level
             .parse()
             .map_err(|()| "invalid_diagnostic_level".to_owned())?;
-        let logs = logs_directory(sys.data_dir.clone());
-        let snapshot = dispatch(sys, Command::SetDiagnosticLevel(level)).await?;
-        if let Some(root) = logs {
-            // The change is written before the filter moves and ignores it, so a switch to a
-            // stricter level or to OFF stays visible; installing again for the same folder
-            // only swaps the filter.
-            if let Some(logger) = crate::diagnostics::current()
-                && logger.level() != level.to_level()
-            {
-                logger.record_level_change(level.to_level());
-                logger.flush(std::time::Duration::from_secs(1));
-            }
-            crate::diagnostics::install(root, level.to_level());
-        }
-        Ok(snapshot)
+        dispatch(sys, Command::SetDiagnosticLevel(level)).await
     }
 
-    /// Starts the diagnostic logger at the saved level. Safe to call on every mount.
+    /// Changes one supported output without accepting arbitrary logger configuration or paths.
+    pub async fn set_diagnostic_output(
+        output: String,
+        enabled: bool,
+        sys: System,
+    ) -> Result<SettingsSnapshot, String> {
+        let output: DiagnosticOutput = output
+            .parse()
+            .map_err(|()| "invalid_diagnostic_output".to_owned())?;
+        dispatch(sys, Command::SetDiagnosticOutput(output, enabled)).await
+    }
+
+    /// Reuses the process pipeline and restores preferences under the settings transaction.
     pub async fn start_diagnostics(sys: System) -> Result<SettingsSnapshot, String> {
         let logs = logs_directory(sys.data_dir.clone());
-        let snapshot = with_store(sys, |store| store.snapshot()).await?;
-        if let Some(root) = logs {
-            let level: DiagnosticLevel = snapshot.diagnostic_level.parse().unwrap_or_default();
-            let logger = crate::diagnostics::install(root, level.to_level());
-            let mut fields = serde_json::Map::new();
-            fields.insert("version".into(), env!("CARGO_PKG_VERSION").into());
-            fields.insert("level".into(), level.as_str().into());
-            logger.log(
-                crate::diagnostics::Level::Info,
-                "app",
-                "diagnostics_started",
-                Some(fields),
-            );
-        }
-        Ok(snapshot)
+        with_store(sys, move |store| match logs {
+            Some(root) => store.start_diagnostics(root),
+            None => store.snapshot(),
+        })
+        .await
     }
 
     /// Records one event from the interface. The level, module and event are
@@ -449,15 +444,19 @@ impl Settings {
         sys: System,
     ) -> Result<(), String> {
         let _ = sys;
-        let level: crate::diagnostics::Level = level
+        let level: usher_logging::Level = level
             .parse()
             .map_err(|()| "invalid_diagnostic_level".to_owned())?;
-        if level == crate::diagnostics::Level::Off || !is_log_name(&module) || !is_log_name(&event)
-        {
+        if level == usher_logging::Level::Off || !is_log_name(&module) || !is_log_name(&event) {
             return Err("invalid_log_event".to_owned());
         }
-        if let Some(logger) = crate::diagnostics::current() {
-            logger.log(level, &format!("ui.{module}"), &event, None);
+        if let Some(logger) = usher_logging::current() {
+            logger.log(
+                level,
+                &format!("ui.{module}"),
+                &event,
+                usher_logging::Fields::new(),
+            );
         }
         Ok(())
     }
@@ -475,29 +474,22 @@ impl Settings {
             .parent()
             .map(|parent| parent.join("exports"))
             .ok_or("diagnostics_directory_unavailable")?;
-        let (from, to) = parse_range(&from, &to)?;
+        parse_range(&from, &to)?;
         let destination_dir = exports.clone();
         let name = blocking(move || -> Result<String, &'static str> {
-            if let Some(logger) = crate::diagnostics::current() {
-                // Take the snapshot after everything queued so far has reached the disk.
-                logger.flush(std::time::Duration::from_secs(3));
-            }
-            std::fs::create_dir_all(&destination_dir).map_err(|_| "diagnostics_export_failed")?;
-            let name = crate::diagnostics::archive_name();
-            let destination = destination_dir.join(&name);
-            crate::diagnostics::export(&crate::diagnostics::ExportRequest {
-                root: &logs,
-                destination: &destination,
-                from,
-                to,
-                app_version: env!("CARGO_PKG_VERSION"),
-                platform: std::env::consts::OS,
-                cancelled: &|| false,
-            })
-            .map_err(|error| error.code())?;
-            crate::diagnostics::prune_exports(&destination_dir, &destination)
-                .map_err(|_| "diagnostics_export_failed")?;
-            Ok(name)
+            let runtime =
+                crate::diagnostics::current().ok_or("diagnostics_directory_unavailable")?;
+            runtime
+                .export(&usher_logging::runtime::ExportRequest {
+                    destination_dir: &destination_dir,
+                    from: &from,
+                    to: &to,
+                    app_version: env!("CARGO_PKG_VERSION"),
+                    platform: std::env::consts::OS,
+                    cancelled: &|| false,
+                })
+                .map(|exported| exported.name)
+                .map_err(|error| error.code())
         })
         .await
         .map_err(|_| "diagnostics_export_failed")??;

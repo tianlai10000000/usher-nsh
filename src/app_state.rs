@@ -10,7 +10,8 @@ use usher_state::{StoreId, backends::WatchBackend};
 
 pub use crate::background::BackgroundImage;
 pub use crate::settings::{
-    ColorMode, Command, ComponentFamily, CustomTheme, DiagnosticLevel, Palette, Snapshot,
+    ColorMode, Command, ComponentFamily, CustomTheme, DiagnosticLevel, DiagnosticOutput, Palette,
+    Snapshot,
 };
 pub use crate::settings_service::{Error as SettingsError, SettingsService};
 pub use crate::style_themes::{

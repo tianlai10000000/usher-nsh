@@ -2854,6 +2854,7 @@ dependencies = [
  "chrono",
  "flate2",
  "libc",
+ "serde",
  "serde_json",
  "tar",
  "tempfile",

@@ -2,6 +2,7 @@
 import type { CustomTheme, StyleTheme } from "../theme/contracts";
 export type ColorMode = "system" | "light" | "dark";
 export type ComponentFamily = "nsh" | "appkit";
+export type DiagnosticOutput = "console" | "file" | "structured";
 export type DiagnosticLevel = "OFF" | "ERROR" | "WARN" | "INFO" | "DEBUG" | "TRACE";
 export interface SettingsData {
   colorMode: string;
@@ -15,6 +16,9 @@ export interface SettingsData {
   accent?: string | null;
   localePreference: string;
   diagnosticLevel: string;
+  diagnosticConsole: boolean;
+  diagnosticFile: boolean;
+  diagnosticStructured: boolean;
   diagnosticProblem?: string | null;
   diagnosticDropped: number;
   customThemes: CustomTheme[];
@@ -31,6 +35,7 @@ export type SettingsCommand =
   | { type: "componentFamily"; value: ComponentFamily }
   | { type: "theme" | "locale" | "removeTheme"; value: string }
   | { type: "diagnosticLevel"; value: DiagnosticLevel }
+  | { type: "diagnosticOutput"; output: DiagnosticOutput; value: boolean }
   | { type: "accent"; value: string | null }
   | { type: "saveTheme"; value: CustomTheme }
   | { type: "cloneTheme"; id: string; name: string }

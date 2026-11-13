@@ -24,6 +24,7 @@ pub struct SettingsService {
 
 struct Transaction {
     domain: SettingsStore,
+    diagnostics: Option<usher_logging::runtime::Runtime>,
     writer: StoreWriter<Snapshot>,
 }
 
@@ -61,10 +62,45 @@ impl SettingsService {
         );
         Ok(Self {
             updates,
-            transaction: Mutex::new(Transaction { domain, writer }),
+            transaction: Mutex::new(Transaction {
+                domain,
+                writer,
+                diagnostics: None,
+            }),
             reader,
             closed: AtomicBool::new(false),
         })
+    }
+
+    /// Binds an output runtime to this settings scope and applies the authoritative preferences.
+    pub fn attach_diagnostics(
+        &self,
+        runtime: usher_logging::runtime::Runtime,
+    ) -> Result<Snapshot, Error> {
+        let mut transaction = self.transaction.lock().map_err(|_| Error::Poisoned)?;
+        self.ensure_open()?;
+        let snapshot = transaction.domain.snapshot();
+        runtime
+            .logger()
+            .set_level(snapshot.diagnostic_level.to_level());
+        runtime.set_outputs(snapshot.diagnostic_outputs());
+        transaction.diagnostics = Some(runtime);
+        Ok(snapshot)
+    }
+
+    /// Installs the process pipeline while serialized with preference commits.
+    pub(crate) fn start_diagnostics(&self, root: std::path::PathBuf) -> Result<Snapshot, Error> {
+        let mut transaction = self.transaction.lock().map_err(|_| Error::Poisoned)?;
+        self.ensure_open()?;
+        let snapshot = transaction.domain.snapshot();
+        let runtime = crate::diagnostics::install(
+            root,
+            snapshot.diagnostic_level.to_level(),
+            snapshot.diagnostic_outputs(),
+        );
+        crate::diagnostics::started(&runtime);
+        transaction.diagnostics = Some(runtime);
+        Ok(snapshot)
     }
 
     /// Borrows the service created with this settings scope, before versions are known.
@@ -239,6 +275,14 @@ impl SettingsService {
                     committed.state().update_auto_check,
                 ))
                 .map_err(Error::Synchronization)?;
+        }
+        if let Some(runtime) = &mutation.transaction.diagnostics {
+            runtime.change_level(committed.state().diagnostic_level.to_level());
+            let outputs = committed.state().diagnostic_outputs();
+            if runtime.outputs() != outputs {
+                runtime.set_outputs(outputs);
+                crate::diagnostics::configured(runtime);
+            }
         }
         mutation.completed = true;
         result

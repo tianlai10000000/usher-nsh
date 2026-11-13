@@ -2,7 +2,7 @@
 import { expect, open, test } from "nsh/test";
 
 const ready = (app: Awaited<ReturnType<typeof open>>) => () =>
-  app.shows("text:Saved") || app.shows("text:Settings are read-only. Changes apply for this session.");
+  app.enabled("id:appearance-light");
 
 test("wide windows list the sections on the left and show one at a time", async () => {
   const app = await open("../../App.tsx", { platform: "macos", width: 1100, height: 800, locale: "en-US" });
@@ -10,6 +10,7 @@ test("wide windows list the sections on the left and show one at a time", async 
   await app.press("id:route-settings");
   await app.waitUntil(ready(app));
   await app.waitFor("id:settings-layout-wide");
+  expect(app.shows("id:settings-status")).toBe(false);
   expect(app.shows("id:settings-layout-compact")).toBe(false);
 
   // General is first; the others are not on screen yet.
@@ -52,17 +53,17 @@ test("settings tabs use framework keyboard selection and one Tab stop", async ()
   await app.keyboard.press("down");
   await app.waitFor("id:theme-settings");
   await app.keyboard.press("end");
-  await app.waitFor("id:settings-updates");
+  await app.waitFor("id:diagnostics-settings");
   await app.keyboard.press("home");
   await app.waitFor("id:settings-general");
   await app.keyboard.press("up");
-  await app.waitFor("id:settings-updates");
+  await app.waitFor("id:diagnostics-settings");
   await app.keyboard.press("tab");
   await app.keyboard.press("down");
-  expect(app.shows("id:settings-updates")).toBe(true);
+  expect(app.shows("id:diagnostics-settings")).toBe(true);
   await app.keyboard.press("shift+tab");
   await app.keyboard.press("up");
-  await app.waitFor("id:diagnostics-settings");
+  await app.waitFor("id:settings-updates");
 });
 
 test("the layout follows the window when it is resized, and the section is kept", async () => {

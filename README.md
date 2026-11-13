@@ -137,9 +137,11 @@ The script rewrites the theme file and the pinned revision, and nothing else. Re
 
 ## Diagnostics
 
-The Diagnostics section in Settings supports `ERROR`, `WARN`, `INFO`, `DEBUG`, `TRACE` and `OFF`. The default is `INFO`; changing the level applies immediately and is saved for the next launch.
+Settings lists Updates before Diagnostics. Diagnostics groups output switches, detail level, additional diagnostics and archive export. Application file logs are enabled by default; console and structured diagnostics are separately switchable and off by default. Terminal details and memory diagnostics are disabled and labelled “Not connected yet”.
 
-Logs are written by a background worker into local-date directories, split at 8 MiB and retained for 14 days subject to a 256 MiB disk quota. Export supports today, the last 7 days or the last 14 days. Archives use `.tar.gz`, skip symbolic links and limit each source file to 8 MiB and total source data to 64 MiB. The export directory retains the five newest archives. Platform acceptance gaps are listed in [batch 05](scaffolding.md#批次-05--诊断日志--部分完成).
+The shared level supports `ERROR`, `WARN`, `INFO`, `DEBUG`, `TRACE` and `OFF`, defaulting to `INFO`. Level and output preferences apply immediately and persist across launches; OFF preserves the output preferences. Structured diagnostics is a separate event stream, independent of the TRACE level, currently covering diagnostic configuration and update transitions.
+
+A background worker writes JSONL to local-date directories: application events in `usher.log`, structured events in `usher_tracing.log`. Files split at 8 MiB and share 14-day / 256 MiB retention cleanup; the current day is not deleted to enforce the quota. Credential values are masked and the home directory is shortened to `~`. Exports cover today, the last 7 days or the last 14 days, including historical logs from disabled outputs. Archives use `.tar.gz`, skip symbolic links and limit each source file to 8 MiB and total source data to 64 MiB. The export directory retains the five newest archives. The independent logging facade, backend contracts and test matrix are documented in [the logging design](docs/log.md); remaining platform acceptance is listed in [batch 05](scaffolding.md#批次-05--诊断日志--部分完成).
 
 ## Package for macOS
 
@@ -183,6 +185,8 @@ For test helpers, state and routing cores, application integration and headless 
 
 ```sh
 python3 scripts/test.py test-support
+python3 scripts/test.py logging
+python3 scripts/test.py logging-mock
 python3 scripts/test.py state
 python3 scripts/test.py router
 python3 scripts/test.py routes-check
@@ -195,7 +199,7 @@ python3 scripts/test.py e2e --target headless
 python3 scripts/test.py ui
 ```
 
-The `test-support`, `state` and `router` suites require no NSH. State and router suites run the same consumer contracts with reference and production backends; router properties use fixed fixture seeds. `integration` runs 11 settings, 13 window/router and 17 update tests against real services and isolated data. `state-ui` covers TS projections and real subscription bridges; `router-ui` covers the router facade and real page lifecycle. `e2e --target headless` runs four journeys through the actual App and Rust services using isolated memory sessions. The macOS native acceptance command also verifies same-VM windows sharing persisted preferences, isolated window sessions, actual source HMR, and close/reopen identity.
+The `test-support`, `logging`, `logging-mock`, `state` and `router` suites require no NSH. Logging unit tests stay beside the rules; public contracts capture every kind and level through injected backends and compare the file adapter with the capture backend. State and router suites run the same consumer contracts with reference and production backends; router properties use fixed fixture seeds. `integration` runs 11 settings, 13 window/router, 17 update and 3 diagnostics tests against real services and isolated data. `state-ui` covers TS projections and real subscription bridges; `router-ui` covers the router facade and real page lifecycle. `e2e --target headless` runs four journeys through the actual App and Rust services using isolated memory sessions. The macOS native acceptance command also verifies same-VM windows sharing persisted preferences, isolated window sessions, actual source HMR, and close/reopen identity.
 
 Window state is committed by `WindowService`, with page session rules in `src/window_session.rs`. Rust services retain typed errors; the bridge emits stable codes. Generated route contracts include literal metadata, checked against page and message types. The legacy session bridge remains compatible.
 
@@ -215,7 +219,7 @@ Native macOS checks open real windows and require an unlocked graphical session.
 python3 scripts/test.py e2e --target macos
 ```
 
-This command runs three lifecycle probes and one native back/guard test using production state/router adapters and RouterView. It does not cover process restart or every native input path. Reports include `e2e-macos.json`, `native-state.xml`, `native-isolation.json`, and per-run logs. CI exposes it through the manual `native_state` option on a self-hosted macOS runner labelled `usher-native`; that runner must already be configured with an unlocked desktop. Remote execution remains unverified.
+This command runs three lifecycle probes, one native back/guard test and diagnostic layout/control and pending-save rendering checks using production state/router adapters and RouterView. It does not cover process restart or every native input path. Reports include `e2e-macos.json`, `native-state.xml`, `native-isolation.json`, and per-run logs. CI exposes it through the manual `native_state` option on a self-hosted macOS runner labelled `usher-native`; that runner must already be configured with an unlocked desktop. Remote execution remains unverified.
 
 Packaged deep-link acceptance uses an ad-hoc signed release app with a unique test ID. Its data/cache namespaces point to temporary directories; the product entry receives only a read-only route observer in the isolated copy. The command verifies LaunchServices registration, external URL cold launch and same-process wake, then unregisters the app and removes its isolated data:
 

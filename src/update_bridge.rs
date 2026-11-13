@@ -160,7 +160,7 @@ impl UpdateState {
             if claim.as_ref().is_some_and(|c| {
                 matches!(c.effect(), usher_update::state::Effect::StartInstall { .. })
             }) {
-                usher_logging::flush_for_exit();
+                crate::diagnostics::flush_for_exit();
             }
             Ok(claim.as_ref().map(transport::claim))
         })

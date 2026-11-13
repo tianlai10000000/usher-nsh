@@ -63,6 +63,7 @@ test("tooltips follow the sidebar action, appearance action and selected languag
 
   await app.press("id:rail-settings");
   await app.waitUntil(() => app.enabled("id:locale-zh-Hans"));
+  await app.scroll("id:main-content", 500);
   await app.press("id:locale-zh-Hans");
   await app.waitFor("text:设置");
   const translatedHints = [

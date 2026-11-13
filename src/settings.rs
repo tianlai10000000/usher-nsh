@@ -75,6 +75,7 @@ pub enum Command {
     SetAccent(Option<String>),
     SetLocale(String),
     SetDiagnosticLevel(DiagnosticLevel),
+    SetDiagnosticOutput(DiagnosticOutput, bool),
     SetUpdateAutoCheck(bool),
     SaveCustomTheme(Box<CustomTheme>),
     RemoveCustomTheme(String),
@@ -127,6 +128,9 @@ pub struct Snapshot {
     pub accent: Option<String>,
     pub locale_preference: String,
     pub diagnostic_level: DiagnosticLevel,
+    pub diagnostic_console: bool,
+    pub diagnostic_file: bool,
+    pub diagnostic_structured: bool,
     pub update_auto_check: bool,
     pub custom_themes: Vec<CustomTheme>,
     pub style_themes: Vec<StyleTheme>,
@@ -311,15 +315,60 @@ impl UpdatesSection {
 }
 
 /// `[diagnostics]`: omitted from the file while it holds the default.
-#[derive(Default, Deserialize, Serialize)]
+#[derive(Deserialize, Serialize)]
 #[serde(default, rename_all = "camelCase")]
 struct DiagnosticsSection {
     level: DiagnosticLevel,
+    console: bool,
+    file: bool,
+    structured: bool,
+}
+impl Default for DiagnosticsSection {
+    fn default() -> Self {
+        let outputs = usher_logging::Outputs::default();
+        Self {
+            level: DiagnosticLevel::default(),
+            console: outputs.console,
+            file: outputs.file,
+            structured: outputs.structured,
+        }
+    }
+}
+/// Supported application outputs; absent collectors have no writable preference.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum DiagnosticOutput {
+    Console,
+    File,
+    Structured,
+}
+impl FromStr for DiagnosticOutput {
+    type Err = ();
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value {
+            "console" => Ok(Self::Console),
+            "file" => Ok(Self::File),
+            "structured" => Ok(Self::Structured),
+            _ => Err(()),
+        }
+    }
+}
+impl Snapshot {
+    pub(crate) fn diagnostic_outputs(&self) -> usher_logging::Outputs {
+        usher_logging::Outputs {
+            console: self.diagnostic_console,
+            file: self.diagnostic_file,
+            structured: self.diagnostic_structured,
+            ..usher_logging::Outputs::default()
+        }
+    }
 }
 
 impl DiagnosticsSection {
     fn is_default(&self) -> bool {
         self.level == DiagnosticLevel::default()
+            && self.console == Self::default().console
+            && self.file == Self::default().file
+            && self.structured == Self::default().structured
     }
 }
 
@@ -341,8 +390,8 @@ impl DiagnosticLevel {
         self.to_level().as_str()
     }
 
-    pub(crate) fn to_level(self) -> crate::diagnostics::Level {
-        use crate::diagnostics::Level;
+    pub(crate) fn to_level(self) -> usher_logging::Level {
+        use usher_logging::Level;
         match self {
             Self::Off => Level::Off,
             Self::Error => Level::Error,
@@ -566,6 +615,9 @@ impl SettingsStore {
             accent: self.document.appearance.accent.clone(),
             locale_preference: self.document.general.locale_preference.clone(),
             diagnostic_level: self.document.diagnostics.level,
+            diagnostic_console: self.document.diagnostics.console,
+            diagnostic_file: self.document.diagnostics.file,
+            diagnostic_structured: self.document.diagnostics.structured,
             update_auto_check: self.document.updates.auto_check,
             custom_themes: self.themes.custom_themes.clone(),
             style_themes: self.resolved_themes(),
@@ -697,6 +749,15 @@ impl SettingsStore {
             Command::SetUpdateAutoCheck(enabled) => {
                 update(&mut self.document.updates.auto_check, enabled)
             }
+            Command::SetDiagnosticOutput(output, enabled) => match output {
+                DiagnosticOutput::Console => {
+                    update(&mut self.document.diagnostics.console, enabled)
+                }
+                DiagnosticOutput::File => update(&mut self.document.diagnostics.file, enabled),
+                DiagnosticOutput::Structured => {
+                    update(&mut self.document.diagnostics.structured, enabled)
+                }
+            },
             Command::SetDiagnosticLevel(level) => {
                 update(&mut self.document.diagnostics.level, level)
             }

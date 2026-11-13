@@ -1,0 +1,18 @@
+{
+  "log_file": "usher.log",
+  "structured_file": "usher_tracing.log",
+  "archive_prefix": "usher-diagnostics-",
+  "max_shard_bytes": 8388608,
+  "disk_quota_bytes": 268435456,
+  "retention_days": 14,
+  "export_file_limit": 8388608,
+  "export_total_limit": 67108864,
+  "kept_archives": 5,
+  "queue_capacity": 4096,
+  "flush_interval_ms": 500,
+  "max_message_chars": 2000,
+  "change_flush_ms": 1000,
+  "exit_flush_ms": 2000,
+  "export_flush_ms": 3000,
+  "outputs": { "console": false, "file": true, "structured": false, "terminal": false, "memory": false }
+}

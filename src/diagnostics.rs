@@ -1,18 +1,19 @@
-//! Adapts the independent logging pipeline to application diagnostic state.
+//! Assembles logging and adapts its health observer to the application state service.
 use std::{
     path::PathBuf,
     sync::{Arc, Mutex},
 };
-pub(crate) use usher_logging::{
-    ExportRequest, Level, Logger, archive_name, current, export, prune_exports,
+pub(crate) use usher_logging::runtime::{current, flush_for_exit};
+use usher_logging::{
+    Fields, Level, LogKind, Outputs,
+    runtime::{HealthSnapshot, Runtime, StatusObserver},
 };
-
 struct Observer {
     source: u64,
     service: Arc<crate::diagnostic_state::StatusService>,
 }
-impl usher_logging::StatusObserver for Observer {
-    fn changed(&self, sample: &dyn Fn() -> usher_logging::HealthSnapshot) {
+impl StatusObserver for Observer {
+    fn changed(&self, sample: &dyn Fn() -> HealthSnapshot) {
         self.service.update(self.source, || {
             let sample = sample();
             crate::diagnostic_state::Status {
@@ -22,23 +23,43 @@ impl usher_logging::StatusObserver for Observer {
         });
     }
 }
-
-/// Serializes logger replacement and observer generation assignment across windows.
-pub(crate) fn install(root: PathBuf, level: Level) -> Arc<Logger> {
+/// Serializes pipeline installation and application observer generation assignment.
+pub(crate) fn install(root: PathBuf, level: Level, outputs: Outputs) -> Runtime {
     static INSTALL: Mutex<()> = Mutex::new(());
     let _guard = INSTALL.lock().unwrap_or_else(|p| p.into_inner());
-    let logger = usher_logging::install(root, level);
+    let runtime = usher_logging::runtime::install(root, level, outputs);
     if let Ok(status) = &*crate::diagnostic_state::STATUS
         && let Ok(source) = status.activate()
     {
-        logger.observe(Arc::new(Observer {
+        runtime.observe(Arc::new(Observer {
             source,
             service: status.clone(),
         }));
     }
-    logger
+    runtime
 }
-
+pub(crate) fn started(runtime: &Runtime) {
+    runtime.logger().info(
+        "app",
+        "diagnostics_started",
+        Fields::new()
+            .with("version", env!("CARGO_PKG_VERSION"))
+            .with("level", runtime.logger().level().as_str()),
+    );
+    configured(runtime);
+}
+pub(crate) fn configured(runtime: &Runtime) {
+    let outputs = runtime.outputs();
+    runtime.logger().for_kind(LogKind::Tracing).info(
+        "diagnostics",
+        "output_configuration",
+        Fields::new()
+            .with("console", outputs.console)
+            .with("file", outputs.file)
+            .with("structured", outputs.structured)
+            .with("level", runtime.logger().level().as_str()),
+    );
+}
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -47,22 +68,22 @@ mod tests {
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("blocked");
         std::fs::write(&path, "file").unwrap();
-        let logger = Logger::start(path, Level::Info);
+        let runtime = Runtime::file(path, Level::Info);
         let service = Arc::new(
             crate::diagnostic_state::StatusService::new(usher_state::StoreId::new(u128::MAX))
                 .unwrap(),
         );
         let source = service.activate().unwrap();
-        logger.observe(Arc::new(Observer {
+        runtime.observe(Arc::new(Observer {
             source,
             service: service.clone(),
         }));
-        logger.log(Level::Info, "test", "health", None);
-        assert!(logger.flush(std::time::Duration::from_secs(2)));
+        runtime.logger().info("test", "health", Fields::new());
+        assert!(runtime.flush(std::time::Duration::from_secs(2)));
         assert_eq!(
             service.snapshot().unwrap().state().problem.as_deref(),
-            logger.health().code()
+            runtime.snapshot().health.code()
         );
-        assert!(logger.health().code().is_some());
+        assert!(runtime.snapshot().health.code().is_some());
     }
 }

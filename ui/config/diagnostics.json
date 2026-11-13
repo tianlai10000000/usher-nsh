@@ -1,0 +1,7 @@
+{
+  "levels": ["OFF", "ERROR", "WARN", "INFO", "DEBUG", "TRACE"],
+  "outputs": ["file", "console", "structured"],
+  "unavailable": ["terminal", "memory"],
+  "ranges": [{"id": "today", "days": 1}, {"id": "week", "days": 7}, {"id": "all", "days": 14}],
+  "initialRange": "week"
+}

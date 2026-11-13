@@ -116,6 +116,11 @@ jobs:
       - name: Test the update crate in isolation
         run: cargo test --locked -p usher-update
 
+      - name: Test logging rules and mock backend contracts
+        run: |
+          python3 scripts/test.py logging
+          python3 scripts/test.py logging-mock
+
       - name: Test the application crate
         run: cargo test --locked --lib
 

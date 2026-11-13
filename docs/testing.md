@@ -44,6 +44,9 @@
 
 ```text
 crates/usher-test-support/src/          # Generic polling and fixture identity helpers
+crates/usher-logging/src/               # Logging rule and lifecycle unit tests
+crates/usher-logging/tests/             # Public capture/failure/file backend contracts
+crates/usher-logging/tests/support/     # Logging-owned mock writers
 crates/usher-state/src/                 # Unit tests beside the rules
 crates/usher-state/tests/               # Public contracts and concurrency
 crates/usher-state/tests/support/       # State-specific fake backend and test machine
@@ -56,6 +59,7 @@ ui/router/__tests__/                   # Facade/guard contracts and rendering fa
 ui/features/<feature>/__tests__/        # Planned feature-owned UI tests
 tests/integration/settings_state.rs    # Real settings service and persistence (SM2)
 tests/integration/state_router.rs      # Window store, guards, sessions and wire contracts
+tests/integration/diagnostics.rs       # Settings, runtime preferences and real log archives
 tests/integration/update_state.rs      # Shared update state and fenced effect execution
 tests/integration/*.test.tsx           # Real subscriptions, RouterView and owner lifecycle
 tests/integration/fixtures/            # Settings documents, themes and bridge fixtures
@@ -601,3 +605,41 @@ Rail 根据投影的 visible 在组件边界挂载更新入口：未检查、已
 最终 state-ui 42 项通过（含 8 项更新界面旅程），nsh check 与差异格式检查通过。新增自动时钟旅程覆盖后台失败静默、转为手动重试后显示入口；原有离线旅程覆盖弹层内再次检查失败仍保留弹层、关闭后入口仍在、成功后隐藏。检查调用计数保证断言发生在新的检查完成后。初轮错误的弹层选择器，以及点击面板外夹具按钮导致正常关闭的断言失败已修正，最终完整重跑通过。使用可控原生 I/O；本次未重跑真实下载、安装或原生截图验收。
 
 同日样式回调：手动检查失败恢复为实心警示色圆底加系统下载图标，复用原强调形态和主题配色，移除感叹号专用形态及资源配置。按钮保留、弹层重试及后台静默逻辑不变。12 项更新控制器 / 投影测试、8 项更新界面旅程及 nsh check 通过；未重新执行整套 state-ui 或原生截图验收。
+
+
+## 26. 日志门面、类型控制与诊断页（2026-11-13）
+
+设计与迁移记录见 [log.md](log.md)。测试遵循现有架构：规则单测在日志 crate 的相应模块，公共契约在 crate/tests，日志专有 Capture / 故障 / 门控写入器在 tests/support；设置和文件归档集成在根 tests/integration，NSH 桥接用例走 state-ui，应用页面回归走 ui，原生布局用例在 tests/e2e 并纳入 e2e-macos。未把业务 mock 加进 usher-test-support，也未给测试公开内部队列、路径辅助函数或状态机。
+
+`logging` 与 `logging-mock` 命令已加入 tests/config.json 及 CI。四类日志 × 六过滤阈值 × 六提交等级逐目标核对捕获结果，另遍历全部 32 种开关组合。契约覆盖脱敏先于后端、部分目标写入故障、OFF、旧句柄实时更新、关闭已入队目标、不向新启用目标补写及无效字段。真实文件适配器对照 Capture 的全部类型 / 等级输出。可控通道占满队列测试替代依赖执行速度的洪泛测试。更新桥接单测验证两条输出流保留 INFO / WARN / ERROR 及原字段。
+
+本机 macOS arm64 最终验证：
+
+| 命令 | 结果 | 报告 |
+| --- | --- | --- |
+| `python3 scripts/test.py logging` | 20 项通过 | target/test-reports/logging.json |
+| `python3 scripts/test.py logging-mock` | 13 项通过 | target/test-reports/logging-mock.json |
+| `cargo test --locked --workspace` | 241 项通过 | target/test-reports/logging-workspace.log |
+| `python3 scripts/test.py integration` | 44 项通过，含新增 3 项诊断集成 | target/test-reports/integration.json |
+| `python3 scripts/test.py state-ui` | 43 项通过，含真实诊断桥接 | target/test-reports/state-ui.json |
+| `python3 scripts/test.py ui` | 30 项通过 | target/test-reports/ui.json |
+| `python3 scripts/test.py e2e --target macos` | 5 项通过 | target/test-reports/e2e-macos.json |
+| `cargo clippy --locked --workspace --all-targets -- -D warnings` | 通过 | target/test-reports/logging-clippy.log |
+| `nsh check` | 通过 | target/test-reports/logging-nsh-check.log |
+| `python3 -m unittest discover -s scripts/tests` | 135 项通过 | target/test-reports/logging-scripts.log |
+
+NSH 使用本机缓存依赖，执行时设置 CARGO_NET_OFFLINE=true。首次并行运行 NSH 导致生成夹具路径冲突，随后串行完整重跑 state-ui 与 ui 通过；该失败轮不计为成功。原生首次沙箱拒绝本地监听端口，解除该限制后完整重跑 5 项通过，不以局部补跑替代整套结果。
+
+原生窗口 / HMR 用例使用脚本临时源码与数据根，官方 NSH 原生测试 runner 使用隔离会话；未改 HOME 或真实用户偏好。诊断原生用例执行真实设置开关、等级下拉选择、滚动和 1100 → 560 宽度变化。已查看 diagnostics-native-wide.png、diagnostics-native-export.png、diagnostics-native-compact.png（均位于 target/test-reports），确认中文说明换行、对齐、禁用状态和归档区无重叠。原有多窗口共享、HMR、关闭重开及原生返回测试同轮通过。
+
+终端 / 内存测试输入是合成事件，不代表真实采集器存在。本轮未验收真实盘满 / 强杀、其他平台原生输出 / 分享或远端 CI 执行；这些仍保留在批次 05。原生显示检查不替代导出打开文件夹与完整落盘退出的人工验收。
+
+## 27. 设置标题状态与日志开关闪烁修正（2026-11-13）
+
+设置标题下的实时保存状态文字及其空行移除，失败重试入口仍走原设置操作。日志输出开关继续在串行保存期间阻止重复提交，但已接入项不再应用禁用透明度；只有尚未接入的终端 / 内存项灰显。未修改 Rust 设置事务、日志管线或状态所有权。
+
+回归使用 tests/ui/fixtures/DiagnosticsPending.tsx 在视图边界暂停一次保存，保留真实设置门面执行提交；它是可控延迟的 UI 夹具，不计为真实磁盘延迟或日志后端验收。无头断言标题状态不存在、等待期间点击受保护、完成后值更新；macOS 原生用例截图保存前 / 等待中 / 完成后三个阶段。已查看截图，并通过本机 AppKit 解码比较等待前后的像素：排除顶部夹具状态行后，整个诊断内容区像素一致。证据为 target/test-reports/diagnostics-switch-comparison.json，原生 JUnit 为 diagnostics-ui-fix-native.xml（2 项通过：实际页面布局 / 控件和可控等待画面各 1 项）。
+
+标题行删除后，旧主题编辑和工具提示用例的部分控件落在底部状态栏遮挡位置；主题状态用例改用足够容纳表单的测试视口，语言操作先滚动至可见区域。没有改动生产布局或滚动组件来迎合用例。
+
+本轮最终串行运行 `nsh check` 与 `python3 scripts/test.py ui` 通过，完整 UI 为 31 项、失败 0 项。之前因旧用例遮挡定位失败的运行不计入通过结果；调整后完整重跑，未拼接单项成功。原生诊断专项 2 项通过，截图与像素对照如上；新增夹具用例和原生用例分别进入已有 ui 与 e2e-macos CI 入口。Rust 未修改，本轮未重复运行工作区 Rust 测试。

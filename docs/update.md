@@ -359,7 +359,7 @@ crate 保持无 I/O、无 NSH 依赖：输入事件，输出状态与效果。�
 
 ### 8.6 日志 crate
 
-日志核心已拆为 `crates/usher-logging/`，不依赖应用、NSH 或窗口，提供初始化、结构化写入、级别、归档导出与 `StatusObserver`。应用 `src/diagnostics.rs` 只保留健康状态适配，采样在应用状态发布锁内完成，旧日志源不能覆盖新源。现有队列、留存与归档限制保持不变。
+日志核心已拆为 `crates/usher-logging/`，不依赖应用、NSH 或窗口，提供初始化、结构化写入、级别、归档导出与 `StatusObserver`。应用 `src/diagnostics.rs` 只保留健康状态适配，采样在应用状态发布锁内完成，旧日志源不能覆盖新源。现有队列、留存与归档限制保持不变。 普通业务调用收敛为 Logger / Fields / Level，装配和导出使用 runtime 命名空间；更新桥接另向可独立关闭的结构化流写入 state_transition，领域状态机不感知输出配置。详见 [日志模块设计](log.md)。
 
 只按凭据类字段（token、secret、authorization、bearer、password、passwd、apikey、api_key、credential）掩码，并递归处理数组、嵌套对象和自由文本凭据；主目录前缀替换为 `~`。body、content、email、cookie 不再仅按字段名删除。仍禁止主动采集用户正文。TSX 普通日志接口只接受短标识，更新失败详情须经类型化完成回执验证后由 Rust 写出。
 

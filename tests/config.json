@@ -132,6 +132,23 @@
             "updates_concurrent_",
             "updates_registry_"
           ]
+        },
+        {
+          "id": "diagnostics-integration",
+          "command": [
+            "cargo",
+            "test",
+            "--locked",
+            "-p",
+            "usher-nsh",
+            "--test",
+            "diagnostics"
+          ],
+          "timeout_seconds": 120,
+          "required_test_prefixes": [
+            "diagnostics_settings_",
+            "diagnostics_real_files_"
+          ]
         }
       ]
     },
@@ -183,7 +200,8 @@
             "bridge: foreign",
             "bridge: destroying",
             "update bridge",
-            "updates feature"
+            "updates feature",
+            "diagnostics bridge"
           ]
         }
       ]
@@ -203,7 +221,8 @@
           "timeout_seconds": 120,
           "required_test_prefixes": [
             "shares the appearance",
-            "applies themes and language"
+            "applies themes and language",
+            "diagnostics exposes"
           ]
         }
       ]
@@ -396,6 +415,23 @@
           "required_test_prefixes": [
             "e2e native back"
           ]
+        },
+        {
+          "id": "native-diagnostics",
+          "runner": "nsh",
+          "command": [
+            "nsh",
+            "test",
+            "--target",
+            "macos"
+          ],
+          "test_paths": [
+            "tests/e2e/diagnostics-native.test.tsx"
+          ],
+          "timeout_seconds": 180,
+          "required_test_prefixes": [
+            "native diagnostics"
+          ]
         }
       ]
     },
@@ -530,6 +566,56 @@
             "shell archive wrong-identity",
             "shell archive invalid-signature",
             "shell archive install-denied"
+          ]
+        }
+      ]
+    },
+    "logging": {
+      "runs": [
+        {
+          "id": "logging-unit",
+          "command": [
+            "cargo",
+            "test",
+            "--locked",
+            "-p",
+            "usher-logging",
+            "--lib"
+          ],
+          "timeout_seconds": 120,
+          "required_test_prefixes": [
+            "level::tests::",
+            "redaction::tests::",
+            "record::tests::",
+            "files::tests::",
+            "archive::tests::",
+            "pipeline::tests::",
+            "lifecycle::tests::"
+          ]
+        }
+      ]
+    },
+    "logging-mock": {
+      "runs": [
+        {
+          "id": "logging-contracts",
+          "command": [
+            "cargo",
+            "test",
+            "--locked",
+            "-p",
+            "usher-logging",
+            "--test",
+            "contracts"
+          ],
+          "timeout_seconds": 120,
+          "required_test_prefixes": [
+            "logging_levels_",
+            "logging_switches_",
+            "logging_redaction_",
+            "logging_runtime_",
+            "logging_backend_",
+            "logging_public_fields_"
           ]
         }
       ]
