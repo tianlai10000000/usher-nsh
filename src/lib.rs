@@ -2,11 +2,19 @@
 
 use nsh_core::prelude::*;
 
+pub mod app_state;
 mod background;
+mod diagnostic_bridge;
+mod diagnostic_state;
 mod diagnostics;
+mod router_bridge;
+pub mod router_service;
 mod settings;
 mod settings_bridge;
+mod settings_service;
+mod state_bridge;
 mod style_themes;
+pub mod update_service;
 
 #[cfg(target_os = "macos")]
 #[path = "../platforms/macos/mod.rs"]
@@ -22,7 +30,10 @@ fn macos_components(components: &nsh_platform_macos::Components) {
 fn native(registry: &mut Registry) {
     registry
         .module::<Greeting>()
-        .module::<settings_bridge::Settings>();
+        .module::<settings_bridge::Settings>()
+        .module::<settings_bridge::SettingsState>()
+        .module::<router_bridge::WindowState>()
+        .module::<diagnostic_bridge::DiagnosticState>();
 }
 
 /// Greeting text shared with the TSX interface.

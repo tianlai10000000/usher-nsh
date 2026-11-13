@@ -12,14 +12,14 @@ import { Avatar, Button } from "nsh/base";
 import { SystemIcon } from "../../components/SystemIcon";
 import navigationIcons from "../../config/navigation-icons.json";
 import type { MessageKey } from "../../i18n";
-import type { Navigation, RouteId } from "../../navigation";
+import { routeList, routes, type Navigation, type RouteId } from "../../router";
 import type { AppearanceStore } from "../../state/appearance";
 import { iconButtonLook } from "../../theme/look";
 import type { AccountEntry } from "../contracts/account";
 import type { UpdateIndicator } from "../contracts/updates";
 import { ButtonTooltip } from "./ButtonTooltip";
 
-const primaryRoutes: readonly RouteId[] = ["home"];
+const primaryRoutes = routeList.filter(route => route.menu === "primary").map(route => route.id);
 
 export function Rail(props: {
   appearance: AppearanceStore;
@@ -39,7 +39,7 @@ export function Rail(props: {
         tooltip={<ButtonTooltip appearance={props.appearance} testID={`${testID}-tooltip`} placement="right"
           label={t(labelKey)} />}
         style={look().style} hoverStyle={look().hoverStyle} activeStyle={look().activeStyle}
-        focusStyle={look().focusStyle} onPress={() => navigate(id)}>
+        focusStyle={look().focusStyle} onPress={() => void navigate(id)}>
         <SystemIcon name={selected() ? icon.selectedSymbol : icon.symbol}
           fallback={icon.fallback} size={iconSize()}
           color={palette().text} />
@@ -56,7 +56,7 @@ export function Rail(props: {
       style={{ width: palette().metric.railWidth, paddingBottom: palette().metric.panelInset,
         gap: palette().metric.textGap }}>
       <Each of={primaryRoutes}>
-        {(id) => routeButton(id(), `nav.${id()}`, `rail-${id()}`, () => palette().metric.railIcon)}
+        {(id) => routeButton(id(), routes[id()].titleKey, `rail-${id()}`, () => palette().metric.railIcon)}
       </Each>
       <View class="flex-1" />
       <Button testID="rail-update" accessibilityLabel={t(updateAvailable() ? "nav.updateAvailable" : "nav.update")}

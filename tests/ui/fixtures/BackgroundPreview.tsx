@@ -4,14 +4,14 @@ import { Settings } from "usher/nsh";
 import { ThemeButton } from "../../../ui/components/ThemeControls";
 import { SettingsPage } from "../../../ui/features/settings/SettingsPage";
 import { Frame } from "../../../ui/layout/Frame";
-import { createNavigation } from "../../../ui/navigation";
+import { createRouter } from "../../../ui/router";
 import { createAppearanceStore } from "../../../ui/state/appearance";
 import { spacing } from "../../../ui/theme/look";
 import fixture from "../../fixtures/background.json";
 
 function BackgroundPreview() {
   const appearance = createAppearanceStore();
-  const navigation = createNavigation();
+  const navigation = createRouter();
   navigation.navigate("settings");
   async function load() {
     const bytes = await (await fetch(fixture.dataUrl)).bytes();

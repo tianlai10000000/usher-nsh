@@ -1,13 +1,19 @@
 /** Projects shared Rust appearance settings and coordinates serialized UI requests. */
-import { batch, cleanup, colorScheme, computed, effect, locale, Picker, setColorScheme, signal } from "nsh";
-import { Settings, type SettingsSnapshot } from "usher/nsh";
+import { cleanup, colorScheme, computed, effect, locale, Picker, setColorScheme } from "nsh";
+import { createDiagnosticState } from "./diagnostics";
+import { createWindowState, type WindowSession } from "./window";
+import sessionConfig from "../config/session.json";
+import { createSettingsOwner } from "./app";
+import { settingsEffects } from "./transport";
+import type { Immutable } from "./contracts";
+import type { SettingsData } from "./settings";
 import { isLocalePreference, resolveLocale, translate, type LocalePreference, type MessageKey, type Translate } from "../i18n";
 import { defaultThemeId, isModernMac, resolveTheme, type ComponentFamily, type CustomTheme, type StyleTheme } from "../theme";
 import backgroundConfig from "../config/background.json";
 
 export type ColorMode = "system" | "light" | "dark";
-export const settingsSections = ["general", "theme", "diagnostics"] as const;
-export type SettingsSection = (typeof settingsSections)[number];
+export type SettingsSection = "general" | "theme" | "diagnostics";
+export const settingsSections = sessionConfig.sections as readonly SettingsSection[];
 export function isSettingsSection(value: string): value is SettingsSection {
   return (settingsSections as readonly string[]).includes(value);
 }
@@ -57,8 +63,8 @@ export function isComponentFamily(value: string): value is ComponentFamily {
   return value === "nsh" || value === "appkit";
 }
 
-export function createAppearanceStore() {
-  const snapshot = signal<SettingsSnapshot>({
+export function createAppearanceStore(session: WindowSession = createWindowState().session) {
+  const settingsOwner = createSettingsOwner({
     colorMode: "system",
     themeId: defaultThemeId,
     componentFamily: "nsh",
@@ -76,21 +82,27 @@ export function createAppearanceStore() {
     revision: 0,
     saved: true,
   });
-  // Kept here, not in the page, so leaving Settings and coming back shows the same section.
-  const settingsSection = signal<SettingsSection>("general");
-  const status = signal<Status>("loading");
-  const validationLabel = signal<MessageKey | undefined>();
-  const directoryProblem = signal<MessageKey | undefined>();
-  const openingDirectory = signal(false);
-  const pickingBackground = signal(false);
-  const backgroundProblem = signal<MessageKey | undefined>();
-  const backgroundOpacityDraft = signal<number | undefined>();
-  const contentTransparencyDraft = signal<number | undefined>();
+  const diagnostics = createDiagnosticState();
+  const settings = settingsOwner.view;
+  const snapshot = settings.value;
+  const settingsSection = () => session.value().section as SettingsSection;
+  const operation = () => session.value().operations.settings;
+  const status = (): Status => (operation()?.stage ?? "loading") as Status;
+  const validationLabel = () => validationLabels[operation()?.error ?? ""];
+  const directoryProblem = (): MessageKey | undefined => {
+    const error = session.value().operations.directory?.error;
+    return error ? error === "style_theme_directory_unavailable" ? "theme.directoryUnavailable" : "theme.directoryOpenFailed" : undefined;
+  };
+  const openingDirectory = () => session.value().operations.directory?.active === true;
+  const pickingBackground = () => session.value().operations.picker?.active === true;
+  const backgroundProblem = () => session.value().backgroundProblem as MessageKey | undefined;
+  const backgroundOpacityDraft = () => session.value().opacityPreview ?? undefined;
+  const contentTransparencyDraft = () => session.value().transparencyPreview ?? undefined;
   const backgroundImageId = computed(() => snapshot().backgroundImage?.id);
   const mode = () => snapshot().colorMode as ColorMode;
   const language = () => snapshot().localePreference as LocalePreference;
   const componentFamily = () => snapshot().componentFamily as ComponentFamily;
-  const appKitAvailable = isModernMac() && Settings.appKitThemeAvailable();
+  const appKitAvailable = isModernMac() && settingsEffects.appKitThemeAvailable();
   const busy = () => pickingBackground() || status() === "loading" || status() === "saving" || status() === "scanning";
   const retryable = () => status() === "load-error" || status() === "save-error" || status() === "scan-error";
   const selectedCustomTheme = () => snapshot().customThemes.find((theme) => theme.id === snapshot().themeId);
@@ -110,7 +122,7 @@ export function createAppearanceStore() {
     return validationLabel() ?? (current === "invalid" ? "status.save-error" : `status.${current}`);
   };
 
-  type Request = () => Promise<SettingsSnapshot>;
+  type Request = () => Promise<Immutable<SettingsData>>;
   type Stage = "loading" | "saving" | "scanning";
   const requestErrors = { loading: "load-error", saving: "save-error", scanning: "scan-error" } as const;
   let requestInFlight = false;
@@ -121,139 +133,114 @@ export function createAppearanceStore() {
     disposed = true;
   });
 
-  // Serialize bridge calls so an earlier load or save cannot replace a newer selection.
+  function persistedStatus(next: Immutable<SettingsData>): Status {
+    let nextStatus: Status = next.saved ? "saved" : "save-error";
+    if (next.problem === "settings_invalid_recovered") {
+      nextStatus = "recovered";
+    } else if (
+      next.problem === "settings_directory_unavailable" ||
+      next.problem === "settings_read_failed" ||
+      next.problem === "settings_backup_failed" ||
+      next.problem === "settings_unsupported_version"
+    ) {
+      nextStatus = "read-only";
+    }
+
+    return nextStatus;
+  }
+
+  // This local flag serializes the effect executor; visible operation state lives in Rust.
   async function sync(run: Request, stage: Stage = "saving"): Promise<boolean> {
     if (requestInFlight || disposed) return false;
-
     requestInFlight = true;
     lastRequest = { run, stage };
-    validationLabel.set(undefined);
-    status.set(stage);
+    let ticket: string | undefined;
     try {
+      ticket = await session.begin("settings", stage);
       const next = await run();
       if (disposed) return false;
-      if (
-        !isColorMode(next.colorMode) ||
-        !isLocalePreference(next.localePreference) ||
-        !isComponentFamily(next.componentFamily)
-      ) {
-        throw new Error("Invalid settings snapshot");
-      }
-
-      // The native store is authoritative even when it could only apply the mode in memory.
-      let nextStatus: Status = next.saved ? "saved" : "save-error";
-      if (next.problem === "settings_invalid_recovered") {
-        nextStatus = "recovered";
-      } else if (
-        next.problem === "settings_directory_unavailable" ||
-        next.problem === "settings_read_failed" ||
-        next.problem === "settings_backup_failed" ||
-        next.problem === "settings_unsupported_version"
-      ) {
-        nextStatus = "read-only";
-      }
-
-      batch(() => {
-        snapshot.set(next);
-        status.set(nextStatus);
-      });
+      if (!isColorMode(next.colorMode) || !isLocalePreference(next.localePreference) || !isComponentFamily(next.componentFamily)) throw new Error("Invalid settings snapshot");
+      await session.finish("settings", ticket, persistedStatus(next));
       return true;
     } catch (cause) {
-      if (!disposed) {
+      if (!disposed && ticket) {
         const code = cause instanceof Error ? cause.message : String(cause);
-        const label = validationLabels[code];
-        batch(() => {
-          validationLabel.set(label);
-          status.set(label ? "invalid" : requestErrors[stage]);
-        });
+        await session.finish("settings", ticket, validationLabels[code] ? "invalid" : requestErrors[stage], code, null, true);
       }
       return false;
-    } finally {
-      requestInFlight = false;
-    }
+    } finally { requestInFlight = false; }
   }
 
   async function openThemeDirectory() {
     if (openingDirectory() || disposed) return;
-    openingDirectory.set(true);
-    directoryProblem.set(undefined);
+    const ticket = await session.begin("directory", "running");
     try {
-      await Settings.openThemeDirectory();
+      await settingsEffects.openThemeDirectory();
+      if (!disposed) await session.finish("directory", ticket, "done");
     } catch (cause) {
-      if (!disposed) {
-        const code = cause instanceof Error ? cause.message : String(cause);
-        directoryProblem.set(code === "style_theme_directory_unavailable"
-          ? "theme.directoryUnavailable"
-          : "theme.directoryOpenFailed");
-      }
-    } finally {
-      if (!disposed) openingDirectory.set(false);
+      if (!disposed) await session.finish("directory", ticket, "error", cause instanceof Error ? cause.message : String(cause), null, true);
     }
   }
 
   async function chooseBackgroundImage() {
     if (pickingBackground() || busy() || disposed) return;
-    pickingBackground.set(true);
-    backgroundProblem.set(undefined);
+    const ticket = await session.begin("picker", "running");
+    await session.change({ kind: "background_problem", value: null });
     try {
       const [picked] = await Picker.pickImages({ maxDimension: backgroundConfig.pickerMaxDimension });
       if (!picked || disposed) return;
       if (picked.file.size > backgroundConfig.maxImageBytes) {
-        backgroundProblem.set("background.tooLarge");
+        await session.change({ kind: "background_problem", value: "background.tooLarge" });
         return;
       }
       const bytes = await picked.file.bytes();
-      if (!disposed) await sync(() => Settings.importBackgroundImage(picked.file.name, bytes));
+      if (!disposed) await sync(() => settings.dispatch({ type: "importBackground", name: picked.file.name, bytes }));
     } catch {
-      if (!disposed) backgroundProblem.set("background.pickFailed");
-    } finally {
-      if (!disposed) pickingBackground.set(false);
-    }
+      if (!disposed) await session.change({ kind: "background_problem", value: "background.pickFailed" });
+    } finally { if (!disposed) await session.finish("picker", ticket, "idle"); }
   }
 
   async function setBackgroundImageOpacity(value: number) {
-    backgroundOpacityDraft.set(value);
-    try { return await sync(() => Settings.setBackgroundImageOpacity(value)); }
-    finally { if (!disposed) backgroundOpacityDraft.set(undefined); }
+    const ticket = await session.preview(true, value);
+    try { return await sync(() => settings.dispatch({ type: "opacity", value })); }
+    finally { if (!disposed) await session.preview(true, null, ticket); }
   }
 
   async function setContentBackgroundTransparency(value: number) {
-    contentTransparencyDraft.set(value);
-    try { return await sync(() => Settings.setContentBackgroundTransparency(value)); }
-    finally { if (!disposed) contentTransparencyDraft.set(undefined); }
+    const ticket = await session.preview(false, value);
+    try { return await sync(() => settings.dispatch({ type: "transparency", value })); }
+    finally { if (!disposed) await session.preview(false, null, ticket); }
   }
 
-  // Loading also starts the diagnostic logger at the saved level. Starting it again for the
-  // same folder only changes the filter, so remounts never create a second writer.
   effect(() => {
-    void sync(() => Settings.startDiagnostics(), "loading");
+    const synchronization = settings.status();
+    const incoming = snapshot();
+    if (disposed) return;
+    const stage = synchronization === "live" ? persistedStatus(incoming) : "load-error";
+    if (synchronization !== "connecting" && synchronization !== "disposed") void session.change({ kind: "observe_settings", stage });
   });
 
-  // Export runs beside the settings requests: it never blocks or is blocked by a save.
-  const exportState = signal<{ kind: "idle" | "running" | "done" | "error"; text?: MessageKey; name?: string }>({
-    kind: "idle",
-  });
+  // The logger is idempotent; request feedback and the result are window-owned.
+  effect(() => { void sync(() => settings.dispatch({ type: "startDiagnostics" }), "loading"); });
+
+  const exportState = () => {
+    const state = session.value().operations.export;
+    const code = `diagnostics.error.${state?.error}` as MessageKey;
+    return { kind: (state?.stage ?? "idle") as "idle" | "running" | "done" | "error",
+      name: state?.value ?? undefined,
+      text: state?.error ? code in diagnosticErrorKeys ? code : "diagnostics.error.diagnostics_export_failed" as MessageKey : undefined };
+  };
   async function exportDiagnostics(days: number) {
-    if (exportState().kind === "running") return;
-    exportState.set({ kind: "running" });
+    if (exportState().kind === "running" || disposed) return;
     const end = new Date();
     const start = new Date(end.getTime() - (days - 1) * 86_400_000);
-    const day = (date: Date) =>
-      `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
-    try {
-      const name = await Settings.exportDiagnostics(day(start), day(end));
-      if (!disposed) exportState.set({ kind: "done", name });
-    } catch (cause) {
-      const code = cause instanceof Error ? cause.message : String(cause);
-      const key = `diagnostics.error.${code}` as MessageKey;
-      if (!disposed) {
-        exportState.set({ kind: "error", text: key in diagnosticErrorKeys ? key : "diagnostics.error.diagnostics_export_failed" });
-      }
-    }
+    const day = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+    await session.exportDiagnostics(day(start), day(end));
   }
   effect(() => setColorScheme(mode()));
 
   return {
+    state: settings,
     mode,
     language,
     componentFamily,
@@ -264,16 +251,16 @@ export function createAppearanceStore() {
     backgroundImage: () => snapshot().backgroundImage,
     backgroundImageId,
     backgroundImageOpacity: () => backgroundOpacityDraft() ?? snapshot().backgroundImageOpacity,
-    previewBackgroundImageOpacity: (value: number) => backgroundOpacityDraft.set(value),
+    previewBackgroundImageOpacity: (value: number) => void session.preview(true, value),
     setBackgroundImageOpacity,
     contentBackgroundTransparency: () => contentTransparencyDraft() ?? snapshot().contentBackgroundTransparency,
-    previewContentBackgroundTransparency: (value: number) => contentTransparencyDraft.set(value),
+    previewContentBackgroundTransparency: (value: number) => void session.preview(false, value),
     setContentBackgroundTransparency,
     chooseBackgroundImage,
-    clearBackgroundImage: () => sync(() => Settings.clearBackgroundImage()),
+    clearBackgroundImage: () => sync(() => settings.dispatch({ type: "clearBackground" })),
     pickingBackground,
     backgroundProblem,
-    reportBackgroundLoadFailure: (failed: boolean) => backgroundProblem.set(failed ? "background.loadFailed" : undefined),
+    reportBackgroundLoadFailure: (failed: boolean) => void session.change({ kind: "background_problem", value: failed ? "background.loadFailed" : null }),
     accent: () => snapshot().accent ?? null,
     customThemes: () => snapshot().customThemes,
     styleThemes: () => snapshot().styleThemes,
@@ -289,26 +276,30 @@ export function createAppearanceStore() {
     retryable,
     directoryProblem,
     openingDirectory,
-    choose: (next: ColorMode) => sync(() => Settings.setColorMode(next)),
-    chooseTheme: (id: string) => sync(() => Settings.setTheme(id)),
-    chooseComponentFamily: (family: ComponentFamily) => sync(() => Settings.setComponentFamily(family)),
-    setShowStatusBar: (visible: boolean) => sync(() => Settings.setShowStatusBar(visible)),
-    setSidebarDocked: (docked: boolean) => sync(() => Settings.setSidebarDocked(docked)),
-    chooseLanguage: (preference: LocalePreference) => sync(() => Settings.setLocale(preference)),
+    choose: (next: ColorMode) => sync(() => settings.dispatch({ type: "colorMode", value: next })),
+    chooseTheme: (id: string) => sync(() => settings.dispatch({ type: "theme", value: id })),
+    chooseComponentFamily: (family: ComponentFamily) => sync(() => settings.dispatch({ type: "componentFamily", value: family })),
+    setShowStatusBar: (visible: boolean) => sync(() => settings.dispatch({ type: "statusBar", value: visible })),
+    setSidebarDocked: (docked: boolean) => sync(() => settings.dispatch({ type: "sidebarDocked", value: docked })),
+    chooseLanguage: (preference: LocalePreference) => sync(() => settings.dispatch({ type: "locale", value: preference })),
     diagnosticLevel: () => snapshot().diagnosticLevel as DiagnosticLevel,
-    diagnosticProblem: () => snapshot().diagnosticProblem ?? null,
-    diagnosticDropped: () => snapshot().diagnosticDropped,
-    chooseDiagnosticLevel: (level: DiagnosticLevel) => sync(() => Settings.setDiagnosticLevel(level)),
+    diagnosticProblem: () => diagnostics.value().problem ?? null,
+    diagnosticDropped: () => Number(diagnostics.value().dropped),
+    chooseDiagnosticLevel: (level: DiagnosticLevel) => sync(() => settings.dispatch({ type: "diagnosticLevel", value: level })),
     exportState,
     exportDiagnostics,
     settingsSection,
-    setAccent: (accent: string | null) => sync(() => Settings.setAccent(accent)),
-    saveTheme: (theme: CustomTheme) => sync(() => Settings.saveCustomTheme(theme)),
-    cloneStyleTheme: (id: string, name: string) => sync(() => Settings.cloneStyleTheme(id, name)),
-    removeTheme: (id: string) => sync(() => Settings.removeCustomTheme(id)),
+    setSettingsSection: (value: SettingsSection) => void session.change({ kind: "section", value }),
+    setAccent: (accent: string | null) => sync(() => settings.dispatch({ type: "accent", value: accent })),
+    saveTheme: (theme: CustomTheme) => sync(() => settings.dispatch({ type: "saveTheme", value: theme })),
+    cloneStyleTheme: (id: string, name: string) => sync(() => settings.dispatch({ type: "cloneTheme", id, name })),
+    removeTheme: (id: string) => sync(() => settings.dispatch({ type: "removeTheme", value: id })),
     openThemeDirectory,
-    rescanThemes: () => sync(() => Settings.rescanThemes(), "scanning"),
-    retry: () => lastRequest && sync(lastRequest.run, lastRequest.stage),
+    rescanThemes: () => sync(() => settings.dispatch({ type: "rescanThemes" }), "scanning"),
+    retry: async () => {
+      if (["error", "closed", "cancelled"].includes(settings.status())) await settingsOwner.connect();
+      return lastRequest && sync(lastRequest.run, lastRequest.stage);
+    },
   };
 }
 

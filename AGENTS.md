@@ -7,6 +7,9 @@
 | [开发与贡献规范](CONTRIBUTING.md) | 高内聚低耦合、单一职责、扩展性、英文代码注释、状态与平台边界、验证和交付要求。 |
 | [项目架构](architecture.md) | 模块职责、依赖边界、状态归属、数据流与原生集成。 |
 | [分批实施清单](scaffolding.md) | 批次、任务编号、完成状态与验收缺口。 |
+| [通用状态管理方案](docs/state-management.md) | 独立 `usher-state` crate、可替换后端接口、NSH / TSX 适配边界、全部跨页面共享数据迁移清单与分批计划。SM1 至 SM5 已完成应用服务交付，含更新单执行者契约、隔离目录中的 macOS 多窗口 / HMR；SM6 部分完成，审计与平台 / 成本结果见 [验收审计](docs/state-audit.md)，真实更新桥接 / UI 仍按更新方案推进。 |
+| [独立路由模块方案](docs/routing.md) | 独立 `usher-router`、匹配库选型、`ui/pages/` 集中页面注册、导航与状态边界、分批验收。RT1 至 RT3 已实施，RT4 深链接、原生导航和目录升级 / HMR 扩展仍待办。 |
+| [测试方案](docs/testing.md) | GitHub 实践依据、单元与契约测试、mock 数据、真实桥接 E2E、验证命令及平台验收。状态核心、独立 `usher-test-support`、设置应用集成、真实订阅桥接与 TS 投影测试及命令已实现；单测和 crate 契约就近，应用集成及 E2E 集中，其余按批次推进。 |
 | [应用更新方案](docs/update.md) | 更新模块的决策、两种更新路径、发布与客户端流程、模块边界和待验证项。更新逻辑调整时先改该文档，实施以它为准。 |
 | [English README](README.md) | 项目概况、运行、主题、日志、打包与验证。 |
 | [中文 README](README.zh.md) | 与英文 README 对应的中文使用说明。 |

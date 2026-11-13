@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "appId": "com.tianlai10000000.usher.nsh.acceptance",
+  "secondaryId": "state-acceptance-secondary",
+  "windowSize": {
+    "width": 800,
+    "height": 600
+  },
+  "timeoutSeconds": 90,
+  "conditionTimeoutMs": 15000,
+  "preview": 45,
+  "section": "theme",
+  "colorMode": "dark",
+  "marker": "USHER_NATIVE_EVIDENCE:",
+  "reloadCheckpointKey": "usher.acceptance.reload.checkpoint"
+}

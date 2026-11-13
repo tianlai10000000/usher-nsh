@@ -4,6 +4,7 @@
   "version": "0.1.0",
   "build": 1,
   "rust": ".",
+  "schemes": ["usher"],
   "theme": "ui/theme/builtin/default/theme.json",
   "updater": {
     "github": "tianlai10000000/usher-nsh",

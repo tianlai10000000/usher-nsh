@@ -11,7 +11,7 @@ import { Button } from "nsh/base";
 import { SystemIcon } from "../../components/SystemIcon";
 import navigationIcons from "../../config/navigation-icons.json";
 import { contentBackgroundColor, menuItemLook } from "../../theme/look";
-import { routes, type Navigation, type RouteId } from "../../navigation";
+import { routes, routeList, type Navigation, type RouteId } from "../../router";
 import type { AppearanceStore } from "../../state/appearance";
 
 export function SecondaryMenu(props: {
@@ -36,8 +36,9 @@ export function SecondaryMenu(props: {
         activeStyle={look().activeStyle}
         focusStyle={look().focusStyle}
         onPress={() => {
-          navigate(id);
-          props.onNavigate?.();
+          void navigate(id).then(result => {
+            if (result === "committed" || result === "duplicated") props.onNavigate?.();
+          });
         }}>
         <SystemIcon name={selected() ? icon.selectedSymbol : icon.symbol}
           fallback={icon.fallback} size={palette().metric.controlIcon + 2}
@@ -68,8 +69,7 @@ export function SecondaryMenu(props: {
         borderWidth: framed() ? palette().metric.borderWidth : 0,
         borderColor: palette().shellBorder,
       }}>
-      {item("home")}
-      {item("settings")}
+      <Each of={routeList.filter(route => route.menu !== null)}>{route => item(route().id)}</Each>
     </View>
   );
 }

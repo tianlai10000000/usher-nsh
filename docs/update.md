@@ -226,9 +226,73 @@ flowchart LR
 
 crate 保持无 I/O、无 NSH 依赖：输入事件，输出状态与效果。网络与文件操作由调用方执行后把结果作为事件送回，沿用现有的票据机制丢弃迟到回执。
 
+#### 状态机设计
+
+**一个状态机，两条路径共用状态与事件，差异放在策略里。** 阶段名不变（`Idle`、`Checking`、`Checked`、`Downloading`、`Verifying`、`ReadyToInstall`、`Installing`、`AwaitingFirstLaunch`、`InstallFailed`），每个候选带 `Kind`（`Package` 或 `Shell`）。代码包路径的"安装"就是"重启进入新包"，整包路径的"安装"是替换并重启。
+
+| 旧 | 新 |
+| --- | --- |
+| `Outcome::InAppUpdate` | 拆成 `PackageUpdate(Candidate)` 与 `ShellUpdate(Candidate)` |
+| `Outcome::ManualUpgrade { reason }` | 保留；原因为 `ShellTooOld`（见下）与 `Environment`（`canInstall` 为 false，给手动下载链接）；删除 `ReleasePolicy`、`Unverified` |
+| `Channel`、`Event::ChannelChanged`、`Channel::accepts` | 删除。仅保留"拒绝带预发布后缀的候选"的防御性校验 |
+| `Candidate.min_version`、`Candidate.verified` | 删除 |
+| `Failure::Signature` | 删除，由下面的五类取代 |
+| `Event::Cancel`、`Effect::CancelRunning`、下载中取消 | **删除。** NSH 没有取消接口（V12）：更新操作串行，进行中再次调用返回 `an update operation is already in progress`，`updater.d.ts` 里没有 cancel 或 abort。保留一个调不到的取消事件会让状态机表达做不到的事 |
+
+**失败分类**（用户决定，分得细以便排查；每一类对应面板上的一种处理。共六类，`Busy` 是选项 B 之后新增的）：
+
+| 类别 | 含义 | 重试有用吗 | 面板处理 | 日志级别 |
+| --- | --- | --- | --- | --- |
+| `Network` | 连不上、超时、连接被中断 | 有用 | 重试 | `WARN` |
+| `Busy` | NSH 报 `an update operation is already in progress`：更新操作串行，另一个还没结束（窗口重建撞上进行中的操作时会出现） | 有用，但要等 | 提示"另一个更新操作进行中，请稍后"，不自动重试 | `WARN` |
+| `Rejected` | NSH 拒绝了包：签名、应用 ID、构建号不新于已接受的、运行时太旧、哈希或大小不符 | **没用** | 此版本无法安装；同一版本失败后后台不再提示 | `ERROR` |
+| `Disk` | 写临时文件或替换应用失败 | 视情况 | 提示检查磁盘与目录权限 | `ERROR` |
+| `Cancelled` | 用户在应用侧放弃（例如关闭面板、退出应用时的等待），**不是 NSH 取消** | 无需 | 回到可重试状态，不计入失败次数 | `INFO` |
+| `Unknown` | 以上都不是 | 不确定 | 重试，并建议导出日志 | `ERROR` |
+
+`Rejected` 内部无法由状态机再细分，因为 NSH 只返回一条消息。细分原因放在日志里（见"更新日志"），不影响状态机逻辑。
+
+**失败次数的计法**：只有 `Rejected`、`Disk`、`Unknown` 计入某版本的失败次数（它们重试大概率仍失败，达到上限后后台不再提示）。`Network`、`Busy` 是暂时性的，`Cancelled` 不是失败，三者都**不计入**，否则离线或窗口重建两次就会让一个正常的更新被永久压下。
+
+**外壳过旧**（D9 的客户端一半）。检查输入带两个版本：`shell`（`shellInfo().version`，安装的应用外壳）与 `running`（当前运行的版本，运行着代码包时高于外壳）。判断是纯函数：
+
+- 候选版本不高于 `running`：已是最新；
+- 候选带代码包，且候选与 `shell` 的主版本、次版本都相同：`PackageUpdate`；
+- 其余，即候选没有代码包，或主次版本与外壳不同：`ShellUpdate`（面板写"需要更新应用"）。
+
+**失败记忆**（防止反复提示同一个失败的更新）。状态机记录每个版本的失败次数；某版本失败次数达到上限后，**后台检查不再提示它**，手动检查仍会重试。上限是构造参数，数值放配置（第 9 节），不写在逻辑里。
+
+**不取消、不交接**（用户决定，选项 B）。NSH 不能取消更新操作（V12），所以应用层也不提供取消，也不提供执行者交接：
+
+- `src/update_service/` 中以下内容删除：`Command::Cancel`、`Command::Channel`、`reset_after_stop`、`Model.recovery` 与 `Model.draining`、`Settlement`、`Recovery`、`revoke`、`settle`、`reconcile`、`Execution::Draining`、`Execution::RecoveryRequired`、`Error::RecoveryRequired`。它们存在的全部理由是"撤销旧身份后确认原操作已停止"，而这个确认在 NSH 下做不到。
+- 保留单执行者的核心：`acquire`、`claim`、`progress`、`complete`、`Lease`、`Claim`、票据与迟到回执拒绝、`close`。
+- 执行者持有租约直到服务关闭。窗口销毁时调用 `close`，`Machine` 不重置；重建后的服务从 `Idle` 开始（`UpdateService::new` 已要求 `phase == Idle`）。**取舍：** 进行中的 NSH 操作撞上窗口重建时，状态机会丢失它，而 NSH 的操作仍在运行，新服务发起检查会收到 `an update operation is already in progress`。这在生产里很少发生（HMR 与多窗口关闭重开主要出现在开发期）。已落盘的 `next.nshpkg` 不受影响，下次启动 NSH 自己处理。
+
+**更新日志**（用户决定：错误详情要记录到日志，日志开启才写）。纯逻辑 crate 不做 I/O，所以状态机只**产生**日志记录，由调用方写出：
+
+- 每次状态变化与每次失败产生 `Effect::Log(Record)`，`Record` 含级别、事件名和结构化字段（版本、种类、失败类别、票据、已失败次数），不含自由文本。字段是类型化的，可以直接用 `cargo test` 断言"某个失败产生某条记录"，不需要真的写日志。
+- 桥接（批次 4）执行 `Effect::Log`，调用日志 crate 写出；日志级别关闭时日志 crate 自己丢弃，不需要状态机判断。
+- NSH 返回的错误消息是自由文本，由桥接作为 `detail` 字段与 `reason` 一并写入：`reason` 用一张映射表把已知的 NSH 消息归为更细的原因（如 `signature`、`build_not_newer`、`runtime_too_old`），映射不上记 `unclassified`。**`reason` 只进日志，不影响状态机**，所以 NSH 升级后消息文字变化只会让 `reason` 变成 `unclassified`，应用行为不变，排查时看 `detail`。
+- 脱敏：用户决定**不做过多过滤，避免排查困难**。只做一项：写日志前把用户主目录前缀（`$HOME`）替换成 `~`。其余字段与消息保留原样。这与现有日志模块的按字段名脱敏（`token`、`secret`、`body`、`content` 等）不同，**拆分日志 crate 时需要重新决定脱敏范围**（见 8.6）。
+
+**下载策略**（D4、D10）。构造参数 `auto_check` 与路径共同决定：开启时代码包直接产生 `StartDownload`，不需要用户操作，整包只产生 `Notify`；关闭时后台检查不发生，手动检查的结果都只产生 `Notify`，由用户确认后才下载。
+
 ### 8.3 桥接层：`src/update_bridge.rs`
 
-持有进程内唯一的状态机实例、DTO 转换和事件入口；把 `auto_check` 偏好委托给 `SettingsStore`，不另存一份。更新源来自构建，不是偏好。业务错误返回稳定错误码，界面翻译。设置新增 `[updates]` 段，只含 `auto_check`，缺省时不写入文件，沿用现有的 schema 迁移与保存规则。
+提供 DTO 转换和事件入口，状态机实例由应用装配在同一状态作用域内唯一持有；把 `auto_check` 偏好委托给 `SettingsStore`，不另存一份。更新源来自构建，不是偏好。业务错误返回稳定错误码，界面翻译。设置新增 `[updates]` 段，只含 `auto_check`，缺省时不写入文件，沿用现有的 schema 迁移与保存规则。
+
+共享状态接入遵循 [通用状态管理方案](state-management.md)：业务状态机继续留在 `usher-update`，应用装配按作用域持有实例，桥接负责动作适配和订阅投递，复用独立 `usher-state` crate 的后端无关接口。watch 仅为可选内部实现，更新模块不得依赖其通道类型；TSX 更新状态通过项目门面和集中的 NSH 响应式适配访问，菜单、面板与设置分区不各自保存状态副本。不得把更新阶段、下载策略或 `nsh/updater` 调用移入通用 crate。多窗口只订阅同一状态，效果由单一执行者领取；沿用界面侧调用 NSH 更新接口的边界。通用 crate 与 SM1 至 SM4 已实施。
+
+#### SM5 兼容接入边界
+
+本轮先实施应用层 `src/update_service/`，适配当前 `Machine`，不改旧领域 API、设置 schema 或落盘格式。更新批次 3 的领域重构、批次 4 的 NSH 桥接 / 自动检查设置及批次 5 的产品界面仍按原顺序交付；本批不启用网络下载、安装或后台定时器。协调器通过 Rust 公共契约验证第二领域共享发布，后续桥接复用同一实例，不再创建第二个 Machine。
+
+- 应用注册表以宿主设置服务的 StoreId 为作用域；同目录的消费方借用同一更新服务，不同临时目录独立。无数据目录的会话由所属装配持有并显式关闭。
+- 纯领域转换在副本中计算，快照成功提交后才更换内部模型和效果队列；发布失败不丢任务、不推进票据、不允许执行候选效果。订阅只含状态和队列数量，不广播效果。
+- 单一执行租约与单一在途领取均由服务签发，绑定 StoreId、租约代次、效果 ID 和原领域票据。重复领取返回空；普通消费方只能提交用户命令，不能伪造网络回执。
+- 撤销执行者立即拒绝旧进度 / 回执；有在途操作时进入 draining，直到原执行器确认 Promise 已结束或操作确已停止才开放新租约。当前 NSH 无取消 API，不能以超时、组件卸载或租约失效代替停止确认。
+- 安装交接结果未知时进入 recovery_required，禁止重领、重试和新租约；只有可信宿主持有同一 Claim 并确认未安装或已交接才解除，迟到的旧恢复查询不能解除新操作的屏障。NSH 0.5.0 没有通用在途任务查询 / 取消 API，因此接入层不得自动确认；查询与重启恢复仍由更新批次 4 / 5 实施。
+- 本批 mock 执行器留在更新集成测试，使用可控完成顺序、隔离设置目录及 `usher-test-support`；不会访问真实更新源、密钥或应用安装位置。
 
 ### 8.4 界面层：`ui/features/updates/`
 
@@ -245,6 +309,16 @@ crate 保持无 I/O、无 NSH 依赖：输入事件，输出状态与效果。�
 ### 8.5 发布工具
 
 不新建 crate。外壳输入检查与发布门禁写成 `scripts/release/` 下的脚本，由 `release_gate.py` 与工作流调用，测试放在 `scripts/tests/`。
+
+### 8.6 日志 crate（待实施，等批次 3 的并行改动结束）
+
+用户要求把日志模块拆成独立 crate，让程序任何位置都能输出或记录日志。当前实现是 `src/diagnostics.rs`，**不能原样搬出**，原因有两个：
+
+1. **它依赖应用根 crate。** 另一条并行工作在 `Shared` 里加了 `reporting` 字段与对 `crate::diagnostic_state::StatusService` 的依赖，用来把健康状态与丢弃计数发布到状态订阅。独立 crate 不能依赖根 crate，所以必须把它反过来：日志 crate 暴露一个回调或 trait（例如"状态变化观察者"），由应用根注入实现。
+2. **它的脱敏规则与"少过滤"的要求冲突。** 现在的 `redact` 与 `redact_text` 按字段名（`token`、`secret`、`body`、`content`、`email` 等）替换值，更新日志里这类字段名会被抹掉。用户要求尽量不做过滤，拆分时保留哪些：**用户决定只保留凭据类**，即字段名含 `token`、`secret`、`authorization`、`bearer`、`password`、`apikey`、`credential` 的值，以及自由文本里的 `Authorization:` 与 `bearer` 令牌；`body`、`content`、`email`、`cookie` 等字段不再替换。另外把用户主目录前缀替换成 `~`。
+3. **TSX 仍只能上报短标识。** 这条是 [architecture.md](../architecture.md) 第 8 节与 05.01 的既有约束，不因拆 crate 改变；NSH 的错误详情经 Rust 桥接写入，不经 TSX。
+
+目标是：日志 crate 无 NSH 依赖、无窗口依赖，提供初始化、写入、级别设置、导出，以及上述观察者接口；根 crate 保留 `diagnostic_state` 适配与 `settings_bridge` 的 `log_event`。**实施前提：** 并行的状态管理与更新界面改动已提交或结束，否则会与它们对 `diagnostics.rs` 的未提交改动冲突。
 
 ## 9. 配置
 
@@ -287,7 +361,9 @@ crate 保持无 I/O、无 NSH 依赖：输入事件，输出状态与效果。�
 
 ## 12. 本地更新模拟（D14）
 
-修改更新逻辑后，用一条命令在本机把"检查、下载、校验、待重启、替换或重启"走完，不碰 GitHub，不用真实密钥。它是回归验证的入口，更新流程变化时，场景与断言要同步更新。
+本地模拟用于更新流程回归，不访问 GitHub 或真实密钥。当前可执行范围是预置代码包的校验、启动、健康晋升和回滚；检查、下载与整包替换仍由 pending 场景跟踪。更新流程变化时，场景与断言同步更新。
+
+当前实施批次（SM6 本机续验）：将模拟器改为每轮唯一测试应用 ID，旧壳与新代码包使用相同测试身份和一次性测试密钥；每个场景的数据、缓存和 saved-state 均位于独立临时根。通过系统目录 API 为测试 ID 创建专属链接，不改 HOME，拒绝覆盖现有目录或悬空链接。先停止并确认测试进程退出，再删除本轮链接和临时树；停止失败时保留隔离并报告失败。源码、应用和密钥在整轮结束后清理，构建仅复用 Cargo 缓存，执行日志与 JSON 证据保留。`serve` 由脚本启动及拥有测试应用，Ctrl+C 后统一清理，不再输出可脱离隔离生命周期的手工启动命令。有效场景完整执行与 pending 分开统计；仅有 pending 的运行不得作为验证成功。隔离与清理单测位于 scripts/tests/test_update_sim.py，共享链接保护逻辑复用于发布路由验收。逐场景状态、进程日志和清理证据保留在 target/test-reports/update-sim-*/；测试密钥不进入报告。2026-11-13 在本机 macOS arm64 最终完整运行通过 4 项、失败 0 项、pending 7 项，报告为 target/test-reports/update-sim-d8uds6dq/report.json；核对 16 个唯一隔离路径，残留为 0。真实 SIGTERM 清理另外验证通过，中断运行不计入成功数量。
 
 ### 12.1 命令
 
@@ -295,8 +371,8 @@ crate 保持无 I/O、无 NSH 依赖：输入事件，输出状态与效果。�
 scripts/update-sim/sim.sh list                  # 列出场景
 scripts/update-sim/sim.sh run <场景>            # 运行一个场景并断言结果
 scripts/update-sim/sim.sh run --all             # 运行全部场景
-scripts/update-sim/sim.sh serve <场景>          # 只起模拟更新源，手动打开应用观察界面
-scripts/update-sim/sim.sh clean                 # 删除 .nsh/update-sim/
+scripts/update-sim/sim.sh serve <场景>          # 启动隔离测试应用与更新源，Ctrl+C 后清理
+scripts/update-sim/sim.sh clean                 # 删除旧 .nsh/update-sim/ 缓存，保留验收报告
 ```
 
 ### 12.2 工作方式
@@ -304,17 +380,17 @@ scripts/update-sim/sim.sh clean                 # 删除 .nsh/update-sim/
 | 部分 | 做法 |
 | --- | --- |
 | 更新源 | 本机 `http://127.0.0.1:<端口>`，用 Python 标准库的 HTTP 服务器提供静态文件，可按场景限速、中途断开、篡改响应；不新增依赖 |
-| 密钥 | 每次运行用 `nsh keygen` 现场生成一次性的清单密钥、根密钥与发布密钥，`nsh certify` 签发证书，放在 `.nsh/update-sim/`。**不读取任何真实密钥**，该目录已被 `.gitignore` 忽略 |
-| 被测应用 | 用 `nsh package` 打出"旧版"应用，`updater.url` 指向本机更新源。编译约 5 分钟，所以按外壳输入的哈希缓存，外壳没变时不重打 |
-| 新版产物 | 用 `nsh publish` 签 `.nshpkg`（不到 1 秒），`nsh update-manifest` 写清单与签名 |
-| 隔离 | 每个场景用独立的临时 `HOME`，数据目录是其下的 `Library/Application Support/<app id>/updates/`，不触碰真实数据 |
+| 密钥 | 每次运行用 `nsh keygen` 现场生成一次性的清单密钥、根密钥与发布密钥，`nsh certify` 签发证书，放在本轮临时树，结束后删除。**不读取任何真实密钥** |
+| 被测应用 | 用 `nsh package` 打出"旧版"应用，`updater.url` 指向本机更新源。每轮生成唯一测试 ID，旧壳与新代码包身份相同，测试副本移除公开 scheme；只复用 target/update-sim-build 的 Cargo 产物，临时应用不跨轮复用 |
+| 新版产物 | 用 `nsh publish` 签 `.nshpkg`，`nsh update-manifest` 写清单与签名 |
+| 隔离 | 不改 HOME。系统 API 提供 data/cache/library 位置，只在唯一测试 ID 的命名空间创建链接，指向每个场景的临时数据根；已有路径或悬空链接均拒绝。进程确认退出后删除拥有的链接和数据；停止失败或路径归属变化则保留隔离并失败 |
 | 判定 | 对每个场景检查应用数据目录的文件状态（`next`、`trying`、`current`、`trust/`）和应用日志，不靠截图 |
 
 ### 12.3 场景与 mock 数据
 
 场景由 `scripts/update-sim/scenarios/*.json` 定义，每个文件描述清单内容、更新源行为、应用启动动作和预期。新增场景只加文件，不改脚本。
 
-场景有两种状态。**有效**的场景走预置 `next.nshpkg` 的启动路径，应用不需要检查更新就能触发，已在本机运行通过。**`pending`** 的场景需要应用自己调用 `checkForUpdate` 或 `checkForPackage`，而这些调用要到批次 4、5 才有；它们在 `run --all` 里显示为 SKIP，不计入通过，也不影响退出码。批次 5 完成后删除场景文件里的 `pending` 字段并跑通，才算验收。
+场景有两种状态。**有效**的场景走预置 `next.nshpkg` 的启动路径，应用不需要检查更新就能触发，已在本机运行通过。**`pending`** 的场景需要应用自己调用 `checkForUpdate` 或 `checkForPackage`，而这些调用要到批次 4、5 才有；它们在 `run --all` 里显示为 pending，不计入通过；必须至少执行一个有效场景且所有执行场景成功，命令才返回 0。只运行 pending 场景返回非零。批次 5 完成后删除场景文件里的 `pending` 字段并跑通，才算验收。
 
 | 场景 | 模拟什么 | 预期 |
 | --- | --- | --- |
@@ -333,19 +409,21 @@ scripts/update-sim/sim.sh clean                 # 删除 .nsh/update-sim/
 ### 12.4 范围与限制
 
 - 当前只有 4 个场景有效，7 个是 `pending`（见 12.3）。有效场景覆盖的是 NSH 引擎启动时的校验、试运行与回滚；检查、下载、取消等应用侧行为要等批次 4、5。
-- 模拟覆盖 NSH 更新接口与应用数据目录的行为，**不覆盖 UI**：按钮状态与面板由界面用例（`tests/ui/`）覆盖，批次 5 加入。`serve` 命令用来手动观察界面。
+- 模拟覆盖 NSH 更新接口与应用数据目录的行为，**不覆盖 UI**：按钮状态与面板由界面用例（`tests/ui/`）覆盖，批次 5 加入。`serve` 命令由脚本拥有应用进程并提供人工观察会话，Ctrl+C / SIGTERM 后统一停止、清理；结果记录为 observed，不计作自动验收通过。
 - 整包替换在模拟里替换的是临时目录里的 `.app`，不碰真实安装。Gatekeeper 与隔离标记无法在本机模拟（V5），仍需真机验证。
 - 它证明不了真实 GitHub Release、真实密钥与证书有效期的行为。
 - 与真实更新的差异：更新源是 HTTP 而不是 HTTPS（NSH 只对本机地址放行），其余校验路径相同。
-- 缓存的"旧版"应用只在外壳输入变化时失效；改了 `updater` 配置结构或 NSH 版本时要手动 `clean`。
+- 每轮重新构建唯一身份的旧版应用，只复用 Cargo 编译缓存，不复用旧应用或测试密钥。clean 保留报告及停止失败时保留的隔离树，后者须先确认进程已退出再人工处理。
 
 ## 13. 实施批次
+
+通用状态管理的前置关系见 [状态管理实施计划](state-management.md#9-分批实施计划)：本方案批次 3 的纯业务改造可独立进行；批次 4 的共享状态桥接以 SM1 至 SM3 为前置，批次 5 的界面投影以 SM4 为前置，第二领域复用与效果单执行者在 SM5 验收。此依赖不改变下表批次 3、4、5 的串行顺序；本轮只补设计，不推进代码状态。
 
 | 批次 | 内容 | 状态 |
 | --- | --- | --- |
 | 1 | 验证 V1 至 V7，回写本文 | 已完成大部分，V5、V6 部分项和 V8、V9 留待后续 |
-| 2 | 信任与发布（以首次发布 `0.1.0` 为目标，D13）：离线根密钥（由维护者生成）、`nsh.json` 的 `updater` 配置、外壳输入门禁、门禁只接受正式版标签、流水线产出 `.nshpkg` 与清单 | **已完成，待真实发布验证**。密钥已生成并写入 `nsh.json`，三个 Secret 已配置，门禁、外壳输入检查、清单检查器、`make-update-files.sh`、`rehearsal-sign.sh` 与 `release.yml` 已改并在本机实跑通过；流水线从未在 GitHub 上运行。**阻塞项：仓库私有（未登录访问返回 404），更新器无法匿名读取更新**，见 4.4 |
-| 3 | 逻辑层：删除 `signature.rs`、`usher-update-tool`、`trusted_keys.txt`，改造状态机，更新 crate 测试 | 待办 |
+| 2 | 信任与发布（以首次发布 `0.1.0` 为目标，D13）：离线根密钥（由维护者生成）、`nsh.json` 的 `updater` 配置、外壳输入门禁、门禁只接受正式版标签、流水线产出 `.nshpkg` 与清单 | **演练已在 GitHub 上通过，真实发布待做**。密钥已生成并写入 `nsh.json`，三个 Secret 已配置。2026-11-12 在 GitHub 上手动运行 Release 演练：`gate`、`verify`、两个变体的 `build-macos`、`rehearse` 全部通过，`Sign and publish` 按设计跳过；`rehearse` 的三种损坏（换归档、去掉签名、与外壳结论不符）都被拒绝。**仍未验证，只有真实发布才会暴露**：三个真实 Secret 是否配对，`release` 环境、草稿转正式、`--latest`、构建来源证明。**代码包路径（`nsh publish`、`nsh verify`、换根被拒）没有在 CI 上执行过**，因为没有标签，`shell_changed=true`，只在本机跑过。更新源可见性见 4.4（仓库私有，更新器暂时读不到更新） |
+| 3 | 逻辑层：删除 `signature.rs`、`usher-update-tool`、`trusted_keys.txt`，改造状态机（设计见 8.2），更新 crate 测试；另含日志 crate 拆分（8.6） | **进行中**（并行会话已结束；决定选项 B）。以下是此前暂停时的记录：串行顺序（3、4、5 依次做）与 `min_version` 删除已决定。仓库里已有并行工作依赖 `Machine` 的旧接口：`src/update_service/`（应用层协调器）、`usher-state`、`update` 集成夹具，以及未提交的 `diagnostics.rs` 改动；批次 3 会让它们编译不过，所以等其完成后一并对齐。设计已定稿，不需要再确认 |
 | 4 | 桥接：`update_bridge.rs`、`[updates]` 设置（仅 `auto_check`）、稳定错误码 | 待办 |
 | 5 | 界面：`ui/features/updates/`、布局契约扩展、`Rail.tsx` 状态、文案与界面用例 | 待办 |
 | 6 | 文档与验收：同步 architecture、scaffolding、deploy、README，真机验收 | 待办 |
@@ -356,9 +434,14 @@ scripts/update-sim/sim.sh clean                 # 删除 .nsh/update-sim/
 
 | 日期 | 变更 |
 | --- | --- |
+| 2026-11-12 | 对接通用状态管理设计：通用层独立为 `usher-state`，更新业务状态机保留在 `usher-update`；明确应用作用域、单执行者和 SM1 至 SM5 的实施前置关系，仅更新文档。 |
 | 2026-11-12 | 建立本文：记录 D1 至 D12、第 3 至 12 节方案与 V1 至 V7 待验证项。 |
 | 2026-11-12 | 新增第 12 节本地更新模拟（D14）：命令、工作方式、11 个场景与限制。4 个场景已在本机通过，7 个标为 `pending`，等批次 4、5 的检查逻辑。 |
+| 2026-11-13 | 决定选项 B：删除取消与执行者交接（`update_service` 中的 `Cancel`、`Settlement`、`Recovery`、`revoke`、`settle`、`reconcile` 等），保留单执行者领取；脱敏范围定为只保留凭据类；并行会话已结束，批次 3 恢复。 |
+| 2026-11-13 | 批次 3 状态机设计补充：失败分五类并各自对应面板处理与日志级别；删除 `Cancel` 事件（NSH 无取消接口，V12）；新增更新日志设计（状态机产生记录、桥接写出、只做 `$HOME` 替换为 `~`）；新增 8.6 日志 crate 拆分要求。发现并行会话已在 `Machine` 外加了 `src/update_service/`，批次 3 与日志拆分等其结束后实施。 |
+| 2026-11-12 | 批次 2 演练在 GitHub 上通过；批次 3 开始，决定串行推进，删除 `min_version`，"外壳过旧"由代码包与外壳的主次版本是否相同表达。 |
 | 2026-11-12 | 批次 2 实施：门禁改为只接受正式版并要求 `updater` 完整；新增外壳输入清单与检查、版本线约束、清单检查器、`make-update-files.sh`；`release.yml` 的 `publish` 与 `rehearse` 改用 NSH 原生命令；`rehearsal-sign.sh` 改为同一链路加损坏用例；删除 `collect-release-files.sh`。发现仓库私有，新增 4.4 与 V10。 |
 | 2026-11-12 | 确定第一次发布为 `0.1.0`（D13），新增 4.5 说明首次发布的限制与验证办法。 |
 | 2026-11-12 | 取消预览通道，只保留正式版（D7、D8）：删除预览清单与滚动 Release、通道状态与按构建生成两份配置的设计，门禁只接受正式版标签。 |
 | 2026-11-12 | 第 1 批验证回写：通道改为构建属性（V2），设置页不再提供通道切换，`[updates]` 只含 `auto_check`；代码包路径可行（V3，推翻 06.04 的否定结论）；Sparkle 设想作废（V7）；新增 V8、V9；4.3 补充两个通道对应两种构建，预览用户升到正式版后仍留在预览通道。 |
+| 2026-11-13 | SM6 本机续验：更新模拟采用唯一测试 ID / 临时数据根，禁止 HOME 重定向；补齐 16 项隔离清理单测，脚本全量 120 项通过，真实启动模拟 4 项通过 / 7 项 pending；普通结束与 SIGTERM 均核对无隔离残留。 |

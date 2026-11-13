@@ -1,37 +1,31 @@
 //! Exposes the application-owned settings store to NSH surfaces.
 
-use std::{
-    cell::RefCell,
-    collections::HashMap,
-    path::PathBuf,
-    sync::{LazyLock, Mutex},
-};
+use std::{cell::OnceCell, path::PathBuf, sync::Arc};
 
 use nsh_core::{
-    element::{Local, System},
+    element::{CallCx, Callback, Local, Stop, System},
     prelude::*,
 };
 
 use crate::settings::{
-    ColorMode, Command, ComponentFamily, CustomTheme, DiagnosticLevel, Palette, SettingsStore,
-    Snapshot,
+    ColorMode, Command, ComponentFamily, CustomTheme, DiagnosticLevel, Palette, Snapshot,
 };
 use std::collections::BTreeMap;
 
 use crate::style_themes::{StyleCssVars, StyleTheme, ThemeFileIssue};
 
-static STORES: LazyLock<Mutex<HashMap<PathBuf, SettingsStore>>> =
-    LazyLock::new(|| Mutex::new(HashMap::new()));
+use crate::app_state::{SETTINGS, SettingsService};
 
-struct SessionSettings(RefCell<SettingsStore>);
+#[derive(Default)]
+struct SessionSettings(OnceCell<Result<Arc<SettingsService>, &'static str>>);
 
-impl Default for SessionSettings {
-    fn default() -> Self {
-        Self(RefCell::new(SettingsStore::session_only()))
+impl Local for SessionSettings {
+    fn close(&self) {
+        if let Some(Ok(service)) = self.0.get() {
+            service.close();
+        }
     }
 }
-
-impl Local for SessionSettings {}
 
 /// The current appearance preference and its persistence status.
 #[derive(JsObject)]
@@ -296,7 +290,7 @@ impl Settings {
 
     /// Loads the settings on first use and returns the latest snapshot.
     pub async fn snapshot(sys: System) -> Result<SettingsSnapshot, String> {
-        with_store(sys, |store| Ok(store.snapshot())).await
+        with_store(sys, |store| store.snapshot()).await
     }
 
     /// Sets the appearance preference and reports whether it was saved.
@@ -426,7 +420,7 @@ impl Settings {
     /// Starts the diagnostic logger at the saved level. Safe to call on every mount.
     pub async fn start_diagnostics(sys: System) -> Result<SettingsSnapshot, String> {
         let logs = logs_directory(sys.data_dir.clone());
-        let snapshot = with_store(sys, |store| Ok(store.snapshot())).await?;
+        let snapshot = with_store(sys, |store| store.snapshot()).await?;
         if let Some(root) = logs {
             let level: DiagnosticLevel = snapshot.diagnostic_level.parse().unwrap_or_default();
             let logger = crate::diagnostics::install(root, level.to_level());
@@ -529,7 +523,7 @@ impl Settings {
 
     /// Refreshes the style catalog from the application's local theme directory.
     pub async fn rescan_themes(sys: System) -> Result<SettingsSnapshot, String> {
-        with_store(sys, |store| Ok(store.rescan_themes())).await
+        with_store(sys, |store| store.rescan_themes()).await
     }
 
     /// Copies all tokens from a style into a new file and selects it.
@@ -571,14 +565,14 @@ async fn dispatch(sys: System, command: Command) -> Result<SettingsSnapshot, Str
 
 async fn with_store(
     sys: System,
-    operation: impl FnOnce(&mut SettingsStore) -> Result<Snapshot, &'static str> + Send + 'static,
+    operation: impl FnOnce(&Arc<SettingsService>) -> Result<Snapshot, &'static str> + Send + 'static,
 ) -> Result<SettingsSnapshot, String> {
     with_settings_store(sys, operation).await.map(Into::into)
 }
 
 async fn with_settings_store<T: Send + 'static>(
     sys: System,
-    operation: impl FnOnce(&mut SettingsStore) -> Result<T, &'static str> + Send + 'static,
+    operation: impl FnOnce(&Arc<SettingsService>) -> Result<T, &'static str> + Send + 'static,
 ) -> Result<T, String> {
     // NSH supplies the application data path, including the sandbox on mobile.
     // The JavaScript caller cannot select a file or a directory to write to.
@@ -586,18 +580,20 @@ async fn with_settings_store<T: Send + 'static>(
         // Headless surfaces may have no data path. Keep their state isolated
         // within the VM so they can still exercise the normal settings flow.
         let session = sys.locals.get::<SessionSettings>();
-        return operation(&mut session.0.borrow_mut()).map_err(str::to_owned);
+        let service = session
+            .0
+            .get_or_init(SettingsService::session)
+            .as_ref()
+            .map_err(|code| (*code).to_owned())?;
+        return operation(service).map_err(str::to_owned);
     };
     let path = directory.join("settings.toml");
 
-    // Share a store across surfaces using the same data directory. Keep each
-    // in-memory commit and its corresponding write in the same critical section.
+    // Directory lookup releases the registry lock before initialization or I/O.
+    // Each service serializes only its own commands, persistence and publication.
     blocking(move || {
-        let mut stores = STORES.lock().map_err(|_| "settings_store_unavailable")?;
-        let store = stores
-            .entry(path.clone())
-            .or_insert_with(|| SettingsStore::open(path));
-        operation(store)
+        let service = SETTINGS.for_path(path)?;
+        operation(&service)
     })
     .await
     .map_err(|_| "settings_store_unavailable")?
@@ -636,4 +632,114 @@ fn settings_directory(path: Option<PathBuf>) -> Option<PathBuf> {
         directory.push("development");
     }
     Some(directory)
+}
+
+/// Complete settings state with lossless process identity and publication ordering.
+#[derive(JsObject)]
+pub struct SettingsEnvelope {
+    pub store_id: String,
+    pub sequence: String,
+    pub value: SettingsSnapshot,
+}
+
+impl From<usher_state::Snapshot<Snapshot>> for SettingsEnvelope {
+    fn from(snapshot: usher_state::Snapshot<Snapshot>) -> Self {
+        Self {
+            store_id: snapshot.store_id().value().to_string(),
+            sequence: snapshot.sequence().to_string(),
+            value: snapshot.state().clone().into(),
+        }
+    }
+}
+
+/// Exactly one of snapshot and end is present. End is closed, cancelled or error.
+#[derive(JsObject)]
+pub struct SettingsStateEvent {
+    pub snapshot: Option<SettingsEnvelope>,
+    pub end: Option<String>,
+}
+
+impl From<crate::state_bridge::Event<Snapshot>> for SettingsStateEvent {
+    fn from(event: crate::state_bridge::Event<Snapshot>) -> Self {
+        use crate::state_bridge::Event;
+        use usher_state::SubscriptionEnd;
+        match event {
+            Event::Snapshot(snapshot) => Self {
+                snapshot: Some(snapshot.into()),
+                end: None,
+            },
+            Event::End(end) => Self {
+                snapshot: None,
+                end: Some(
+                    match end {
+                        SubscriptionEnd::Closed => "closed",
+                        SubscriptionEnd::Cancelled => "cancelled",
+                        SubscriptionEnd::BackendUnavailable => "error",
+                    }
+                    .into(),
+                ),
+            },
+        }
+    }
+}
+
+/// Versioned settings reads and engine-owned subscriptions; legacy commands stay compatible.
+#[module]
+pub struct SettingsState;
+
+#[module]
+impl SettingsState {
+    /// Reads authoritative state for explicit refreshes and command reconciliation.
+    pub async fn snapshot(sys: System) -> Result<SettingsEnvelope, String> {
+        with_settings_store(sys, |service| service.state_snapshot())
+            .await
+            .map(Into::into)
+    }
+
+    /// Registers atomically and delivers the initial state followed by latest changes.
+    /// The returned stop function is idempotent and also runs on owner/HMR/VM cleanup.
+    pub fn subscribe(listener: Callback<SettingsStateEvent>, sys: System, cx: CallCx<'_>) -> Stop {
+        let binding = crate::state_bridge::Binding::default();
+        let stop = binding.clone();
+        cx.start(async move {
+            binding
+                .run(crate::state_bridge::forward(
+                    async move { with_settings_store(sys, |service| service.subscribe()).await },
+                    move |event| listener.call_async(event.into()),
+                ))
+                .await;
+        });
+        Stop::new(move || stop.close())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use usher_test_support::task::ready;
+
+    #[test]
+    fn vm_local_cleanup_closes_session_even_while_other_handles_are_retained() {
+        let local = SessionSettings::default();
+        let service = local
+            .0
+            .get_or_init(SettingsService::session)
+            .as_ref()
+            .unwrap()
+            .clone();
+        let mut subscription = service.subscribe().unwrap();
+        local.close();
+        local.close();
+        assert_eq!(
+            ready(subscription.next()).unwrap_err(),
+            usher_state::SubscriptionEnd::Closed
+        );
+        assert!(service.subscribe().is_err());
+        assert!(service.state_snapshot().is_err());
+        assert!(
+            service
+                .apply(Command::SetColorMode(ColorMode::Dark))
+                .is_err()
+        );
+    }
 }

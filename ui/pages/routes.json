@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "identity": "usher-pages-v1",
+  "initial": "home",
+  "notFoundPage": "not-found",
+  "pages": [
+    "home",
+    "settings",
+    "not-found"
+  ],
+  "redirectLimit": 8,
+  "routes": [
+    {
+      "id": "home",
+      "path": "/",
+      "page": "home",
+      "parent": null,
+      "titleKey": "nav.home",
+      "menu": "primary",
+      "unknownQuery": "reject"
+    },
+    {
+      "id": "settings",
+      "path": "/settings",
+      "page": "settings",
+      "parent": "home",
+      "titleKey": "nav.settings",
+      "menu": "settings",
+      "unknownQuery": "reject"
+    }
+  ]
+}

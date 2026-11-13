@@ -147,5 +147,8 @@
   "settings.section.theme": "主题",
   "settings.section.diagnostics": "诊断",
   "diagnostics.error.diagnostics_write_failed": "写入日志文件失败，日志可能不完整。",
-  "diagnostics.dropped": "应用繁忙，已跳过 {count} 条日志。"
+  "diagnostics.dropped": "应用繁忙，已跳过 {count} 条日志。",
+  "router.notFound": "页面未找到",
+  "router.failed": "无法显示此页面。",
+  "router.initializationFailed": "无法初始化导航。"
 }

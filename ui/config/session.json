@@ -1,0 +1,9 @@
+{
+  "sections": [
+    "general",
+    "theme",
+    "diagnostics"
+  ],
+  "initialSection": "general",
+  "initialClicks": 0
+}

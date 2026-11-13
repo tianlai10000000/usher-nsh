@@ -1,0 +1,25 @@
+# Pure navigation rules with an optional replaceable path matcher.
+[package]
+name = "usher-router"
+version = "0.0.1-alpha.1"
+edition = "2024"
+license = "LicenseRef-Proprietary"
+publish = false
+
+[features]
+default = []
+matcher-matchit = ["dep:matchit"]
+
+[dependencies]
+matchit = { version = "=0.9.2", optional = true }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[dev-dependencies]
+usher-test-support = { path = "../usher-test-support" }
+proptest = { version = "=1.11.0", default-features = false, features = ["std"] }
+
+[[bin]]
+name = "usher-routes"
+path = "src/bin/usher-routes.rs"
+required-features = ["matcher-matchit"]

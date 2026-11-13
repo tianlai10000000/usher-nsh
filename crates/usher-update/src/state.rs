@@ -1,44 +1,38 @@
 //! The update state machine. A reducer: `(state, event) -> (state, effects)`, no I/O.
 //!
 //! The caller performs the effects (network, disk, restart) and feeds results back as
-//! events. That keeps every rule here testable without a network or a window:
+//! events. That keeps every rule here testable without a network or a window. The design is
+//! in docs/update.md, section 8.2; read that first. In short:
 //!
+//! - there are two kinds of update, a code package and a whole-app update, and one machine
+//!   for both: the phases are shared, the kind is on the candidate;
 //! - one check at a time: a second request while one runs only returns the running one;
-//! - each effect carries a `ticket`; a result with an old ticket is dropped, so a slow
-//!   check cannot overwrite the result of a newer one after a channel switch or a cancel;
-//! - the stable channel never offers a pre-release; switching channels never downgrades;
-//! - a candidate is locked once its download starts;
-//! - the install steps only move forward: Downloading → Verifying → ReadyToInstall →
-//!   Installing → AwaitingFirstLaunch.
+//! - each effect carries a `ticket`; a result with an old ticket is dropped, so a late answer
+//!   cannot overwrite a newer state;
+//! - a code package is used only when its major.minor equals the installed shell's, because a
+//!   package carries TSX only and the shell holds the Rust it calls (docs/update.md, D9);
+//! - a version that keeps failing stops being offered by background checks;
+//! - there is no cancel: NSH cannot cancel an update operation, so the machine does not
+//!   pretend to (docs/update.md, V12);
+//! - the install steps only move forward: Downloading → ReadyToInstall → Installing →
+//!   AwaitingFirstLaunch. NSH verifies a download inside the download, so there is no separate
+//!   verifying phase.
+//!
+//! Every state change and failure also yields an `Effect::Log` with typed fields and no free
+//! text. The caller writes it; this crate does no I/O and does not know a logger exists.
 
 use semver::Version;
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum Channel {
-    Stable,
-    Preview,
-}
-
-impl Channel {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Stable => "stable",
-            Self::Preview => "preview",
-        }
-    }
-
-    /// Whether this channel may be offered `version`.
-    pub fn accepts(self, version: &Version) -> bool {
-        self == Self::Preview || version.pre.is_empty()
-    }
-}
+/// How many versions' failure counts are remembered. The machine is cloned into every
+/// published snapshot, so the memory is kept small; the oldest entry is dropped first.
+pub const FAILURE_MEMORY: usize = 8;
 
 /// How this installation can be updated, which is separate from what a release asks for.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Capability {
-    /// The app may download, verify and hand over a package itself.
+    /// The app may download and install an update itself.
     InApp,
-    /// The environment can only point the user at a download page.
+    /// The environment can only point the user at a download page (`canInstall` is false).
     ManualOnly,
     /// A store or package manager owns updates.
     SystemManaged,
@@ -46,22 +40,42 @@ pub enum Capability {
     Unsupported,
 }
 
-/// A release that can be offered, bound to what it is for.
+/// What an update replaces.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Kind {
+    /// The app's TSX, as a signed package: runs from the next start, no replacement.
+    Package,
+    /// The whole installed app: replaced and restarted.
+    Shell,
+}
+
+/// What a check found: the newest release the source offers.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Offer {
+    pub version: Version,
+    /// Whether the release carries a code package this runtime can run.
+    pub has_package: bool,
+}
+
+/// A release that can be offered, and how it would be installed.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Candidate {
     pub version: Version,
-    pub channel: Channel,
-    /// Lowest running version that may update in place; older ones need the full installer.
-    pub min_version: Option<Version>,
-    /// Whether the signed manifest and the package were both authenticated.
-    pub verified: bool,
+    pub kind: Kind,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Outcome {
     UpToDate,
-    /// Can be installed from inside the app.
-    InAppUpdate(Candidate),
+    /// A newer code package this shell can run.
+    PackageUpdate(Candidate),
+    /// A newer whole-app update that can be installed from inside the app.
+    ShellUpdate {
+        candidate: Candidate,
+        /// Why a code package was not used: the release has none, or its major.minor differs
+        /// from the installed shell's ("the app needs updating").
+        reason: ShellReason,
+    },
     /// A newer release exists, but the user has to install it.
     ManualUpgrade {
         candidate: Candidate,
@@ -73,25 +87,63 @@ pub enum Outcome {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum ManualReason {
-    /// The release asks for a manual install (its `min-version` is above this build).
-    ReleasePolicy,
-    /// This environment cannot install by itself.
-    Environment,
-    /// The release could not be authenticated, so it must not be installed in place.
-    Unverified,
+pub enum ShellReason {
+    /// The release has no code package.
+    NoPackage,
+    /// The release's code package belongs to another major.minor than the installed shell.
+    ShellTooOld,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ManualReason {
+    /// This environment cannot install by itself.
+    Environment,
+}
+
+/// Why an update step did not work, as the panel and the log tell it. See docs/update.md 8.2
+/// for what each class means and how it is counted.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Failure {
+    /// Could not reach the source, timed out, or the connection broke. Retry helps.
     Network,
-    NotFound,
-    RateLimited,
-    InvalidResponse,
-    Signature,
+    /// Another update operation is still running (NSH runs one at a time). Retry helps, later.
+    Busy,
+    /// NSH refused the package or archive: signature, app id, build number, runtime, hash.
+    /// Retrying will not help.
+    Rejected,
+    /// Writing a file or replacing the app failed.
     Disk,
+    /// The user gave up on the app's side. Not an NSH cancel, and not a failure.
     Cancelled,
+    /// None of the above.
     Unknown,
+}
+
+impl Failure {
+    /// Whether this failure counts toward a version's failure budget. Transient and
+    /// user-made outcomes do not: going offline twice must not hide a good update.
+    pub fn counts(self) -> bool {
+        matches!(self, Self::Rejected | Self::Disk | Self::Unknown)
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Network => "network",
+            Self::Busy => "busy",
+            Self::Rejected => "rejected",
+            Self::Disk => "disk",
+            Self::Cancelled => "cancelled",
+            Self::Unknown => "unknown",
+        }
+    }
+
+    fn level(self) -> Level {
+        match self {
+            Self::Network | Self::Busy => Level::Warn,
+            Self::Cancelled => Level::Info,
+            Self::Rejected | Self::Disk | Self::Unknown => Level::Error,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -105,7 +157,8 @@ pub enum Phase {
         downloaded: u64,
         total: Option<u64>,
     },
-    Verifying(Candidate),
+    /// Downloaded and accepted by NSH. A code package waits for a restart; a whole-app update
+    /// waits for the user to confirm the replacement.
     ReadyToInstall(Candidate),
     Installing(Candidate),
     AwaitingFirstLaunch(Candidate),
@@ -131,98 +184,166 @@ pub enum Event {
         ticket: u64,
         result: CheckResult,
     },
-    ChannelChanged(Channel),
     DownloadRequested,
     DownloadProgress {
         ticket: u64,
         downloaded: u64,
         total: Option<u64>,
     },
+    /// The download finished and NSH accepted it.
     DownloadFinished {
         ticket: u64,
-    },
-    VerifyFinished {
-        ticket: u64,
-        ok: bool,
     },
     InstallRequested,
     InstallHandedOff {
         ticket: u64,
     },
-    InstallFailed {
+    /// A download or install step failed.
+    StepFailed {
         ticket: u64,
         failure: Failure,
     },
-    Cancel,
     /// The new version started and confirmed itself.
     FirstLaunchConfirmed,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CheckResult {
-    /// The newest release the server offers for the asked channel, if any.
-    Release(Option<Candidate>),
+    /// The newest release the source offers, if any.
+    Release(Option<Offer>),
     Failed(Failure),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Effect {
+    /// Ask the source. The caller checks for a code package and for a whole-app update and
+    /// reports the newest offer.
     StartCheck {
         ticket: u64,
-        channel: Channel,
     },
     StartDownload {
         ticket: u64,
         candidate: Candidate,
     },
-    StartVerify {
-        ticket: u64,
-        candidate: Candidate,
-    },
-    /// Save settings and work state, then hand the package to the installer.
+    /// Save settings and work state, then restart into the package or replace the app.
     StartInstall {
         ticket: u64,
         candidate: Candidate,
     },
-    CancelRunning,
     /// Tell the user. Background checks stay quiet unless something needs them.
     Notify(Notice),
+    /// A record for the log. The machine does no I/O; the caller writes it, or drops it when
+    /// logging is off.
+    Log(Record),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Notice {
     UpToDate,
     UpdateAvailable(Version),
+    /// The app itself has to be updated: the release's code package does not fit this shell,
+    /// or it has none.
+    ShellUpdateNeeded(Version),
     ManualUpgradeNeeded(Version),
     CheckFailed(Failure),
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub enum Level {
+    Info,
+    Warn,
+    Error,
+}
+
+/// What to log, without free text: every field is a fixed word, a number or a version.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Record {
+    pub level: Level,
+    /// A stable event name, snake_case.
+    pub event: &'static str,
+    pub ticket: Option<u64>,
+    pub version: Option<Version>,
+    pub kind: Option<Kind>,
+    pub failure: Option<Failure>,
+    /// How many times this version has failed, when the record is about a counted failure.
+    pub failures: Option<u32>,
+}
+
+impl Record {
+    fn new(level: Level, event: &'static str) -> Self {
+        Self {
+            level,
+            event,
+            ticket: None,
+            version: None,
+            kind: None,
+            failure: None,
+            failures: None,
+        }
+    }
+}
+
+/// How a machine is set up. All of it comes from configuration or from the installed app; none
+/// of it is written in the rules.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Settings {
+    /// The installed app's version (`shellInfo().version`): what a code package must match.
+    pub shell: Version,
+    /// The version running now: the shell's, or a code package's when one runs.
+    pub running: Version,
+    pub capability: Capability,
+    /// Whether background checks run and a code package downloads without asking.
+    pub auto_check: bool,
+    /// After this many counted failures a version is not offered to background checks.
+    pub failure_limit: u32,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Machine {
     pub phase: Phase,
-    pub current: Version,
-    pub channel: Channel,
+    shell: Version,
+    running: Version,
     pub capability: Capability,
+    auto_check: bool,
+    failure_limit: u32,
+    /// Counted failures per version, oldest first, at most `FAILURE_MEMORY` entries.
+    failures: Vec<(Version, u32)>,
     ticket: u64,
     /// The check being run: its ticket and who asked.
     running_check: Option<(u64, Trigger)>,
 }
 
 impl Machine {
-    pub fn new(current: Version, channel: Channel, capability: Capability) -> Self {
+    pub fn new(settings: Settings) -> Self {
         Self {
             phase: Phase::Idle,
-            current,
-            channel,
-            capability,
+            shell: settings.shell,
+            running: settings.running,
+            capability: settings.capability,
+            auto_check: settings.auto_check,
+            failure_limit: settings.failure_limit,
+            failures: Vec::new(),
             ticket: 0,
             running_check: None,
         }
     }
 
-    fn next_ticket(&mut self) -> u64 {
-        self.ticket += 1;
-        self.ticket
+    pub fn shell(&self) -> &Version {
+        &self.shell
+    }
+
+    pub fn running(&self) -> &Version {
+        &self.running
+    }
+
+    pub fn auto_check(&self) -> bool {
+        self.auto_check
+    }
+
+    /// Turns background checks and automatic package downloads on or off. A check or download
+    /// already in progress is not affected.
+    pub fn set_auto_check(&mut self, on: bool) {
+        self.auto_check = on;
     }
 
     /// The ticket a result must carry to be accepted now.
@@ -230,27 +351,40 @@ impl Machine {
         self.ticket
     }
 
+    /// How many times `version` has failed in a way that counts.
+    pub fn failures_of(&self, version: &Version) -> u32 {
+        self.failures
+            .iter()
+            .find(|(seen, _)| seen == version)
+            .map_or(0, |(_, count)| *count)
+    }
+
+    /// Whether `version` has used up its failure budget and background checks should not
+    /// offer it again.
+    pub fn exhausted(&self, version: &Version) -> bool {
+        self.failures_of(version) >= self.failure_limit
+    }
+
     /// Whether a candidate is locked: from the start of its download until it is installed.
     pub fn candidate_locked(&self) -> bool {
         matches!(
             self.phase,
             Phase::Downloading { .. }
-                | Phase::Verifying(_)
                 | Phase::ReadyToInstall(_)
                 | Phase::Installing(_)
                 | Phase::AwaitingFirstLaunch(_)
         )
     }
 
-    fn busy_installing(&self) -> bool {
-        self.candidate_locked()
+    fn next_ticket(&mut self) -> u64 {
+        self.ticket += 1;
+        self.ticket
     }
 
     pub fn handle(&mut self, event: Event) -> Vec<Effect> {
         match event {
             Event::CheckRequested(trigger) => self.check_requested(trigger),
             Event::CheckFinished { ticket, result } => self.check_finished(ticket, result),
-            Event::ChannelChanged(channel) => self.channel_changed(channel),
             Event::DownloadRequested => self.download_requested(),
             Event::DownloadProgress {
                 ticket,
@@ -268,69 +402,27 @@ impl Machine {
                 }
                 vec![]
             }
-            Event::DownloadFinished { ticket } => {
-                if ticket != self.ticket {
-                    return vec![];
-                }
-                let Phase::Downloading { candidate, .. } = &self.phase else {
-                    return vec![];
-                };
-                let candidate = candidate.clone();
-                self.phase = Phase::Verifying(candidate.clone());
-                vec![Effect::StartVerify { ticket, candidate }]
-            }
-            Event::VerifyFinished { ticket, ok } => {
-                if ticket != self.ticket {
-                    return vec![];
-                }
-                let Phase::Verifying(candidate) = &self.phase else {
-                    return vec![];
-                };
-                let candidate = candidate.clone();
-                self.phase = if ok {
-                    Phase::ReadyToInstall(candidate)
-                } else {
-                    Phase::InstallFailed {
-                        candidate,
-                        failure: Failure::Signature,
-                    }
-                };
-                vec![]
-            }
-            Event::InstallRequested => {
-                let Phase::ReadyToInstall(candidate) = &self.phase else {
-                    return vec![];
-                };
-                let candidate = candidate.clone();
-                let ticket = self.ticket;
-                self.phase = Phase::Installing(candidate.clone());
-                vec![Effect::StartInstall { ticket, candidate }]
-            }
+            Event::DownloadFinished { ticket } => self.download_finished(ticket),
+            Event::InstallRequested => self.install_requested(),
             Event::InstallHandedOff { ticket } => {
                 if ticket == self.ticket
                     && let Phase::Installing(candidate) = &self.phase
                 {
-                    self.phase = Phase::AwaitingFirstLaunch(candidate.clone());
+                    let candidate = candidate.clone();
+                    let log = log_step("install_handed_off", ticket, &candidate);
+                    self.phase = Phase::AwaitingFirstLaunch(candidate);
+                    return vec![Effect::Log(log)];
                 }
                 vec![]
             }
-            Event::InstallFailed { ticket, failure } => {
-                if ticket == self.ticket {
-                    let candidate = match &self.phase {
-                        Phase::Downloading { candidate, .. } => Some(candidate),
-                        Phase::Verifying(c) | Phase::Installing(c) => Some(c),
-                        _ => None,
-                    };
-                    if let Some(candidate) = candidate.cloned() {
-                        self.phase = Phase::InstallFailed { candidate, failure };
-                    }
-                }
-                vec![]
-            }
-            Event::Cancel => self.cancel(),
+            Event::StepFailed { ticket, failure } => self.step_failed(ticket, failure),
             Event::FirstLaunchConfirmed => {
-                if matches!(self.phase, Phase::AwaitingFirstLaunch(_)) {
+                if let Phase::AwaitingFirstLaunch(candidate) = &self.phase {
+                    let mut record = Record::new(Level::Info, "first_launch_confirmed");
+                    record.version = Some(candidate.version.clone());
+                    record.kind = Some(candidate.kind);
                     self.phase = Phase::Idle;
+                    return vec![Effect::Log(record)];
                 }
                 vec![]
             }
@@ -338,8 +430,12 @@ impl Machine {
     }
 
     fn check_requested(&mut self, trigger: Trigger) -> Vec<Effect> {
-        if self.busy_installing() {
+        if self.candidate_locked() {
             // An update is already in flight; a check would only confuse it.
+            return vec![];
+        }
+        if trigger == Trigger::Background && !self.auto_check {
+            // Background checks are off. A manual check always goes through.
             return vec![];
         }
         if let Some((_, started_by)) = &mut self.running_check {
@@ -364,10 +460,9 @@ impl Machine {
         let ticket = self.next_ticket();
         self.running_check = Some((ticket, trigger));
         self.phase = Phase::Checking;
-        vec![Effect::StartCheck {
-            ticket,
-            channel: self.channel,
-        }]
+        let mut record = Record::new(Level::Info, "check_started");
+        record.ticket = Some(ticket);
+        vec![Effect::StartCheck { ticket }, Effect::Log(record)]
     }
 
     fn check_finished(&mut self, ticket: u64, result: CheckResult) -> Vec<Effect> {
@@ -375,522 +470,229 @@ impl Machine {
             return vec![];
         };
         if ticket != running || ticket != self.ticket {
-            // A superseded check (channel switch or cancel): its answer is for a question
-            // nobody is asking any more.
+            // A superseded check: its answer is for a question nobody is asking any more.
             return vec![];
         }
         self.running_check = None;
         let outcome = match result {
             CheckResult::Failed(failure) => Outcome::Failed(failure),
             CheckResult::Release(None) => Outcome::UpToDate,
-            CheckResult::Release(Some(candidate)) => self.classify(candidate),
+            CheckResult::Release(Some(offer)) => self.classify(offer, trigger),
         };
+        let mut effects = Vec::new();
+        let mut record = Record::new(Level::Info, "check_finished");
+        record.ticket = Some(ticket);
+        match &outcome {
+            Outcome::Failed(failure) => {
+                record.level = failure.level();
+                record.event = "check_failed";
+                record.failure = Some(*failure);
+            }
+            Outcome::PackageUpdate(candidate)
+            | Outcome::ShellUpdate { candidate, .. }
+            | Outcome::ManualUpgrade { candidate, .. } => {
+                record.event = "update_found";
+                record.version = Some(candidate.version.clone());
+                record.kind = Some(candidate.kind);
+            }
+            _ => {}
+        }
+        effects.push(Effect::Log(record));
         let notice = notice_for(&outcome, trigger);
+        let download = self.auto_download(&outcome);
         self.phase = Phase::Checked(outcome);
-        notice.map(Effect::Notify).into_iter().collect()
+        effects.extend(notice.map(Effect::Notify));
+        if let Some(candidate) = download {
+            effects.extend(self.start_download(candidate));
+        }
+        effects
     }
 
-    /// Decides what to do with a release the server offered.
-    fn classify(&self, candidate: Candidate) -> Outcome {
-        if candidate.version <= self.current || !self.channel.accepts(&candidate.version) {
-            // Never a downgrade, and never a pre-release on the stable channel.
+    /// Decides what to do with the newest release the source offered (docs/update.md, 8.2).
+    fn classify(&self, offer: Offer, trigger: Trigger) -> Outcome {
+        // The floor is the newer of what runs and the installed shell. Normally they agree or the
+        // running package is ahead, but this must not rely on that: offering something older
+        // than the installed shell would send the user to a downgrade.
+        let floor = if self.running >= self.shell {
+            &self.running
+        } else {
+            &self.shell
+        };
+        if offer.version <= *floor || !offer.version.pre.is_empty() {
+            // Never a downgrade, and never a pre-release: there is one channel, the formal
+            // releases (docs/update.md, D7). The source should not offer one; this is the
+            // second line.
             return Outcome::UpToDate;
         }
-        if candidate.channel != self.channel {
+        if trigger == Trigger::Background && self.exhausted(&offer.version) {
+            // It kept failing. A background check does not bring it back; a manual one does.
             return Outcome::UpToDate;
         }
-        let too_old = candidate
-            .min_version
-            .as_ref()
-            .is_some_and(|min| &self.current < min);
-        if too_old {
-            return Outcome::ManualUpgrade {
-                candidate,
-                reason: ManualReason::ReleasePolicy,
-            };
-        }
-        if !candidate.verified {
-            return Outcome::ManualUpgrade {
-                candidate,
-                reason: ManualReason::Unverified,
-            };
-        }
+        let same_line =
+            offer.version.major == self.shell.major && offer.version.minor == self.shell.minor;
+        let (kind, shell_reason) = if offer.has_package && same_line {
+            (Kind::Package, None)
+        } else if offer.has_package {
+            (Kind::Shell, Some(ShellReason::ShellTooOld))
+        } else {
+            (Kind::Shell, Some(ShellReason::NoPackage))
+        };
+        let candidate = Candidate {
+            version: offer.version,
+            kind,
+        };
         match self.capability {
-            Capability::InApp => Outcome::InAppUpdate(candidate),
-            Capability::ManualOnly => Outcome::ManualUpgrade {
-                candidate,
-                reason: ManualReason::Environment,
+            Capability::InApp => match shell_reason {
+                None => Outcome::PackageUpdate(candidate),
+                Some(reason) => Outcome::ShellUpdate { candidate, reason },
             },
+            Capability::ManualOnly => {
+                if kind == Kind::Package {
+                    // A package replaces nothing and needs no install permission, so a read-only
+                    // install location does not stop it.
+                    Outcome::PackageUpdate(candidate)
+                } else {
+                    Outcome::ManualUpgrade {
+                        candidate,
+                        reason: ManualReason::Environment,
+                    }
+                }
+            }
             Capability::SystemManaged => Outcome::SystemManaged,
             Capability::Unsupported => Outcome::NotApplicable,
         }
     }
 
-    fn channel_changed(&mut self, channel: Channel) -> Vec<Effect> {
-        if channel == self.channel || self.candidate_locked() {
-            // A locked candidate finishes first; the new channel applies to the next check.
-            if self.candidate_locked() {
-                self.channel = channel;
-            }
-            return vec![];
+    /// The candidate to download without asking, if this outcome calls for it: a code package
+    /// while automatic updates are on. A whole-app update is never started without the user.
+    fn auto_download(&self, outcome: &Outcome) -> Option<Candidate> {
+        match outcome {
+            Outcome::PackageUpdate(candidate) if self.auto_check => Some(candidate.clone()),
+            _ => None,
         }
-        self.channel = channel;
-        // Whatever was being checked answered for the old channel. Drop it, and forget a
-        // result that belonged to it; a downgrade is never offered because `classify`
-        // compares against the running version.
-        self.running_check = None;
-        self.ticket += 1;
-        self.phase = Phase::Idle;
-        vec![]
     }
 
     fn download_requested(&mut self) -> Vec<Effect> {
-        let Phase::Checked(Outcome::InAppUpdate(candidate)) = &self.phase else {
-            return vec![];
+        let candidate = match &self.phase {
+            Phase::Checked(
+                Outcome::PackageUpdate(candidate) | Outcome::ShellUpdate { candidate, .. },
+            ) => candidate.clone(),
+            // A download that failed can be asked for again.
+            Phase::InstallFailed { candidate, failure }
+                if !matches!(failure, Failure::Rejected) =>
+            {
+                candidate.clone()
+            }
+            _ => return vec![],
         };
-        let candidate = candidate.clone();
+        self.start_download(candidate)
+    }
+
+    fn start_download(&mut self, candidate: Candidate) -> Vec<Effect> {
         let ticket = self.next_ticket();
+        let record = log_step("download_started", ticket, &candidate);
         self.phase = Phase::Downloading {
             candidate: candidate.clone(),
             downloaded: 0,
             total: None,
         };
-        vec![Effect::StartDownload { ticket, candidate }]
+        vec![
+            Effect::StartDownload { ticket, candidate },
+            Effect::Log(record),
+        ]
     }
 
-    fn cancel(&mut self) -> Vec<Effect> {
-        match &self.phase {
-            Phase::Checking => {
-                self.running_check = None;
-                self.ticket += 1;
-                self.phase = Phase::Idle;
-                vec![Effect::CancelRunning]
-            }
-            Phase::Downloading { candidate, .. } => {
-                // The candidate is still the one the user chose; they can start again.
-                let candidate = candidate.clone();
-                self.ticket += 1;
-                self.phase = Phase::Checked(Outcome::InAppUpdate(candidate));
-                vec![Effect::CancelRunning]
-            }
-            // Past verification the package is handed over or ready: not cancellable here.
-            _ => vec![],
+    fn download_finished(&mut self, ticket: u64) -> Vec<Effect> {
+        if ticket != self.ticket {
+            return vec![];
         }
+        let Phase::Downloading { candidate, .. } = &self.phase else {
+            return vec![];
+        };
+        let candidate = candidate.clone();
+        let record = log_step("download_finished", ticket, &candidate);
+        self.phase = Phase::ReadyToInstall(candidate);
+        vec![Effect::Log(record)]
     }
+
+    fn install_requested(&mut self) -> Vec<Effect> {
+        let Phase::ReadyToInstall(candidate) = &self.phase else {
+            return vec![];
+        };
+        let candidate = candidate.clone();
+        let ticket = self.ticket;
+        let record = log_step("install_started", ticket, &candidate);
+        self.phase = Phase::Installing(candidate.clone());
+        vec![
+            Effect::StartInstall { ticket, candidate },
+            Effect::Log(record),
+        ]
+    }
+
+    fn step_failed(&mut self, ticket: u64, failure: Failure) -> Vec<Effect> {
+        if ticket != self.ticket {
+            return vec![];
+        }
+        let candidate = match &self.phase {
+            Phase::Downloading { candidate, .. } | Phase::Installing(candidate) => {
+                candidate.clone()
+            }
+            _ => return vec![],
+        };
+        let mut record = log_step("step_failed", ticket, &candidate);
+        record.level = failure.level();
+        record.failure = Some(failure);
+        if failure.counts() {
+            record.failures = Some(self.count_failure(&candidate.version));
+        }
+        self.phase = Phase::InstallFailed { candidate, failure };
+        vec![Effect::Log(record)]
+    }
+
+    /// Adds one counted failure to `version` and returns its new total. The memory is bounded:
+    /// a new version past `FAILURE_MEMORY` entries pushes the oldest out.
+    fn count_failure(&mut self, version: &Version) -> u32 {
+        if let Some(entry) = self.failures.iter_mut().find(|(seen, _)| seen == version) {
+            entry.1 = entry.1.saturating_add(1);
+            return entry.1;
+        }
+        if self.failures.len() == FAILURE_MEMORY {
+            self.failures.remove(0);
+        }
+        self.failures.push((version.clone(), 1));
+        1
+    }
+}
+
+fn log_step(event: &'static str, ticket: u64, candidate: &Candidate) -> Record {
+    let mut record = Record::new(Level::Info, event);
+    record.ticket = Some(ticket);
+    record.version = Some(candidate.version.clone());
+    record.kind = Some(candidate.kind);
+    record
 }
 
 fn notice_for(outcome: &Outcome, trigger: Trigger) -> Option<Notice> {
     match (outcome, trigger) {
         (Outcome::UpToDate, Trigger::Manual) => Some(Notice::UpToDate),
         (Outcome::UpToDate, Trigger::Background) => None,
-        (Outcome::InAppUpdate(c), _) => Some(Notice::UpdateAvailable(c.version.clone())),
+        (Outcome::PackageUpdate(c), _) => Some(Notice::UpdateAvailable(c.version.clone())),
+        (
+            Outcome::ShellUpdate {
+                candidate,
+                reason: ShellReason::ShellTooOld,
+            },
+            _,
+        ) => Some(Notice::ShellUpdateNeeded(candidate.version.clone())),
+        (Outcome::ShellUpdate { candidate, .. }, _) => {
+            Some(Notice::UpdateAvailable(candidate.version.clone()))
+        }
         (Outcome::ManualUpgrade { candidate, .. }, _) => {
             Some(Notice::ManualUpgradeNeeded(candidate.version.clone()))
         }
-        // A background check that merely failed (offline, rate limited) stays silent.
+        // A background check that merely failed (offline, busy) stays silent.
         (Outcome::Failed(failure), Trigger::Manual) => Some(Notice::CheckFailed(*failure)),
         (Outcome::Failed(_), Trigger::Background) => None,
         (Outcome::SystemManaged | Outcome::NotApplicable, _) => None,
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn v(text: &str) -> Version {
-        Version::parse(text).unwrap()
-    }
-
-    fn candidate(version: &str) -> Candidate {
-        Candidate {
-            version: v(version),
-            channel: Channel::Stable,
-            min_version: None,
-            verified: true,
-        }
-    }
-
-    fn machine(current: &str) -> Machine {
-        Machine::new(v(current), Channel::Stable, Capability::InApp)
-    }
-
-    fn start_check(m: &mut Machine, trigger: Trigger) -> u64 {
-        match m.handle(Event::CheckRequested(trigger)).as_slice() {
-            [Effect::StartCheck { ticket, .. }] => *ticket,
-            other => panic!("expected one check, got {other:?}"),
-        }
-    }
-
-    fn finish(m: &mut Machine, ticket: u64, release: Option<Candidate>) -> Vec<Effect> {
-        m.handle(Event::CheckFinished {
-            ticket,
-            result: CheckResult::Release(release),
-        })
-    }
-
-    #[test]
-    fn a_manual_check_reports_up_to_date_but_a_background_one_stays_quiet() {
-        let mut m = machine("1.0.0");
-        let t = start_check(&mut m, Trigger::Manual);
-        assert_eq!(
-            finish(&mut m, t, None),
-            vec![Effect::Notify(Notice::UpToDate)]
-        );
-        let t = start_check(&mut m, Trigger::Background);
-        assert_eq!(finish(&mut m, t, None), vec![]);
-        assert_eq!(m.phase, Phase::Checked(Outcome::UpToDate));
-    }
-
-    #[test]
-    fn a_second_request_while_checking_joins_the_running_check() {
-        let mut m = machine("1.0.0");
-        let t = start_check(&mut m, Trigger::Background);
-        assert_eq!(m.handle(Event::CheckRequested(Trigger::Manual)), vec![]);
-        assert_eq!(m.handle(Event::CheckRequested(Trigger::Manual)), vec![]);
-        // The user asked meanwhile, so the answer is shown to them.
-        assert_eq!(
-            finish(&mut m, t, None),
-            vec![Effect::Notify(Notice::UpToDate)]
-        );
-    }
-
-    #[test]
-    fn newer_in_app_candidates_can_be_downloaded_verified_and_installed_in_order() {
-        let mut m = machine("1.0.0");
-        let t = start_check(&mut m, Trigger::Manual);
-        assert_eq!(
-            finish(&mut m, t, Some(candidate("1.1.0"))),
-            vec![Effect::Notify(Notice::UpdateAvailable(v("1.1.0")))]
-        );
-        let effects = m.handle(Event::DownloadRequested);
-        let [Effect::StartDownload { ticket, .. }] = effects.as_slice() else {
-            panic!("{effects:?}")
-        };
-        let ticket = *ticket;
-        assert!(m.candidate_locked());
-        m.handle(Event::DownloadProgress {
-            ticket,
-            downloaded: 10,
-            total: Some(100),
-        });
-        assert!(matches!(
-            m.phase,
-            Phase::Downloading {
-                downloaded: 10,
-                total: Some(100),
-                ..
-            }
-        ));
-
-        assert!(matches!(
-            m.handle(Event::DownloadFinished { ticket }).as_slice(),
-            [Effect::StartVerify { .. }]
-        ));
-        assert!(matches!(m.phase, Phase::Verifying(_)));
-        m.handle(Event::VerifyFinished { ticket, ok: true });
-        assert!(matches!(m.phase, Phase::ReadyToInstall(_)));
-        assert!(matches!(
-            m.handle(Event::InstallRequested).as_slice(),
-            [Effect::StartInstall { .. }]
-        ));
-        m.handle(Event::InstallHandedOff { ticket });
-        assert!(matches!(m.phase, Phase::AwaitingFirstLaunch(_)));
-        m.handle(Event::FirstLaunchConfirmed);
-        assert_eq!(m.phase, Phase::Idle);
-    }
-
-    #[test]
-    fn steps_cannot_run_out_of_order() {
-        let mut m = machine("1.0.0");
-        assert_eq!(
-            m.handle(Event::DownloadRequested),
-            vec![],
-            "no candidate yet"
-        );
-        assert_eq!(
-            m.handle(Event::InstallRequested),
-            vec![],
-            "nothing is ready"
-        );
-        let t = start_check(&mut m, Trigger::Manual);
-        finish(&mut m, t, Some(candidate("1.1.0")));
-        assert_eq!(
-            m.handle(Event::InstallRequested),
-            vec![],
-            "not downloaded yet"
-        );
-        m.handle(Event::DownloadRequested);
-        assert_eq!(
-            m.handle(Event::InstallRequested),
-            vec![],
-            "not verified yet"
-        );
-    }
-
-    #[test]
-    fn a_failed_verification_blocks_installation() {
-        let mut m = machine("1.0.0");
-        let t = start_check(&mut m, Trigger::Manual);
-        finish(&mut m, t, Some(candidate("1.1.0")));
-        m.handle(Event::DownloadRequested);
-        let ticket = m.ticket();
-        m.handle(Event::DownloadFinished { ticket });
-        m.handle(Event::VerifyFinished { ticket, ok: false });
-        assert!(matches!(
-            m.phase,
-            Phase::InstallFailed {
-                failure: Failure::Signature,
-                ..
-            }
-        ));
-        assert_eq!(m.handle(Event::InstallRequested), vec![]);
-    }
-
-    #[test]
-    fn the_stable_channel_never_offers_a_prerelease_and_never_a_downgrade() {
-        let mut m = machine("1.0.0");
-        for offered in ["1.1.0-beta.1", "0.9.0", "1.0.0"] {
-            let t = start_check(&mut m, Trigger::Manual);
-            finish(&mut m, t, Some(candidate(offered)));
-            assert_eq!(m.phase, Phase::Checked(Outcome::UpToDate), "{offered}");
-        }
-        let mut preview = Machine::new(v("1.0.0"), Channel::Preview, Capability::InApp);
-        let t = start_check(&mut preview, Trigger::Manual);
-        let beta = Candidate {
-            channel: Channel::Preview,
-            ..candidate("1.1.0-beta.1")
-        };
-        finish(&mut preview, t, Some(beta));
-        assert!(matches!(
-            preview.phase,
-            Phase::Checked(Outcome::InAppUpdate(_))
-        ));
-    }
-
-    #[test]
-    fn a_release_for_another_channel_is_not_offered() {
-        let mut m = machine("1.0.0");
-        let t = start_check(&mut m, Trigger::Manual);
-        let wrong = Candidate {
-            channel: Channel::Preview,
-            ..candidate("1.1.0")
-        };
-        finish(&mut m, t, Some(wrong));
-        assert_eq!(m.phase, Phase::Checked(Outcome::UpToDate));
-    }
-
-    #[test]
-    fn switching_channel_drops_a_late_answer_for_the_old_one() {
-        let mut m = machine("1.0.0");
-        let old = start_check(&mut m, Trigger::Manual);
-        m.handle(Event::ChannelChanged(Channel::Preview));
-        assert_eq!(m.phase, Phase::Idle);
-        // The old check answers late with a stable release: it must be ignored.
-        assert_eq!(finish(&mut m, old, Some(candidate("1.1.0"))), vec![]);
-        assert_eq!(m.phase, Phase::Idle);
-        // The next check asks for the new channel and is accepted.
-        let effects = m.handle(Event::CheckRequested(Trigger::Manual));
-        assert!(matches!(
-            effects.as_slice(),
-            [Effect::StartCheck {
-                channel: Channel::Preview,
-                ..
-            }]
-        ));
-    }
-
-    #[test]
-    fn cancelling_a_check_discards_its_late_answer() {
-        let mut m = machine("1.0.0");
-        let t = start_check(&mut m, Trigger::Manual);
-        assert_eq!(m.handle(Event::Cancel), vec![Effect::CancelRunning]);
-        assert_eq!(finish(&mut m, t, Some(candidate("1.1.0"))), vec![]);
-        assert_eq!(m.phase, Phase::Idle);
-    }
-
-    #[test]
-    fn cancelling_a_download_keeps_the_candidate_so_it_can_be_retried() {
-        let mut m = machine("1.0.0");
-        let t = start_check(&mut m, Trigger::Manual);
-        finish(&mut m, t, Some(candidate("1.1.0")));
-        m.handle(Event::DownloadRequested);
-        let ticket = m.ticket();
-        assert_eq!(m.handle(Event::Cancel), vec![Effect::CancelRunning]);
-        // Late progress and completion from the cancelled download are ignored.
-        m.handle(Event::DownloadProgress {
-            ticket,
-            downloaded: 50,
-            total: None,
-        });
-        assert_eq!(m.handle(Event::DownloadFinished { ticket }), vec![]);
-        assert!(matches!(m.phase, Phase::Checked(Outcome::InAppUpdate(_))));
-        assert!(matches!(
-            m.handle(Event::DownloadRequested).as_slice(),
-            [Effect::StartDownload { .. }]
-        ));
-    }
-
-    #[test]
-    fn a_locked_candidate_is_not_replaced_by_a_new_check_or_channel_change() {
-        let mut m = machine("1.0.0");
-        let t = start_check(&mut m, Trigger::Manual);
-        finish(&mut m, t, Some(candidate("1.1.0")));
-        m.handle(Event::DownloadRequested);
-        assert_eq!(m.handle(Event::CheckRequested(Trigger::Manual)), vec![]);
-        m.handle(Event::ChannelChanged(Channel::Preview));
-        assert!(
-            matches!(m.phase, Phase::Downloading { .. }),
-            "the download goes on"
-        );
-        assert_eq!(
-            m.channel,
-            Channel::Preview,
-            "the new channel applies to the next check"
-        );
-    }
-
-    #[test]
-    fn a_release_that_needs_a_newer_base_asks_for_a_manual_upgrade() {
-        let mut m = machine("1.0.0");
-        let t = start_check(&mut m, Trigger::Manual);
-        let gated = Candidate {
-            min_version: Some(v("1.5.0")),
-            ..candidate("2.0.0")
-        };
-        let effects = finish(&mut m, t, Some(gated));
-        assert_eq!(
-            effects,
-            vec![Effect::Notify(Notice::ManualUpgradeNeeded(v("2.0.0")))]
-        );
-        assert!(matches!(
-            m.phase,
-            Phase::Checked(Outcome::ManualUpgrade {
-                reason: ManualReason::ReleasePolicy,
-                ..
-            })
-        ));
-        assert_eq!(
-            m.handle(Event::DownloadRequested),
-            vec![],
-            "no in-app install for it"
-        );
-        // A build at or above the minimum updates in place.
-        let mut recent = machine("1.5.0");
-        let t = start_check(&mut recent, Trigger::Manual);
-        finish(
-            &mut recent,
-            t,
-            Some(Candidate {
-                min_version: Some(v("1.5.0")),
-                ..candidate("2.0.0")
-            }),
-        );
-        assert!(matches!(
-            recent.phase,
-            Phase::Checked(Outcome::InAppUpdate(_))
-        ));
-    }
-
-    #[test]
-    fn an_unverified_release_keeps_its_version_but_cannot_be_installed_in_place() {
-        let mut m = machine("1.0.0");
-        let t = start_check(&mut m, Trigger::Manual);
-        finish(
-            &mut m,
-            t,
-            Some(Candidate {
-                verified: false,
-                ..candidate("1.1.0")
-            }),
-        );
-        assert!(matches!(
-            m.phase,
-            Phase::Checked(Outcome::ManualUpgrade {
-                reason: ManualReason::Unverified,
-                ..
-            })
-        ));
-        assert_eq!(m.handle(Event::DownloadRequested), vec![]);
-    }
-
-    #[test]
-    fn capability_decides_between_in_app_manual_and_system_managed() {
-        let mut manual = Machine::new(v("1.0.0"), Channel::Stable, Capability::ManualOnly);
-        let t = start_check(&mut manual, Trigger::Manual);
-        finish(&mut manual, t, Some(candidate("1.1.0")));
-        assert!(matches!(
-            manual.phase,
-            Phase::Checked(Outcome::ManualUpgrade {
-                reason: ManualReason::Environment,
-                ..
-            })
-        ));
-        for (capability, outcome) in [
-            (Capability::SystemManaged, Outcome::SystemManaged),
-            (Capability::Unsupported, Outcome::NotApplicable),
-        ] {
-            let mut m = Machine::new(v("1.0.0"), Channel::Stable, capability);
-            // No request goes out: the platform owns updates or has none.
-            assert_eq!(m.handle(Event::CheckRequested(Trigger::Manual)), vec![]);
-            assert_eq!(m.phase, Phase::Checked(outcome));
-        }
-    }
-
-    #[test]
-    fn failures_are_reported_to_a_manual_check_and_swallowed_by_a_background_one() {
-        let mut m = machine("1.0.0");
-        let t = start_check(&mut m, Trigger::Manual);
-        let effects = m.handle(Event::CheckFinished {
-            ticket: t,
-            result: CheckResult::Failed(Failure::Network),
-        });
-        assert_eq!(
-            effects,
-            vec![Effect::Notify(Notice::CheckFailed(Failure::Network))]
-        );
-        let t = start_check(&mut m, Trigger::Background);
-        let effects = m.handle(Event::CheckFinished {
-            ticket: t,
-            result: CheckResult::Failed(Failure::RateLimited),
-        });
-        assert_eq!(effects, vec![]);
-        assert_eq!(
-            m.phase,
-            Phase::Checked(Outcome::Failed(Failure::RateLimited))
-        );
-        // Retrying after a failure works.
-        assert!(matches!(
-            m.handle(Event::CheckRequested(Trigger::Manual)).as_slice(),
-            [Effect::StartCheck { .. }]
-        ));
-    }
-
-    #[test]
-    fn an_install_failure_is_recorded_and_stale_failures_are_ignored() {
-        let mut m = machine("1.0.0");
-        let t = start_check(&mut m, Trigger::Manual);
-        finish(&mut m, t, Some(candidate("1.1.0")));
-        m.handle(Event::DownloadRequested);
-        let ticket = m.ticket();
-        m.handle(Event::InstallFailed {
-            ticket: ticket - 1,
-            failure: Failure::Disk,
-        });
-        assert!(
-            matches!(m.phase, Phase::Downloading { .. }),
-            "a stale failure changes nothing"
-        );
-        m.handle(Event::InstallFailed {
-            ticket,
-            failure: Failure::Network,
-        });
-        assert!(matches!(
-            m.phase,
-            Phase::InstallFailed {
-                failure: Failure::Network,
-                ..
-            }
-        ));
     }
 }

@@ -1,0 +1,19 @@
+# Runtime-independent state contracts with an optional latest-value backend.
+[package]
+name = "usher-state"
+version = "0.0.1-alpha.1"
+edition = "2024"
+license = "LicenseRef-Proprietary"
+publish = false
+
+[features]
+default = []
+backend-watch = ["dep:tokio"]
+
+[dependencies]
+tokio = { version = "1", optional = true, default-features = false, features = ["sync"] }
+
+[dev-dependencies]
+usher-test-support = { path = "../usher-test-support" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"

@@ -1,0 +1,61 @@
+{
+  "schema_version": 1,
+  "property_cases": 128,
+  "property_seed": 20261112,
+  "cases": [
+    {
+      "case_id": "root",
+      "target": "/",
+      "route": "home",
+      "url": "/"
+    },
+    {
+      "case_id": "static-priority",
+      "target": "/users/new",
+      "route": "user-new",
+      "url": "/users/new"
+    },
+    {
+      "case_id": "parameter",
+      "target": "/users/alice?tag=a&tag=b",
+      "route": "user",
+      "url": "/users/alice?page=1&tag=a&tag=b"
+    },
+    {
+      "case_id": "unicode",
+      "target": "/users/\u4f60\u597d",
+      "route": "user",
+      "url": "/users/%E4%BD%A0%E5%A5%BD?page=1"
+    },
+    {
+      "case_id": "decode-once",
+      "target": "/users/%252F",
+      "route": "user",
+      "url": "/users/%252F?page=1"
+    },
+    {
+      "case_id": "catch-all",
+      "target": "/files/a/b?x=1&x=2",
+      "route": "files",
+      "url": "/files/a/b?x=1&x=2"
+    },
+    {
+      "case_id": "trailing-slash",
+      "target": "/about/",
+      "route": "about-slash",
+      "url": "/about/"
+    },
+    {
+      "case_id": "unknown",
+      "target": "/missing?x=y",
+      "route": null,
+      "url": "/missing?x=y"
+    },
+    {
+      "case_id": "case-sensitive",
+      "target": "/About",
+      "route": null,
+      "url": "/About"
+    }
+  ]
+}

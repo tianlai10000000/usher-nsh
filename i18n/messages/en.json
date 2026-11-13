@@ -147,5 +147,8 @@
   "settings.section.theme": "Themes",
   "settings.section.diagnostics": "Diagnostics",
   "diagnostics.error.diagnostics_write_failed": "Writing to the log files failed. Logs may be incomplete.",
-  "diagnostics.dropped": "{count} log lines were skipped because the app was busy."
+  "diagnostics.dropped": "{count} log lines were skipped because the app was busy.",
+  "router.notFound": "Page not found",
+  "router.failed": "This page could not be displayed.",
+  "router.initializationFailed": "Navigation could not be initialized."
 }

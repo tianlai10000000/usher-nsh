@@ -159,7 +159,7 @@ Release 优化参数统一放在 [.cargo/config.toml](.cargo/config.toml)。在�
 
 ## 验证
 
-从项目根目录按变更范围运行检查。工作区测试命令包含独立更新 crate。
+从项目根目录按变更范围运行检查。工作区命令包含更新、状态、路由与测试支持 crate；应用依赖启用 watch 和 matchit 适配器，独立套件另行验证不启用这些 feature 的核心。
 
 ```sh
 cargo test --locked --workspace
@@ -179,7 +179,65 @@ nsh test tests/ui/diagnostics.test.tsx
 cargo test --locked -p usher-update
 ```
 
-macOS 原生检查会打开真实窗口，需要图形会话。
+验证通用测试工具、状态与路由核心、应用集成及无头旅程时运行：
+
+```sh
+python3 scripts/test.py test-support
+python3 scripts/test.py state
+python3 scripts/test.py router
+python3 scripts/test.py routes-check
+python3 scripts/test.py update-state
+python3 scripts/test.py state-targets
+python3 scripts/test.py integration
+python3 scripts/test.py state-ui
+python3 scripts/test.py router-ui
+python3 scripts/test.py e2e --target headless
+python3 scripts/test.py ui
+```
+
+`test-support`、`state` 和 `router` 不需要 NSH。状态和路由以参考及真实后端运行同一消费者契约，路由属性测试使用夹具中的固定种子。`integration` 运行 11 项设置、10 项窗口 / 路由与 15 项更新测试，使用真实服务和隔离数据。`state-ui` 验证 TS 投影及真实订阅桥接，`router-ui` 验证路由门面及真实页面生命周期。`e2e --target headless` 使用隔离内存会话，运行实际 App 到 Rust 服务的四项旅程。macOS 原生验收命令已验证同 VM 窗口共享持久偏好、窗口会话隔离、真实源码 HMR 及关闭重开身份。
+
+报告写入 `target/test-reports/`；失败、空测试、跳过或必测组缺失均非零退出。NSH 套件递归发现源文件并验证新生成的 JUnit。同一 checkout 内的 NSH 命令须串行运行，类型检查单独执行 `nsh check`。`routes-check` 验证生成器测试及实际目录生成契约的新鲜度，不修改文件；后者单独计为检查，不额外计为测试。修改 `ui/pages/routes.json` 后执行：
+
+```sh
+cargo run --locked -p usher-router --features matcher-matchit --bin usher-routes -- generate ui/pages/routes.json ui/pages/routes.generated.ts
+python3 scripts/test.py routes-check
+nsh check
+```
+
+`state-targets` 编译配置中的七个 Rust 目标，须先安装对应 rust-std；CI 从 tests/config.json 读取目标并安装。它只检查纯库，不启动其他平台宿主。
+
+macOS 原生检查会打开真实窗口，需要解锁的图形会话。状态验收命令复制独立源码，给官方宿主显式指定临时数据 / 缓存根；仅修改副本触发 HMR，检查落盘文件，并在结束后删除临时树：
+
+```sh
+python3 scripts/test.py e2e --target macos
+```
+
+该命令运行三项生命周期探针和一项原生返回 / 守卫测试，使用生产状态 / 路由适配器及 RouterView；不包含进程重启或所有原生输入路径。报告包括 e2e-macos.json、native-state.xml、native-isolation.json 和逐轮日志。CI 通过手动 native_state 开关在带 usher-native 标签的 self-hosted macOS runner 上运行；需预先配置并保持桌面解锁，远端运行尚未验证。
+
+发布包深链接验收使用 ad-hoc 签名的 release 应用与唯一测试 ID；专属数据 / 缓存命名空间映射到临时目录，仅在隔离源码副本的产品入口加入只读路由观察器。命令验证 LaunchServices 注册、外部 URL 冷启动和同进程唤醒，然后注销测试应用并清理隔离数据：
+
+```sh
+python3 scripts/test.py packaged-routing
+```
+
+该命令也进入手动 native_state CI 作业，不代表 Developer ID 公证或 Gatekeeper 下载应用链路验收。
+
+macOS VM reload 验收通过真实 Cmd+R 重建 VM，恢复持久偏好、重置窗口历史 / 会话并拒绝旧回调。它使用官方 runner 的隔离数据 / 缓存目录，与 HMR 和整个进程重启分别验收。
+
+```sh
+python3 scripts/test.py native-reload
+```
+
+本地更新启动模拟为每轮生成唯一测试应用 ID，每个场景使用独立临时数据 / 缓存根，不改 HOME。4 个有效场景覆盖代码包晋升、启动回滚、降级拒绝和包篡改；7 个 pending 场景不计入通过。需在解锁的 Apple Silicon macOS 宿主运行：
+
+```sh
+scripts/update-sim/sim.sh run --all
+```
+
+日志和清理证据保留在 `target/test-reports/update-sim-*/`。`serve <场景>` 由脚本管理隔离应用，Ctrl+C 后停止并清理。该命令验证预置代码包的启动链路，完整下载 / 安装旅程仍待验收，见[本地更新模拟方案](docs/update.md#12-本地更新模拟d14)。
+
+原有原生 UI 检查：
 
 ```sh
 nsh test tests/ui/window-shell.test.tsx --target macos
@@ -198,10 +256,13 @@ USHER_MACOS_APPKIT=0 nsh test tests/ui/appkit.test.tsx --target macos
 | `App.tsx` | 应用挂载与共享视图装配 |
 | `src/` | Rust 设置、主题文件、诊断日志和 NSH 桥接 |
 | `crates/usher-update/` | 更新状态机和发布签名逻辑 |
+| `crates/usher-state/`、`crates/usher-router/` | 可替换状态后端与独立路由规则 |
+| `crates/usher-test-support/` | 仅开发依赖使用的通用测试工具 |
+| `tests/integration/`、`tests/e2e/` | 应用契约与真实无头旅程 |
 | `ui/layout/Frame.tsx` | 窗口框架装配入口 |
 | `ui/layout/components/` | 标题栏、菜单、内容区、状态栏与背景层 |
 | `ui/layout/controllers/`、`ui/layout/contracts/` | 菜单与窗口控制逻辑，以及布局消费的接口 |
-| `ui/navigation/` | 路由与导航历史 |
+| `ui/router/`、`ui/pages/` | 路由门面、RouterView、路由目录与页面注册 |
 | `ui/features/`、`ui/state/`、`ui/components/` | 功能视图、表现状态和复用控件 |
 | `ui/theme/` | 内置主题文件、Gallery 映射与 token 投影 |
 | `i18n/messages/`、`ui/i18n/` | 翻译目录与界面国际化 |
@@ -211,6 +272,16 @@ USHER_MACOS_APPKIT=0 nsh test tests/ui/appkit.test.tsx --target macos
 | `.nsh/`、`target/` | 生成的构建与测试产物 |
 
 [项目架构](architecture.md)描述模块职责、依赖边界、状态归属与数据流。[分批实施清单](scaffolding.md)记录实现状态，[开发与贡献规范](CONTRIBUTING.md)定义开发与贡献要求。
+
+[状态管理方案](docs/state-management.md)记录 SM1 至 SM3 及 SM4 迁移。设置保持原桥接和持久化格式兼容；导航、分类、操作反馈、共享预览、导出和计数已使用 Rust Store，诊断健康使用独立实时订阅。无头回归和隔离目录下的 macOS 多窗口 / HMR 验收均已通过。SM4 在当前支持的 macOS 开发宿主范围完成；其他平台及发布验收分别跟踪。
+
+[路由方案](docs/routing.md)记录已实施的 RT1 至 RT3 与 RT4 当前进展：独立 `usher-router`、可替换 matchit 匹配、从 `ui/pages/routes.json` 生成类型、集中页面注册及 `ui/router` / RouterView。历史经 `usher-state` 提交，原有可写 `ui/navigation` 已移除。RT4 已接入 `usher://app/…` 深链接、经过异步守卫的原生返回，以及保留历史和会话的目录替换 / HMR。改动 routes.json 内容须更新 identity 并重新生成类型。macOS 开发宿主以及本机 arm64 ad-hoc 发布包的系统 URL 注册、外部冷启动与同进程唤醒已验证；其他平台宿主及分发/公证仍待验收，iOS 交互式滑动返回尚未实现。
+
+[测试方案](docs/testing.md)记录 GitHub 实践依据、夹具和实际结果。UT1 已完成，应用集成、桥接及无头 E2E 已交付。通用 Rust 工具通过开发依赖复用 `usher-test-support`，业务夹具仍归所属模块。单测和 crate 契约就近组织，应用集成与 E2E 集中管理。CI 已接入新命令，远端 GitHub 运行结果尚未验证。
+
+SM5 已新增更新应用协调器，复用 usher-state 发布状态，串行领取效果，拒绝旧执行者回执，并在交接和未知安装结果时阻止重复执行。原更新 API 和设置文件格式保持兼容；更新产品桥接、按钮和自动下载仍由更新方案后续批次接入。`update-state` 使用参考 / watch 后端、隔离设置目录及本地 mock 数据，不访问更新源或安装目录。SM6 审计及构建成本见 [验收审计](docs/state-audit.md)。
+
+SM6 本机回归已通过；RT4 后最新验证包含 229 项 Rust 测试、36 项应用集成、全部 UI / 无头旅程和 4 项隔离原生验收。七目标纯库及 Apple 四目标应用编译通过；完整其他平台应用构建、宿主和远端 CI 尚未完成，因此 SM6 保持部分完成。此前 SM6 隔离发布构建相对 06ed67e 的应用文件总量增加 1.10%（尚未重测 RT4），测量条件和原始证据见上述审计。
 
 ## 许可
 

@@ -37,9 +37,9 @@ pub(crate) static CONFIG: LazyLock<BackgroundConfig> = LazyLock::new(|| {
 
 /// Metadata in settings; the ID is an application-owned basename, never a user path.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub(crate) struct BackgroundImage {
-    pub(crate) id: String,
-    pub(crate) name: String,
+pub struct BackgroundImage {
+    pub id: String,
+    pub name: String,
 }
 
 impl BackgroundImage {

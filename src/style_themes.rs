@@ -3,7 +3,7 @@
 //! Every theme, bundled or local, is one JSON document in the same schema. A theme lists design
 //! tokens for the light and dark schemes and names the theme it `extends`; the registry resolves
 //! the chain so a consumer receives a complete token table. No theme is special-cased in code
-//! except the root, [`DEFAULT_THEME_ID`], which completes every chain. A style file never chooses
+//! except the root, the default theme, which completes every chain. A style file never chooses
 //! a native component family.
 
 use std::{
@@ -36,7 +36,7 @@ include!(concat!(env!("OUT_DIR"), "/bundled_themes.rs"));
 /// How the window material shows through a theme's surfaces.
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "lowercase")]
-pub(crate) enum Material {
+pub enum Material {
     #[default]
     Solid,
     Glass,
@@ -56,7 +56,7 @@ impl Material {
 /// Values are strings so one table can hold colors, lengths and shadow lists. A JSON number is
 /// accepted for lengths and written back as a number.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub(crate) struct Tokens(pub(crate) BTreeMap<String, String>);
+pub struct Tokens(pub BTreeMap<String, String>);
 
 impl<'de> Deserialize<'de> for Tokens {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
@@ -130,52 +130,52 @@ impl Tokens {
 
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(default, deny_unknown_fields)]
-pub(crate) struct StyleCssVars {
+pub struct StyleCssVars {
     /// Tokens that do not depend on the color scheme, such as sizes and motion. A scheme's own
     /// table wins over this one.
     #[serde(skip_serializing_if = "Tokens::is_empty")]
-    pub(crate) shared: Tokens,
+    pub shared: Tokens,
     /// Metrics for touch screens, in the same names as `shared`. The registry keeps them as a
     /// separate table: whether a device is a touch device is known to the interface, not here.
     #[serde(skip_serializing_if = "Tokens::is_empty")]
-    pub(crate) touch: Tokens,
-    pub(crate) light: Tokens,
-    pub(crate) dark: Tokens,
+    pub touch: Tokens,
+    pub light: Tokens,
+    pub dark: Tokens,
 }
 
-/// A theme as written in its file. [`StyleThemeScan::resolved`] merges it with its bases.
+/// A theme as written in its file. The internal theme scanner merges it with its bases.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub(crate) struct StyleTheme {
-    pub(crate) id: String,
-    pub(crate) name: String,
+pub struct StyleTheme {
+    pub id: String,
+    pub name: String,
     /// Display names by UI locale, used instead of `name` when one matches.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    pub(crate) names: BTreeMap<String, String>,
-    /// The theme this one inherits from. Omitted means [`DEFAULT_THEME_ID`].
+    pub names: BTreeMap<String, String>,
+    /// The theme this one inherits from. Omitted means the default theme.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub(crate) extends: Option<String>,
+    pub extends: Option<String>,
     /// Position in the theme list. Equal positions keep their discovery order.
     #[serde(default = "default_order")]
-    pub(crate) order: u32,
+    pub order: u32,
     /// Where a vendored theme comes from, kept so a later sync can be traced and credited.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub(crate) source: Option<ThemeSource>,
+    pub source: Option<ThemeSource>,
     /// Inherited from the base theme when omitted.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub(crate) material: Option<Material>,
+    pub material: Option<Material>,
     #[serde(default)]
-    pub(crate) css_vars: StyleCssVars,
+    pub css_vars: StyleCssVars,
 }
 
 /// Provenance of a theme derived from an external design system.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct ThemeSource {
-    pub(crate) name: String,
-    pub(crate) url: String,
-    pub(crate) license: String,
-    pub(crate) revision: String,
+pub struct ThemeSource {
+    pub name: String,
+    pub url: String,
+    pub license: String,
+    pub revision: String,
 }
 
 fn default_order() -> u32 {
@@ -291,9 +291,9 @@ impl ThemeFile {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct ThemeFileIssue {
-    pub(crate) file_name: String,
-    pub(crate) code: &'static str,
+pub struct ThemeFileIssue {
+    pub file_name: String,
+    pub code: &'static str,
 }
 
 #[derive(Default)]

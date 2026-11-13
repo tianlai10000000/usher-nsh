@@ -1,0 +1,530 @@
+{
+  "schema_version": 1,
+  "report_directory": "target/test-reports",
+  "suites": {
+    "test-support": {
+      "runs": [
+        {
+          "id": "test-support",
+          "command": [
+            "cargo",
+            "test",
+            "--locked",
+            "-p",
+            "usher-test-support"
+          ],
+          "timeout_seconds": 120,
+          "required_test_prefixes": [
+            "task::tests::",
+            "fixture::tests::"
+          ]
+        }
+      ]
+    },
+    "state": {
+      "runs": [
+        {
+          "id": "state-core",
+          "command": [
+            "cargo",
+            "test",
+            "--locked",
+            "-p",
+            "usher-state",
+            "--no-default-features"
+          ],
+          "timeout_seconds": 120,
+          "required_test_prefixes": [
+            "store::tests::",
+            "reference::",
+            "backend_failures_",
+            "cancellation_and_drop_"
+          ]
+        },
+        {
+          "id": "state-watch",
+          "command": [
+            "cargo",
+            "test",
+            "--locked",
+            "-p",
+            "usher-state",
+            "--features",
+            "backend-watch"
+          ],
+          "timeout_seconds": 120,
+          "required_test_prefixes": [
+            "store::tests::",
+            "reference::",
+            "watch::",
+            "backend_failures_",
+            "cancellation_and_drop_"
+          ]
+        }
+      ]
+    },
+    "integration": {
+      "runs": [
+        {
+          "id": "settings-state",
+          "command": [
+            "cargo",
+            "test",
+            "--locked",
+            "-p",
+            "usher-nsh",
+            "--test",
+            "settings_state"
+          ],
+          "timeout_seconds": 120,
+          "required_test_prefixes": [
+            "settings_initialization_",
+            "settings_concurrent_",
+            "settings_failed_",
+            "settings_scopes_",
+            "settings_legacy_",
+            "settings_future_",
+            "settings_corrupt_",
+            "settings_theme_",
+            "settings_consumers_",
+            "settings_cancellation_",
+            "settings_background_"
+          ]
+        },
+        {
+          "id": "window-router",
+          "command": [
+            "cargo",
+            "test",
+            "--locked",
+            "-p",
+            "usher-nsh",
+            "--test",
+            "state_router"
+          ],
+          "timeout_seconds": 120,
+          "required_test_prefixes": [
+            "router_catalog_",
+            "router_cancel_",
+            "router_out_of_order_",
+            "router_redirects_",
+            "router_session_",
+            "router_operation_",
+            "router_close_"
+          ]
+        },
+        {
+          "id": "update-state",
+          "command": [
+            "cargo",
+            "test",
+            "--locked",
+            "-p",
+            "usher-nsh",
+            "--test",
+            "update_state"
+          ],
+          "timeout_seconds": 120,
+          "required_test_prefixes": [
+            "updates_backend_contract_",
+            "updates_publication_failure_",
+            "updates_concurrent_",
+            "updates_registry_"
+          ]
+        }
+      ]
+    },
+    "state-ui": {
+      "runs": [
+        {
+          "id": "state-projection",
+          "runner": "nsh",
+          "command": [
+            "nsh",
+            "test"
+          ],
+          "test_paths": [
+            "ui/state/__tests__"
+          ],
+          "timeout_seconds": 120,
+          "required_test_prefixes": [
+            "state sequence",
+            "state callbacks",
+            "state disposal",
+            "state reconnect",
+            "state terminal",
+            "state registration",
+            "state pending",
+            "state malformed",
+            "state borrowed",
+            "state explicit"
+          ]
+        },
+        {
+          "id": "state-bridge-ui",
+          "runner": "nsh",
+          "command": [
+            "nsh",
+            "test"
+          ],
+          "test_paths": [
+            "tests/integration"
+          ],
+          "timeout_seconds": 120,
+          "required_test_prefixes": [
+            "bridge native",
+            "bridge owner",
+            "bridge cancellation",
+            "bridge engine",
+            "bridge: foreign",
+            "bridge: destroying"
+          ]
+        }
+      ]
+    },
+    "ui": {
+      "runs": [
+        {
+          "id": "application-ui",
+          "runner": "nsh",
+          "command": [
+            "nsh",
+            "test"
+          ],
+          "test_paths": [
+            "tests/ui"
+          ],
+          "timeout_seconds": 120,
+          "required_test_prefixes": [
+            "shares the appearance",
+            "applies themes and language"
+          ]
+        }
+      ]
+    },
+    "router": {
+      "runs": [
+        {
+          "id": "router-core",
+          "command": [
+            "cargo",
+            "test",
+            "--locked",
+            "-p",
+            "usher-router",
+            "--no-default-features"
+          ],
+          "timeout_seconds": 120,
+          "required_test_prefixes": [
+            "history::tests::",
+            "reference::",
+            "backend_failures_",
+            "properties_",
+            "generation_"
+          ]
+        },
+        {
+          "id": "router-matchit",
+          "command": [
+            "cargo",
+            "test",
+            "--locked",
+            "-p",
+            "usher-router",
+            "--features",
+            "matcher-matchit"
+          ],
+          "timeout_seconds": 120,
+          "required_test_prefixes": [
+            "history::tests::",
+            "reference::",
+            "matchit::",
+            "backend_failures_",
+            "properties_",
+            "generation_cli_"
+          ]
+        }
+      ]
+    },
+    "routes-check": {
+      "runs": [
+        {
+          "id": "route-generation",
+          "command": [
+            "cargo",
+            "test",
+            "--locked",
+            "-p",
+            "usher-router",
+            "--features",
+            "matcher-matchit",
+            "--test",
+            "generation"
+          ],
+          "timeout_seconds": 120,
+          "required_test_prefixes": [
+            "generation_"
+          ]
+        },
+        {
+          "id": "application-route-contracts",
+          "runner": "check",
+          "command": [
+            "cargo",
+            "run",
+            "--locked",
+            "-p",
+            "usher-router",
+            "--features",
+            "matcher-matchit",
+            "--bin",
+            "usher-routes",
+            "--",
+            "check",
+            "ui/pages/routes.json",
+            "ui/pages/routes.generated.ts"
+          ],
+          "timeout_seconds": 120,
+          "required_output": [
+            "checked route contracts: ui/pages/routes.generated.ts"
+          ]
+        }
+      ]
+    },
+    "router-ui": {
+      "runs": [
+        {
+          "id": "router-facade",
+          "runner": "nsh",
+          "command": [
+            "nsh",
+            "test"
+          ],
+          "test_paths": [
+            "ui/router/__tests__"
+          ],
+          "timeout_seconds": 120,
+          "required_test_prefixes": [
+            "router facade",
+            "router guards",
+            "router disposal",
+            "router view",
+            "router host"
+          ]
+        },
+        {
+          "id": "router-bridge",
+          "runner": "nsh",
+          "command": [
+            "nsh",
+            "test"
+          ],
+          "test_paths": [
+            "tests/integration/router.test.tsx"
+          ],
+          "timeout_seconds": 120,
+          "required_test_prefixes": [
+            "router bridge fences",
+            "router bridge replaces",
+            "router bridge remount",
+            "router bridge host"
+          ]
+        }
+      ]
+    },
+    "e2e": {
+      "runs": [
+        {
+          "id": "product-journeys",
+          "runner": "nsh",
+          "command": [
+            "nsh",
+            "test"
+          ],
+          "test_paths": [
+            "tests/e2e/navigation.test.tsx",
+            "tests/e2e/native-back.test.tsx"
+          ],
+          "timeout_seconds": 120,
+          "required_test_prefixes": [
+            "e2e retained",
+            "e2e separately",
+            "e2e host",
+            "e2e native back"
+          ]
+        }
+      ]
+    },
+    "e2e-macos": {
+      "runs": [
+        {
+          "id": "native-state",
+          "runner": "native",
+          "command": [
+            "python3",
+            "scripts/native_acceptance.py"
+          ],
+          "test_paths": [
+            "tests/e2e/native/App.tsx"
+          ],
+          "timeout_seconds": 600,
+          "required_test_prefixes": [
+            "native windows",
+            "native HMR",
+            "native close"
+          ]
+        },
+        {
+          "id": "native-router-back",
+          "runner": "nsh",
+          "command": [
+            "nsh",
+            "test",
+            "--target",
+            "macos"
+          ],
+          "test_paths": [
+            "tests/e2e/native-back.test.tsx"
+          ],
+          "timeout_seconds": 180,
+          "required_test_prefixes": [
+            "e2e native back"
+          ]
+        }
+      ]
+    },
+    "update-state": {
+      "runs": [
+        {
+          "id": "update-domain",
+          "command": [
+            "cargo",
+            "test",
+            "--locked",
+            "-p",
+            "usher-update"
+          ],
+          "timeout_seconds": 120,
+          "required_test_prefixes": [
+            "a_package_on_the_shells_major_minor_line_is_a_package_update",
+            "a_version_that_keeps_failing_stops_being_offered_to_background_checks_only",
+            "only_counted_failures_use_up_a_versions_budget"
+          ]
+        },
+        {
+          "id": "update-application-unit",
+          "command": [
+            "cargo",
+            "test",
+            "--locked",
+            "-p",
+            "usher-nsh",
+            "--lib"
+          ],
+          "timeout_seconds": 120,
+          "required_test_prefixes": [
+            "update_service::tests::"
+          ]
+        },
+        {
+          "id": "update-state-contracts",
+          "command": [
+            "cargo",
+            "test",
+            "--locked",
+            "-p",
+            "usher-nsh",
+            "--test",
+            "update_state"
+          ],
+          "timeout_seconds": 120,
+          "required_test_prefixes": [
+            "updates_backend_contract_",
+            "updates_publication_failure_",
+            "updates_concurrent_",
+            "updates_registry_"
+          ]
+        }
+      ]
+    },
+    "state-targets": {
+      "runs": [
+        {
+          "id": "state-target-compile",
+          "runner": "check",
+          "command": [
+            "python3",
+            "scripts/check_state_targets.py"
+          ],
+          "timeout_seconds": 300,
+          "required_output": [
+            "state platform artifacts verified"
+          ]
+        }
+      ]
+    },
+    "packaged-routing": {
+      "runs": [
+        {
+          "id": "packaged-routing-macos",
+          "runner": "native",
+          "command": [
+            "python3",
+            "scripts/packaged_routing_acceptance.py"
+          ],
+          "test_paths": [
+            "tests/e2e/packaged/observe.ts"
+          ],
+          "timeout_seconds": 1200,
+          "required_test_prefixes": [
+            "packaged scheme",
+            "packaged external URL cold",
+            "packaged external URL wakes"
+          ]
+        }
+      ]
+    },
+    "native-reload": {
+      "runs": [
+        {
+          "id": "native-vm-reload",
+          "runner": "nsh",
+          "command": [
+            "nsh",
+            "test",
+            "--target",
+            "macos"
+          ],
+          "test_paths": [
+            "tests/e2e/reload.test.tsx"
+          ],
+          "timeout_seconds": 180,
+          "required_test_prefixes": [
+            "native VM reload"
+          ]
+        }
+      ]
+    }
+  },
+  "platform_compile": {
+    "packages": [
+      "usher-state",
+      "usher-router",
+      "usher-update",
+      "usher-test-support"
+    ],
+    "features": [
+      "usher-state/backend-watch",
+      "usher-router/matcher-matchit"
+    ],
+    "targets": [
+      "aarch64-apple-darwin",
+      "x86_64-apple-darwin",
+      "x86_64-pc-windows-msvc",
+      "x86_64-unknown-linux-gnu",
+      "aarch64-linux-android",
+      "aarch64-apple-ios",
+      "aarch64-apple-ios-sim"
+    ]
+  }
+}

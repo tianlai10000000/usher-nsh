@@ -1,0 +1,4 @@
+# The native acceptance job requires a self-hosted runner with an unlocked macOS desktop.
+self-hosted-runner:
+  labels:
+    - usher-native

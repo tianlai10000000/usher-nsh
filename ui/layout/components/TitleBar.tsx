@@ -9,7 +9,7 @@
 import { colorScheme, platform, View } from "nsh";
 import { Button } from "nsh/base";
 import { SystemIcon } from "../../components/SystemIcon";
-import type { Navigation } from "../../navigation";
+import type { Navigation } from "../../router";
 import type { AppearanceStore } from "../../state/appearance";
 import { iconButtonLook, spacing } from "../../theme/look";
 import type { MenuPresence } from "../controllers/menuPresence";

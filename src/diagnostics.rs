@@ -304,6 +304,28 @@ struct Shared {
     level: AtomicU8,
     dropped: AtomicU64,
     health: Mutex<Health>,
+    reporting: Mutex<Option<(u64, Arc<crate::diagnostic_state::StatusService>)>>,
+}
+
+impl Shared {
+    fn publish(&self) {
+        let reporting = self
+            .reporting
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .clone();
+        if let Some((source, service)) = reporting {
+            service.update(source, || crate::diagnostic_state::Status {
+                problem: self
+                    .health
+                    .lock()
+                    .unwrap_or_else(|p| p.into_inner())
+                    .code()
+                    .map(str::to_owned),
+                dropped: self.dropped.load(Ordering::Relaxed),
+            });
+        }
+    }
 }
 
 /// A running pipeline. Dropping it drains the queue within a bounded time.
@@ -325,6 +347,7 @@ impl Logger {
             level: AtomicU8::new(level as u8),
             dropped: AtomicU64::new(0),
             health: Mutex::new(Health::Ok),
+            reporting: Mutex::new(None),
         });
         let worker = {
             let root = root.clone();
@@ -431,7 +454,12 @@ impl Logger {
                 if level <= Level::Warn {
                     let _ = self.sender.send(message);
                 } else {
-                    self.shared.dropped.fetch_add(1, Ordering::Relaxed);
+                    let _ = self.shared.dropped.fetch_update(
+                        Ordering::Relaxed,
+                        Ordering::Relaxed,
+                        |value| Some(value.saturating_add(1)),
+                    );
+                    self.shared.publish();
                 }
             }
             Err(TrySendError::Disconnected(_)) => {}
@@ -473,6 +501,7 @@ fn run_worker(root: &Path, receiver: &Receiver<Message>, shared: &Shared) {
             .health
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner()) = health;
+        shared.publish();
     };
     let mut pending_flush = false;
 
@@ -838,6 +867,16 @@ pub(crate) fn install(root: PathBuf, level: Level) -> Arc<Logger> {
         return Arc::clone(existing);
     }
     let logger = Arc::new(Logger::start(root, level));
+    if let Ok(status) = &*crate::diagnostic_state::STATUS
+        && let Ok(source) = status.activate()
+    {
+        *logger
+            .shared
+            .reporting
+            .lock()
+            .unwrap_or_else(|p| p.into_inner()) = Some((source, Arc::clone(status)));
+        logger.shared.publish();
+    }
     *slot = Some(Arc::clone(&logger));
     drop(slot);
     install_panic_record();
@@ -1315,5 +1354,23 @@ mod tests {
         let second = install(dir.path().to_path_buf(), Level::Debug);
         assert!(Arc::ptr_eq(&first, &second));
         assert_eq!(second.level(), Level::Debug);
+    }
+    #[test]
+    fn worker_health_changes_reach_the_shared_status_store() {
+        use crate::diagnostic_state::StatusService;
+        use usher_test_support::task::ready;
+        let directory = tempfile::tempdir().unwrap();
+        let blocked = directory.path().join("blocked");
+        fs::write(&blocked, b"not a directory").unwrap();
+        let logger = Logger::start(blocked, Level::Info);
+        let status = Arc::new(StatusService::new(usher_state::StoreId::new(u128::MAX)).unwrap());
+        let source = status.activate().unwrap();
+        *logger.shared.reporting.lock().unwrap() = Some((source, status.clone()));
+        let mut subscription = status.subscribe().unwrap();
+        logger.log(Level::Info, "test", "health_subscription", None);
+        assert!(logger.flush(Duration::from_secs(2)));
+        let snapshot = ready(subscription.next()).unwrap();
+        assert_eq!(snapshot.state().problem.as_deref(), logger.health().code());
+        assert!(snapshot.state().problem.is_some());
     }
 }

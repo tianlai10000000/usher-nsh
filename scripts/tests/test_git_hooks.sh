@@ -135,6 +135,27 @@ if command -v actionlint > /dev/null 2>&1; then
     commit
     verdict $? "a valid workflow is allowed" "a valid workflow was refused"
     reset
+
+    # Both configuration names must use the index, including when the working copy differs.
+    for config in .github/actionlint.yaml .github/actionlint.yml; do
+        printf 'name: native\non: push\njobs:\n  a:\n    runs-on: [self-hosted, macOS, test-native]\n    steps:\n      - run: echo hi\n' > .github/workflows/native.yml
+        printf 'self-hosted-runner:\n  labels:\n    - test-native\n' > "$config"
+        git add .github/workflows/native.yml "$config"
+        printf 'self-hosted-runner:\n  labels: []\n' > "$config"
+        commit
+        verdict $? "a custom runner uses staged $config despite unstaged edits" "staged $config was ignored"
+        # Remove the committed fixture so each configuration name is checked independently.
+        git rm -qf --ignore-unmatch .github/workflows/native.yml "$config"
+        git -c core.hooksPath=/dev/null commit -qm cleanup
+        reset
+
+        printf 'name: native\non: push\njobs:\n  a:\n    runs-on: [self-hosted, macOS, test-native]\n    steps:\n      - run: echo hi\n' > .github/workflows/native.yml
+        printf 'self-hosted-runner:\n  labels:\n    - test-native\n' > "$config"
+        git add .github/workflows/native.yml
+        if commit; then fail "unstaged $config allowed an unknown runner"; else pass "unstaged $config cannot allow an unknown runner"; fi
+        rm -f "$config"
+        reset
+    done
 else
     echo "skip  workflow cases (actionlint is not installed)"
 fi

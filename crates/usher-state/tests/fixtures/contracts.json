@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "store_ids": [101, 202],
+  "initial": 0,
+  "published": [7, 12, 19],
+  "scenarios": [
+    {
+      "case_id": "changed-unchanged-rejected-and-effect-only",
+      "actions": [
+        {"command": {"kind": "set", "value": 7}, "state": 7, "sequence": 1, "effects": [], "rejected": false},
+        {"command": {"kind": "set", "value": 7}, "state": 7, "sequence": 1, "effects": [], "rejected": false},
+        {"command": {"kind": "reject"}, "state": 7, "sequence": 1, "effects": [], "rejected": true},
+        {"command": {"kind": "effect", "value": "save"}, "state": 7, "sequence": 1, "effects": ["save"], "rejected": false},
+        {"command": {"kind": "set", "value": 0}, "state": 0, "sequence": 2, "effects": [], "rejected": false}
+      ]
+    }
+  ]
+}

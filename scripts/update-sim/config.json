@@ -4,5 +4,7 @@
   "certificateDays": 30,
   "oldVersion": "0.1.0",
   "oldBuild": 1,
-  "launchSeconds": 14
+  "launchSeconds": 14,
+  "processTimeoutSeconds": 15,
+  "buildTimeoutSeconds": 900
 }

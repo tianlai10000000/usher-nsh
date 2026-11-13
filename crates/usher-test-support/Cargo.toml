@@ -1,0 +1,7 @@
+# Business-independent helpers consumed through development dependencies only.
+[package]
+name = "usher-test-support"
+version = "0.0.1-alpha.1"
+edition = "2024"
+license = "LicenseRef-Proprietary"
+publish = false

@@ -7,7 +7,7 @@
 import { keymap, platform, Text, View, windowSize } from "nsh";
 import { Button } from "nsh/base";
 import { SystemIcon } from "../../components/SystemIcon";
-import type { Navigation } from "../../navigation";
+import type { Navigation } from "../../router";
 import type { AppearanceStore } from "../../state/appearance";
 import { focusRing, iconButtonLook, noteLook, spacing } from "../../theme/look";
 import { ButtonTooltip } from "./ButtonTooltip";
@@ -23,7 +23,7 @@ export function HistoryControls(props: NavigationProps) {
 
   if (!mobile) {
     // NSH removes these bindings with the mounted window.
-    keymap.bind({ "mod+[": goBack, "mod+]": goForward }, { when: "notEditing" });
+    keymap.bind({ "mod+[": () => { if (!canGoBack()) return false; void goBack(); return true; }, "mod+]": () => { if (!canGoForward()) return false; void goForward(); return true; } }, { when: "notEditing" });
   }
 
   return (
@@ -35,7 +35,7 @@ export function HistoryControls(props: NavigationProps) {
         hoverStyle={iconButtonLook(palette, false, true).hoverStyle}
         activeStyle={iconButtonLook(palette, false, true).activeStyle}
         focusStyle={iconButtonLook(palette, false, true).focusStyle}
-        disabledStyle={iconButtonLook(palette, false, true).disabledStyle} onPress={goBack}>
+        disabledStyle={iconButtonLook(palette, false, true).disabledStyle} onPress={() => void goBack()}>
         <SystemIcon name="arrow.left" fallback="←" size={palette().metric.titlebarIcon} color={palette().text} />
       </Button>
       <Button testID="nav-forward" accessibilityLabel={t("nav.forward")} disabled={!canGoForward()}
@@ -45,7 +45,7 @@ export function HistoryControls(props: NavigationProps) {
         hoverStyle={iconButtonLook(palette, false, true).hoverStyle}
         activeStyle={iconButtonLook(palette, false, true).activeStyle}
         focusStyle={iconButtonLook(palette, false, true).focusStyle}
-        disabledStyle={iconButtonLook(palette, false, true).disabledStyle} onPress={goForward}>
+        disabledStyle={iconButtonLook(palette, false, true).disabledStyle} onPress={() => void goForward()}>
         <SystemIcon name="arrow.right" fallback="→" size={palette().metric.titlebarIcon} color={palette().text} />
       </Button>
     </View>
@@ -70,7 +70,7 @@ export function Breadcrumbs(props: NavigationProps) {
                 style={{ paddingHorizontal: palette().metric.textGap / 2, borderRadius: palette().metric.radiusItem / 2 }}
                 hoverStyle={{ opacity: 0.7 }}
                 focusStyle={focusRing(palette)}
-                onPress={() => navigate(crumb().id)}>
+                onPress={() => void navigate(crumb().id)}>
                 <Text style={{ ...noteLook(palette), fontSize: palette().metric.fontBody, numberOfLines: 1 }}>{t(crumb().titleKey)}</Text>
               </Button>
               <SystemIcon name="chevron.right" fallback="›" size={9} color={palette().muted} />

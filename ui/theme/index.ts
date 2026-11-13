@@ -1,28 +1,11 @@
 /** Resolves theme files into semantic surface, control and layout tokens. */
 import { platform } from "nsh";
-import type { StyleThemeValue } from "usher/nsh";
+import type { CustomPalette, StyleTheme } from "./contracts";
+export type { CustomPalette, CustomTheme, StyleTheme } from "./contracts";
 import rootThemeFile from "./builtin/default/theme.json";
 
 export type Scheme = "light" | "dark";
 export type ComponentFamily = "nsh" | "appkit";
-
-/** The four colors the in-app palette editor edits. */
-export type CustomPalette = {
-  background: string;
-  surface: string;
-  text: string;
-  accent: string;
-};
-
-export type CustomTheme = {
-  id: string;
-  name: string;
-  light: CustomPalette;
-  dark: CustomPalette;
-};
-
-/** A theme with every token resolved by the Rust registry: inheritance and `var()` are applied. */
-export type StyleTheme = StyleThemeValue;
 
 /**
  * The root every theme chain ends in. It is read from the file the registry bundles, so the ID

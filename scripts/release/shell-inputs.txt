@@ -27,3 +27,6 @@ ui/config/background.json
 # The shell's identity and permissions. Its version and build change on every release, so
 # the comparison ignores those two fields (see IGNORED_NSH_JSON_FIELDS in shell_inputs.py).
 nsh.json
+
+# Window session defaults embedded by the Rust service.
+ui/config/session.json

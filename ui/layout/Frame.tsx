@@ -14,7 +14,7 @@
 import { platform, safeArea, View } from "nsh";
 import { Dialog } from "nsh/base";
 import type { JSX } from "nsh/jsx-runtime";
-import type { Navigation } from "../navigation";
+import type { Navigation } from "../router";
 import type { AppearanceStore } from "../state/appearance";
 import { contentBackgroundColor } from "../theme/look";
 import type { AccountEntry } from "./contracts/account";

@@ -159,7 +159,7 @@ Release optimization is defined in [.cargo/config.toml](.cargo/config.toml). Run
 
 ## Verify
 
-Run the relevant checks from the project root. The workspace command includes the independent update crate.
+Run the relevant checks from the project root. The workspace command includes the update, state, router and test-support crates. Application dependencies enable the watch and matchit adapters; dedicated suites also test the cores without those features.
 
 ```sh
 cargo test --locked --workspace
@@ -179,7 +179,65 @@ For changes confined to update logic, use
 cargo test --locked -p usher-update
 ```
 
-Native macOS checks open real windows and require a graphical session.
+For test helpers, state and routing cores, application integration and headless journeys, run:
+
+```sh
+python3 scripts/test.py test-support
+python3 scripts/test.py state
+python3 scripts/test.py router
+python3 scripts/test.py routes-check
+python3 scripts/test.py update-state
+python3 scripts/test.py state-targets
+python3 scripts/test.py integration
+python3 scripts/test.py state-ui
+python3 scripts/test.py router-ui
+python3 scripts/test.py e2e --target headless
+python3 scripts/test.py ui
+```
+
+The `test-support`, `state` and `router` suites require no NSH. State and router suites run the same consumer contracts with reference and production backends; router properties use fixed fixture seeds. `integration` runs 11 settings, 10 window/router and 15 update tests against real services and isolated data. `state-ui` covers TS projections and real subscription bridges; `router-ui` covers the router facade and real page lifecycle. `e2e --target headless` runs four journeys through the actual App and Rust services using isolated memory sessions. The macOS native acceptance command also verifies same-VM windows sharing persisted preferences, isolated window sessions, actual source HMR, and close/reopen identity.
+
+Reports are written to `target/test-reports/`; failed, empty, skipped or incomplete required test groups fail the command. NSH suites recursively discover source files and validate fresh JUnit reports. Run NSH commands sequentially within one checkout, and run `nsh check` separately for type checking. `routes-check` verifies generation tests and the actual catalog's generated contract without modifying files; the latter is reported as a check, not an additional test. After changing `ui/pages/routes.json`, regenerate and verify:
+
+```sh
+cargo run --locked -p usher-router --features matcher-matchit --bin usher-routes -- generate ui/pages/routes.json ui/pages/routes.generated.ts
+python3 scripts/test.py routes-check
+nsh check
+```
+
+`state-targets` compiles seven configured Rust targets; install their rust-std components first. CI reads and installs the targets from tests/config.json. This checks pure libraries, not native hosts on those platforms.
+
+Native macOS checks open real windows and require an unlocked graphical session. The state acceptance command stages a private source copy and starts the official host with an explicit temporary data/cache root. It modifies only that copy to trigger HMR, verifies the saved file, and removes the temporary tree afterward:
+
+```sh
+python3 scripts/test.py e2e --target macos
+```
+
+This command runs three lifecycle probes and one native back/guard test using production state/router adapters and RouterView. It does not cover process restart or every native input path. Reports include `e2e-macos.json`, `native-state.xml`, `native-isolation.json`, and per-run logs. CI exposes it through the manual `native_state` option on a self-hosted macOS runner labelled `usher-native`; that runner must already be configured with an unlocked desktop. Remote execution remains unverified.
+
+Packaged deep-link acceptance uses an ad-hoc signed release app with a unique test ID. Its data/cache namespaces point to temporary directories; the product entry receives only a read-only route observer in the isolated copy. The command verifies LaunchServices registration, external URL cold launch and same-process wake, then unregisters the app and removes its isolated data:
+
+```sh
+python3 scripts/test.py packaged-routing
+```
+
+This also runs under the manual `native_state` CI option. It does not verify Developer ID notarization or Gatekeeper's downloaded-app flow.
+
+The macOS VM reload check uses real Cmd+R to replace the VM, restores persisted preferences, resets window history/session data and rejects obsolete callbacks. It uses the official runner’s isolated data/cache roots and is separate from HMR and process restart.
+
+```sh
+python3 scripts/test.py native-reload
+```
+
+Local update launch simulations use a unique test application ID and separate temporary data/cache roots for each scenario, without changing HOME. Four active scenarios cover package promotion, startup rollback, downgrade rejection and package tampering; seven pending scenarios do not count as passes. Run on an unlocked Apple Silicon macOS host:
+
+```sh
+scripts/update-sim/sim.sh run --all
+```
+
+Logs and cleanup evidence are retained under `target/test-reports/update-sim-*/`. `serve <scenario>` owns the isolated app until Ctrl+C, then stops it and cleans up. This verifies preloaded package startup, not the complete download/install journey. See the [update simulation design](docs/update.md#12-本地更新模拟d14).
+
+Existing native UI checks:
 
 ```sh
 nsh test tests/ui/window-shell.test.tsx --target macos
@@ -198,10 +256,13 @@ Headless UI checks use session settings and cannot validate disk persistence or 
 | `App.tsx` | Application mount and shared view composition |
 | `src/` | Rust settings, theme files, diagnostics and NSH bridge |
 | `crates/usher-update/` | Update state machine and release signature logic |
+| `crates/usher-state/`, `crates/usher-router/` | Replaceable state backend and independent routing rules |
+| `crates/usher-test-support/` | Generic development-only test helpers |
+| `tests/integration/`, `tests/e2e/` | Application contracts and real headless journeys |
 | `ui/layout/Frame.tsx` | Window frame composition entry |
 | `ui/layout/components/` | Title bar, menus, content panel, status bar and background layers |
 | `ui/layout/controllers/`, `ui/layout/contracts/` | Menu and window control logic, and interfaces consumed by the frame |
-| `ui/navigation/` | Routes and navigation history |
+| `ui/router/`, `ui/pages/` | Router facade, RouterView, route catalog and page registration |
 | `ui/features/`, `ui/state/`, `ui/components/` | Feature views, presentation state and reusable controls |
 | `ui/theme/` | Bundled theme files, the Gallery mapping and token projection |
 | `i18n/messages/`, `ui/i18n/` | Translation catalogs and UI localization |
@@ -211,6 +272,16 @@ Headless UI checks use session settings and cannot validate disk persistence or 
 | `.nsh/`, `target/` | Generated build and test output |
 
 The [architecture](architecture.md) describes module responsibilities, dependency boundaries, state ownership and data flow. The [batch plan](scaffolding.md) records implementation status, and the [contributing guidelines](CONTRIBUTING.md) define development and contribution requirements.
+
+The [shared state design](docs/state-management.md) documents SM1–SM3 and the SM4 migration. Settings retain the existing bridge and persistence formats. Shared navigation, sections, feedback, previews, exports and counters now use Rust stores; diagnostic health has its own live subscription. Headless regressions and isolated macOS multi-window/HMR acceptance pass. SM4 is complete for the supported macOS development host; other platforms and release acceptance remain separate work.
+
+The [routing design](docs/routing.md) records RT1–RT3 and current RT4 progress: standalone `usher-router`, replaceable matchit matching, typed generation from `ui/pages/routes.json`, central page registration and `ui/router`/RouterView. History is committed through `usher-state`; the former writable `ui/navigation` implementation is removed. RT4 adds `usher://app/…` deep links, native back through asynchronous guards, and catalog replacement/HMR preserving history and session data. Change the identity and regenerate types when changing routes.json content. The macOS development host and the local arm64 ad-hoc release package are verified for OS URL registration, external cold launch and same-process wake. Other platform hosts and distribution/notarization remain unverified. Interactive iOS swipe-back is not implemented.
+
+The [testing design](docs/testing.md) records upstream GitHub references, fixtures and actual results. UT1 is complete; integration, bridge and headless E2E coverage are implemented. Generic Rust helpers live in `usher-test-support` as development dependencies; business fixtures stay with their modules. Unit and crate contracts stay beside their owners; application integration and E2E are centralized. CI configuration includes the new commands, but remote GitHub runs have not been verified.
+
+SM5 adds an update application coordinator that publishes through usher-state, claims effects serially, fences old executor receipts, and blocks duplicate execution during handover or uncertain installation. Existing update APIs and settings files remain compatible. Product bridges, buttons and automatic downloads remain in the update plan's later batches. `update-state` uses reference/watch backends, isolated settings directories and local fixtures; it accesses no update server or installation. See the [SM6 audit](docs/state-audit.md) for state ownership and build costs.
+
+SM6 local regression passes; the latest RT4 checks include 229 Rust tests, 36 application integration tests, all UI/headless journeys and four isolated native checks. Pure libraries compile for seven targets, and the application library compiles for four Apple targets. Complete builds and hosts on other platforms, and remote CI, remain unverified, so SM6 is partially complete. Earlier SM6 isolated release builds show 1.10% more application file bytes than 06ed67e (not remeasured for RT4); measurement conditions and evidence are in the audit above.
 
 ## License
 

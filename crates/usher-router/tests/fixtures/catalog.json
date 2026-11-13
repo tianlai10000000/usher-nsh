@@ -1,0 +1,109 @@
+{
+  "schemaVersion": 1,
+  "identity": "contract-catalog-v1",
+  "initial": "home",
+  "notFoundPage": "not-found",
+  "pages": [
+    "home",
+    "about",
+    "user",
+    "files",
+    "not-found"
+  ],
+  "redirectLimit": 8,
+  "routes": [
+    {
+      "id": "home",
+      "path": "/",
+      "page": "home",
+      "parent": null,
+      "titleKey": "test.home",
+      "menu": null,
+      "params": {},
+      "query": {},
+      "unknownQuery": "reject"
+    },
+    {
+      "id": "about",
+      "path": "/about",
+      "page": "about",
+      "parent": "home",
+      "titleKey": "test.about",
+      "menu": null,
+      "params": {},
+      "query": {},
+      "unknownQuery": "reject"
+    },
+    {
+      "id": "about-slash",
+      "path": "/about/",
+      "page": "about",
+      "parent": "home",
+      "titleKey": "test.about-slash",
+      "menu": null,
+      "params": {},
+      "query": {},
+      "unknownQuery": "reject"
+    },
+    {
+      "id": "user-new",
+      "path": "/users/new",
+      "page": "user",
+      "parent": "home",
+      "titleKey": "test.user-new",
+      "menu": null,
+      "params": {},
+      "query": {},
+      "unknownQuery": "reject"
+    },
+    {
+      "id": "user",
+      "path": "/users/{id}",
+      "page": "user",
+      "parent": "home",
+      "titleKey": "test.user",
+      "menu": null,
+      "params": {
+        "id": {
+          "kind": {
+            "type": "string"
+          }
+        }
+      },
+      "query": {
+        "tag": {
+          "kind": {
+            "type": "string"
+          },
+          "multiple": true
+        },
+        "page": {
+          "kind": {
+            "type": "integer"
+          },
+          "defaults": [
+            "1"
+          ]
+        }
+      },
+      "unknownQuery": "reject"
+    },
+    {
+      "id": "files",
+      "path": "/files/{*rest}",
+      "page": "files",
+      "parent": "home",
+      "titleKey": "test.files",
+      "menu": null,
+      "params": {
+        "rest": {
+          "kind": {
+            "type": "string"
+          }
+        }
+      },
+      "query": {},
+      "unknownQuery": "preserve"
+    }
+  ]
+}

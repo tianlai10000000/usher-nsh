@@ -2,6 +2,9 @@
 /.nsh/
 /target/
 
+# Python test and command caches
+__pycache__/
+
 # Operating system and editor files
 .DS_Store
 .idea

@@ -9,7 +9,7 @@
 | 模块 | 位置 | 职责与依赖 |
 | --- | --- | --- |
 | 界面 | `ui/features/`、`ui/components/`、`ui/layout/` | 页面、控件和窗口布局；读取视图投影并发送动作。 |
-| 视图投影 | `ui/state/`、`ui/navigation/` | 设置快照、操作状态、路由历史和本地化投影；调用类型化桥接接口。 |
+| 视图投影 | `ui/state/`、`ui/router/` | 设置快照、操作状态、路由历史和本地化投影；调用类型化桥接接口。 |
 | 设置与资源 | `src/settings.rs`、`src/style_themes.rs`、`src/background.rs` | 偏好校验、状态变更、持久化、主题解析和背景资源管理。 |
 | NSH 桥接 | `src/settings_bridge.rs` | DTO 转换、后台调用、宿主目录解析及原生能力查询。 |
 | 平台适配 | `platforms/macos/` | 窗口材质、系统图标和原生控件；持有 AppKit 对象并处理其生命周期。 |
@@ -26,12 +26,13 @@
 | 状态 | 拥有者 | 生命周期 |
 | --- | --- | --- |
 | 生效的用户偏好、主题和保存状态 | Rust `SettingsStore` | 按设置文件路径共享于进程内；无数据目录时使用引擎局部的会话 Store。 |
-| 设置快照、请求状态和预览草稿 | `createAppearanceStore` | 在 `App` 中创建，跨页面挂载保留。 |
-| 路由、历史游标和面包屑 | `createNavigation` | 当前窗口。 |
+| 设置只读投影 | `ui/state/projection.ts` | App 装配订阅，appearance 与借用门面读取同一投影。 |
+| 请求、预览、分类和主页计数 | `RouterService` 的 session | Rust 窗口 Store；TS 仅借用投影，回执与预览清理使用票据。 |
+| 路由、历史游标和面包屑 | `usher-router` / `RouterService` | 同一 VM 内每个宿主窗口各有唯一历史，动作绑定 Rust StoreId，关闭后身份失效。 |
 | 焦点、悬停、抽屉和组件临时状态 | TSX 组件及布局控制器 | 随所属组件挂载和释放。 |
-| 日志队列和写入线程 | Rust 诊断模块 | 进程级管理，同一日志目录复用实例。 |
+| 日志队列、写入线程和实时健康 | Rust 诊断模块 / `diagnostic_state` | 进程级管理，同一日志目录复用实例；健康和丢弃计数独立发布，旧管线代次不能回写。 |
 
-`SettingsStore` 是偏好的写入入口。TSX 通过 selector 读取快照，使用 `signal` 和 `computed` 管理投影；拖动预览保留在视图侧，提交后由 Rust 校验并保存。
+`SettingsStore` 是偏好的写入入口。TSX 通过框架无关门面读取快照，NSH 响应式图由状态适配器管理；共享拖动预览位于 Rust 窗口 session，提交偏好仍由设置服务校验并保存。
 
 ### 请求与快照
 
@@ -39,16 +40,34 @@
 flowchart LR
     View[TSX 视图] -->|动作| Projection[appearance 投影]
     Projection -->|调用| Bridge[usher/nsh Settings]
-    Bridge -->|命令| Store[SettingsStore]
+    Bridge -->|命令| Service[SettingsService]
+    Service -->|串行调用| Store[SettingsStore]
     Store -->|保存| Files[设置与资源文件]
-    Store -->|快照| Bridge
-    Bridge -->|返回| Projection
+    Store -->|完整快照| Service
+    Service -->|变化时发布| State[usher-state]
+    State -->|只读快照 / Rust 订阅| Consumers[Rust 消费者]
+    Service -->|兼容快照回执| Bridge
+    State -->|订阅| Binding[引擎局部订阅桥接]
+    Binding -->|版本信封| Projection
+    Bridge -->|命令后重新读取版本信封| Projection
     Projection -->|selector| View
 ```
 
-`ui/state/appearance.ts` 串行提交设置请求，防止较早的回执覆盖较新的选择。`settings_bridge.rs` 在后台任务中取得 Store 锁，将内存变更与对应的保存操作放在同一临界区，完成后返回 `SettingsSnapshot`。桥接采用请求—响应方式，当前没有快照订阅广播。
+`ui/state/appearance.ts` 串行提交设置请求，防止较早的回执覆盖较新的选择。`settings_bridge.rs` 在后台任务中通过 `app_state` 获取路径对应的 `SettingsService`。全局注册表锁不覆盖初始化或 I/O，每个服务串行执行设置变更、保存和通用快照发布。原 Store 保留规则与文件格式；只读 `StoreReader` 无需业务锁即可读取和订阅。旧 JS 命令仍返回原 `SettingsSnapshot`；新增 `SettingsState` 提供版本读取和订阅，TS transport 在旧命令完成后重新读取一致信封。所有输入通过同一版本接收器，旧回执和销毁后的回调不能覆盖新值。
 
 快照包含偏好、已解析主题、资源元数据、`revision` 和保存状态。实际状态变更推进版本，重试保存沿用当前版本。业务错误通过稳定错误码返回，展示层负责翻译和操作反馈。
+
+### 通用状态管理目标设计
+
+设计与实施顺序以 [通用状态管理方案](docs/state-management.md) 为准，任务索引见 scaffolding 03.08 至 03.13。SM1 已实现独立核心，SM2 已将设置接入并保持请求—响应兼容。`app_state.rs` 装配目录注册表与独立会话，`settings_service.rs` 负责预检、串行提交、变化比较与异常关闭；SM3 已实现引擎局部订阅、独立 TS 传输及 NSH 适配器；SM4 已迁移窗口历史、分类、预览、操作反馈、导出与计数；macOS 原生同 VM 多窗口、真实源码 HMR 与关闭重开已在隔离数据目录验收。
+
+通用状态机与状态发布层已独立为内部 crate `crates/usher-state/`，提供纯转换契约、不可变快照、只读句柄与后端无关的订阅接口。应用通过工厂注入具体实现，`tokio::sync::watch` 仅为首个可选后端；公共接口不暴露通道、锁守卫或后端错误，更换实现以相同调用方通过契约测试为验收条件。crate 不依赖 NSH、平台、网络与文件系统。更新业务状态机继续归 `usher-update`；设置校验及持久化继续归设置模块，通过应用适配复用底座。
+
+测试依赖独立于运行时架构：`crates/usher-test-support/` 仅提供不含业务依赖的 poll / 唤醒及夹具身份校验工具，由状态、路由和应用的开发依赖使用，不进入其生产依赖图。状态参考后端和场景夹具仍在 `usher-state/tests/`。单测与 crate 契约就近，跨模块应用集成及 E2E 分别集中在 `tests/integration/`、`tests/e2e/`；具体边界和当前实现见 [测试方案](docs/testing.md#3-测试分层与目录)。
+
+应用按数据目录或引擎会话装配应用域，并按宿主窗口身份装配窗口域，由领域服务接收类型化动作并有序发布快照。领域版本与通用发布序号分开，保存状态变化即使没有推进设置 `revision` 也必须通知。桥接在引擎线程投递并管理订阅清理，TS 传输适配器隐藏原生桥接，`ui/state/runtime/nsh.ts` 集中封装 NSH context、signal、computed 与生命周期，组件通过项目状态门面访问投影。状态订阅保留最新值；需要逐条送达的消息和只执行一次的业务效果由各自领域执行器负责，不通过快照广播执行。
+
+迁移范围为全部跨页面共享或跨页面切换保留的数据，包括设置和诊断状态、导航历史、设置分类、共享透明度预览、导出及操作反馈、主页保留计数和相关 selector。导航等会话状态同样复用新 crate，但保持窗口隔离；单视图测量、焦点、动画及资源句柄仍按局部生命周期管理。逐项清单见 [状态管理方案第 8.3 节](docs/state-management.md#83-全量迁移清单)，不能只完成设置订阅就标为全量迁移完成。
 
 ### 本地设置
 
@@ -70,9 +89,15 @@ Store 先保存待提交的主题文件，再将完整设置写入同目录临�
 
 宽桌面窗口将二级菜单停靠在内容区旁，窄窗口和移动布局使用抽屉。停靠偏好由 Rust 保存，动画过程和抽屉开关由布局控制器管理。窗口装饰通过 `nsh/desktop` 测量，移动布局使用宿主安全区。尺寸、间距和动画时长来自主题度量。
 
-`ui/navigation/index.ts` 定义路由 ID、父路由和标题键，并维护当前窗口的历史及游标。菜单、历史按钮、快捷键和面包屑调用同一导航实例。页面切换保持 `App` 持有的外观与导航状态，页面局部状态随组件挂载管理。
+`ui/pages/routes.json` 定义路由 ID、父级、路径、pageKey、标题键与菜单角色，生成 typescript 契约。旧 ui/navigation 已移除。菜单、历史按钮、快捷键和面包屑统一调用 ui/router，历史由 Rust 窗口 Store 持有，页面按 entryKey 卸载 / 挂载。
 
-设置页面按自身可用宽度选择分类列表或下拉框，当前分类保留在外观投影中。布局、键盘导航和浮层使用 NSH 组件的公开接口；应用提供主题样式和可用宽度，框架负责焦点行为、浮层层级与碰撞避让。
+实现与后续扩展见 [独立路由模块方案](docs/routing.md)。纯规则独立为 `crates/usher-router/`，首个路径匹配适配器使用 matchit；应用服务通过 `usher-state` 发布唯一窗口历史，`ui/router/` 提供命名导航、当前路由与 RouterView。路由动作只经过 Router，通用 state 不另设修改历史的入口。
+
+业务页面入口集中在 `ui/pages/`，`routes.json` 作为可序列化目录的单一来源，`index.ts` 对 pageKey 做穷尽组件绑定；运行时注册同一目录到 Rust，避免 TSX 代码包与外壳各有一份路由表。App 仅装配 Frame 和 RouterView。目录与页面绑定的版本、初始化错误、HMR 失效条目及原生导航能力按 RT1 至 RT4 验收；首版为桌面单出口内存历史。
+
+现有首页、设置页、菜单、快捷键、面包屑与历史入口已按 [路由整改清单](docs/routing.md#81-现有页面整改清单) 迁移。验证分为纯 crate 契约、应用集成、mock 界面和真实桥接 E2E，目录、数据隔离与计划命令见 [测试方案](docs/testing.md)；当前已实施状态 / 路由核心、通用工具、设置 / 窗口应用集成、真实桥接及无头 E2E 命令，不能将无头组件测试等同于原生或发布产物验收。
+
+设置页面按自身可用宽度选择分类列表或下拉框，当前分类保留在 Rust 窗口 Store 中。布局、键盘导航和浮层使用 NSH 组件的公开接口；应用提供主题样式和可用宽度，框架负责焦点行为、浮层层级与碰撞避让。
 
 账户和更新入口由 `Frame` 接收可选契约，未提供实现时按钮禁用。窗口布局通过契约消费能力，与账户和更新的内部实现解耦。
 
@@ -163,3 +188,16 @@ Downloading → Verifying → ReadyToInstall → Installing → AwaitingFirstLau
 TSX 通过受限桥接提交模块名和事件名，诊断快照提供写入健康状态及丢弃计数。文件目录与保留策略由诊断模块管理。
 
 导出先刷新写入队列，再读取限定日期范围内的普通日志文件，跳过符号链接并限制单文件及总大小。归档在临时文件中完成后发布，失败或取消时清理临时文件。当前桥接将归档保存到应用的 `exports/` 目录并打开目录，系统保存与分享接口由平台适配层扩展。
+
+
+### SM4 原生窗口绑定
+
+NSH 的一个 VM 可承载多个原生窗口。WindowState 的 Local 保存按宿主窗口注册的服务表，TS 传输在渲染时捕获 currentWindow，后续请求使用 Rust 分配的 StoreId，不能因当前焦点变化而写错窗口。窗口关闭监听由窗口生命周期持有，每次 opening 通过 Rust 仅领取一次，独立于页面投影的 owner；同步临时监听覆盖注册当轮的关闭。最后一个内容 owner 卸载也不移除窗口监听，关闭后服务与监听释放，同名重开获得新 StoreId。普通投影取消 / HMR 只释放其订阅；VM 结束清理整张服务表。
+
+macOS 验收使用真实 Window、生产投影与官方 dev watcher，覆盖同 VM 偏好共享 / 会话隔离、真实源码 HMR、旧守卫和订阅失效、内容先卸载再关闭及同名重开。隔离数据与实际证据见 [测试方案第 14 节](docs/testing.md#14-sm4-原生窗口与-hmr-验收)。RT4 已增加目录内容原子迁移：新 identity 重解析历史 URL、保留 entry key / 游标 / session，一次发布并取消旧 pending；新桥接绑定带目录版本，旧 register / StoreId 接口仍兼容。主窗口的 UrlScheme 与聚焦窗口的 BackHandler 统一经路由守卫；根返回交还平台，浮层由 NSH 优先处理。macOS 目录 HMR 和返回输入通过；本机 arm64 ad-hoc 发布包的系统 URL 注册、外部冷启动 / 同进程唤醒及 Cmd+R 完整 VM reload 已通过隔离验收；VM 重建恢复持久偏好并重置窗口会话、拒绝旧回调。其他宿主、分发与升级仍待验收。
+
+### 更新应用服务（SM5）
+
+`src/update_service/` 组合现有 usher-update 和 usher-state，负责单执行租约、效果领取、撤销后的停止屏障和未知安装结果的恢复屏障。UpdateRegistry 以宿主 SettingsService 的 StoreId 复用应用域；领域 Machine 不依赖 NSH 或状态库，后端由应用层注入。快照只发布领域状态和执行阶段，效果只交给唯一执行器；发布失败保持领域与队列原状。接口不引入新设置文件或 schema。当前产品桥接 / UI / 实际 nsh/updater 调用仍按更新方案批次 4 / 5 接入，不因协调器测试通过而启用自动下载。
+
+更新模拟的数据隔离由脚本拥有：每轮唯一测试应用 ID，每例独立临时 data/cache/saved-state，系统目录只创建该 ID 的专属链接，不改 HOME。`scripts/macos_test_data.py` 统一链接归属保护，供发布路由和更新模拟复用；它属于宿主测试工具，不进入产品 Rust 依赖或 usher-test-support。停止并确认测试进程退出后清理；若停止失败或归属变化，保留隔离并报告失败。`serve` 同样拥有进程生命周期；旧壳、新代码包和一次性签名密钥都在临时树，报告单独保存。具体命令和有效场景范围见更新方案第 12 节。

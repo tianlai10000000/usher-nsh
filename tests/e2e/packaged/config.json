@@ -1,0 +1,6 @@
+{
+  "marker": "USHER_PACKAGED_ROUTE:",
+  "timeoutSeconds": 45,
+  "buildTimeoutSeconds": 900,
+  "lsregister": "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
+}

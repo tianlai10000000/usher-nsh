@@ -14,7 +14,7 @@
 | 01.02 | 已完成 | macOS 本地打包分为 `standard` 与 `appkit`，默认标准包。发布优化统一在 [Cargo 配置](.cargo/config.toml)，直接运行 `nsh package --target macos` 也已验证读取。见 [打包脚本](scripts/package-macos.sh)。 |
 | 01.03 | 待办 | Windows、Linux 各自在原生 runner 启动、验证 Rust 桥接和按钮，生成可安装产物并确认 release profile 生效。 |
 | 01.04 | 待办 | Android 和 iOS 分别在模拟器验证启动、交互、桥接与打包；发布前在真机验收签名安装。 |
-| 01.05 | 部分完成 | macOS 已有 `nsh run` 开发入口。待补 TSX 热替换保留状态、Rust 或宿主变更重建后恢复偏好的项目验收，验证各目标和自维护宿主的开发服务器连接。Store 与托盘的 HMR 生命周期分别在 03.02 和 02.04 验收。 |
+| 01.05 | 部分完成 | macOS 已有 `nsh run` 开发入口，TSX 源码 HMR 保留窗口状态及清理旧投影已由 03.11 在隔离目录验收。Rust 或宿主变更重建后恢复偏好、各目标和自维护宿主的开发服务器连接仍待验收；托盘的 HMR 生命周期继续由 02.04 跟踪。 |
 
 ## 批次 02 · 原生宿主与系统托盘 · 部分完成
 
@@ -35,12 +35,27 @@
 | 编号 | 状态 | 任务与验收 |
 | --- | --- | --- |
 | 03.01 | 已完成 | 首个 Rust Settings Store 通过类型化命令返回带 revision 的快照，TSX 外观投影由页面共用。主页与设置页切换时共享外观，主页计数保留。见 [设置仓库](src/settings.rs)、[NSH 桥接](src/settings_bridge.rs)和 [TSX 投影](ui/state/appearance.ts)。 |
-| 03.02 | 部分完成 | 已按数据目录共享原生设置仓库，当前视图通过读取和命令回执获取快照。待拆分 settings、update、session 域及纯 reducer 与后台效果，加入有序派发、按域订阅、引擎线程回调、迟到响应处理、跨窗口同步与 HMR 清理验收。 |
+| 03.02 | 部分完成 | 已按数据目录共享原生设置仓库，当前设置视图通过版本订阅及显式读取获取快照。[通用状态管理方案](docs/state-management.md)已记录独立 `usher-state` crate、可替换后端、NSH 适配及全部跨页面共享数据迁移计划；03.08 核心、03.09 设置接入与 03.10 JS 订阅已完成；其余迁移由 03.11 至 03.13 跟踪。导航、分类与共享预览也迁移到新模块，作用域仍属当前窗口。 |
 | 03.03 | 部分完成 | 已用带版本的 TOML 保存外观、语言、侧栏和状态栏偏好，支持原子替换、旧值迁移、损坏备份、未来 schema 保护和失败重试。待加入合并写入 Worker、退出与移动后台限时刷盘，以及其他平台路径、托盘、更新和日志偏好。 |
 | 03.04 | 已完成 | 支持 Light、Dark、System、独立强调色和样式主题。所有主题使用同一种 JSON，由 Rust 注册表合并 `extends` 链并替换 `var()` 引用，界面只按 token 名读取，不含按主题 ID 的分支。内置主题在构建时从 [主题目录](ui/theme/)发现，包含 Default、Apple 玻璃、NSH Gallery、Primer、Geist、Slate 和 Radix Sand。见 [主题注册表](src/style_themes.rs)、[token 投影](ui/theme/index.ts)和[样式用例](tests/ui/style-themes.test.tsx)。 |
 | 03.05 | 已完成 | 支持本地 JSON 主题发现、继承任一已注册主题、扫描诊断（含基础主题缺失、成环和引用无效）、编辑或复制和选择恢复。IBM Carbon 已作为开发版外部文件在 macOS 验证浅色与深色。当前主题定义保存在 `themes/` 的 JSON，TOML 保存选择并兼容迁移旧内嵌主题。两者分别写入，由设置 Store 管理提交顺序和失败重试。见[主题加载器](src/style_themes.rs)和[本地主题说明](README.zh.md#样式主题)。 |
 | 03.06 | 部分完成 | TSX 已支持 `zh-Hans`、`en`、系统语言匹配与回退，切换后页面即时更新。待补 TSX/Rust 共用的参数契约、原生菜单和托盘文案、独立格式地区、日期时间与复数规则，以及长文案和系统字号验收。见[文案目录](i18n/messages/)和[翻译入口](ui/i18n/index.ts)。 |
 | 03.07 | 部分完成 | 接入 NSH 官方 Gallery UI 作为可选主题 `builtin.nsh-gallery`：快照固定到上游提交，映射见 [sources/nsh-gallery.json](ui/theme/sources/nsh-gallery.json)，用 [同步脚本](scripts/sync-gallery-theme.py)更新，署名见 [NOTICE](NOTICE)。已带入颜色、圆角、阴影和控件度量（按钮 28、输入框 32、聚焦光晕 3、按压 97%、悬停叠色 5%），每项度量记录上游来源。主题不再只换颜色：度量由 `cssVars.shared` 提供，`ui/theme/look.ts` 统一读取，视图不含写死的尺寸。Slate、Primer、Radix Sand 按各自官方源码给出尺寸，Geist 未公开尺寸故沿用根主题。Rust 单测覆盖度量校验、共享 token、强调色重算和各体系尺寸差异，NSH 用例 `control-metrics` 在布局层断言同一按钮在不同主题下的高度。后续已补：按钮、输入框、卡片的表面质感（`finish-*` token：填充、渐变、描边、多层阴影）和触屏尺寸表（`cssVars.touch`，按 `platform.desktop` 选用），聚焦环改为由注册表推导的 `focus-ring`。2026-11-12 已在 macOS 真机对照官网 Gallery 的按钮和输入框，质感接近；Gallery 的 `finishes` 渐变起止同色，视觉差异来自内高光阴影和描边。未做：Gallery 的组件结构（标签条、分段控件、分体按钮、菜单、面板）。聚焦环在屏幕上的实际对比度未达 3:1，见 [07.05](#批次-07--测试体系与性能基线--部分完成)。 |
+
+### 通用状态管理实施子批次
+
+方案复审及修订见 [复审记录](docs/state-management.md#11-方案复审记录)：增加提交失败一致性、桥接合并投递、释放权限和后端接口约束。SM4 的导航迁移由下述 RT1 至 RT3 交付，不能再建第二份历史状态。
+
+详细交付和验收条件以 [通用状态管理方案第 9 节](docs/state-management.md#9-分批实施计划) 为准。2026-11-12 已按授权完成 SM1 至 SM3、UT1 的状态部分及 UT2 的设置 / 桥接部分；RT1 至 RT3 与 UT1 路由部分已交付；SM4 已补齐 macOS 原生多窗口 / HMR 验收。
+
+| 编号 | 状态 | 任务与验收 |
+| --- | --- | --- |
+| 03.08 | 已完成 | SM1：已建立独立 `crates/usher-state/`，提供后端无关的纯转换、快照、读写分离及订阅接口；工厂注入可选 watch 后端，使用相同消费者和契约套件验证替换，不依赖 NSH 与业务 I/O。`python3 scripts/test.py state` 两组合分别通过 20 / 35 项（含编译失败文档测试）；三处临时变异均被捕获；依赖树、工作区回归及 Clippy 通过。证据见状态方案第 10 节。 |
+| 03.09 | 已完成 | SM2：`app_state` 注册表和 `SettingsService` 将设置接入 usher-state；目录初始化及 I/O 不持有全局表锁，实例串行提交，Rust 只读快照和订阅独立。桥接 24 个函数签名与 DTO 不变，原 schema / 文件写入规则不变；同 revision 保存重试发布新 sequence，异常关闭后拒绝写入。应用 62 单测 + 11 集成、工作区 172 项和外观无头 2 项通过，详见 [测试记录](docs/testing.md#11-sm2-设置应用集成实施记录)。JS 订阅已由 SM3 交付，跨窗口 UI 验收继续由 SM4 跟踪。 |
+| 03.10 | 已完成 | SM3：引擎局部有界订阅投递、Stop 清理与会话关闭；TS 传输、版本投影、NSH 响应式适配器和只读借用门面，现有设置入口接入。复用 usher-test-support；Rust 工作区 179 项、TS 投影 11 项、真实桥接 6 项通过，state-ui / ui 命令与 CI 已接入。NSH 0.5.0 无头证据见 [测试记录](docs/testing.md#12-sm3-订阅桥接实施记录)；真实多窗口、原生 HMR 与远端 CI 未验收。 |
+| 03.11 | 已完成 | SM4：全量现有共享状态已迁移，原每 VM 单一窗口 Store 修正为宿主窗口注册 + Rust StoreId。隔离源码 / 数据目录下的 macOS 同 VM 多窗口偏好同步与会话隔离、真实源码 HMR 保留数据及旧绑定失效、关闭重开共 3 项验收通过；Rust 工作区 207 项。当前完成范围为 macOS 开发宿主，其他平台 / 发布由 SM6 跟踪，见 [原生证据](docs/testing.md#14-sm4-原生窗口与-hmr-验收)。 |
+| 03.12 | 已完成 | SM5：应用 update_service 适配原更新 Machine，通过 usher-state 发布；单执行租约、效果领取、停止 / 恢复屏障及旧回执拒绝，原 API 和设置格式兼容。更新集成 15 项（10 项各运行两个后端）、应用单测新增 2 项，原更新 38 项及工作区 224 项通过；消息域契约见状态方案第 14 节。NSH 产品桥接 / 实际更新仍归更新批次 4 / 5，本批不启用下载。 |
+| 03.13 | 部分完成 | SM6：共享来源审计、后端替换、工作区最新 229 项、全部无头 / UI 与原生 macOS 回归通过；四库七目标编译、应用 Apple 四目标编译通过；隔离发布构建相对 06ed67e 增加 261,882 字节（1.10%）。CI 配置及报告已同步；本轮复验四库七目标、应用 Apple 四目标，并补齐 macOS ad-hoc 发布运行 / VM reload。完整应用跨平台检查缺 C 工具链 / Windows SDK，iOS 缺就绪的 Xcode 组件；其他宿主、远端 CI、分发和实际升级仍待验收。更新模拟已改为唯一测试 ID / 每例临时数据根；新增 16 项隔离清理单测，脚本全量 120 项通过，4 项真实升级启动模拟通过、7 项 pending；普通结束与 SIGTERM 均确认隔离无残留。详见 [验收审计](docs/state-audit.md)。 |
 
 ## 批次 04 · 导航、窗口 Shell 与 AppKit 控件 · 部分完成
 
@@ -48,7 +63,7 @@
 
 | 编号 | 状态 | 任务与验收 |
 | --- | --- | --- |
-| 04.01 | 已完成 | 桌面 Shell 首期实现自绘标题栏、侧栏停靠与抽屉、主页与设置类型化路由、前进后退和快捷键、可点击面包屑及窄窗折叠。窗口框架后来迁入 `ui/layout/`，见 04.07。见[路由](ui/navigation/index.ts)、[框架布局](ui/layout/Frame.tsx)和 [Shell 用例](tests/ui/window-shell.test.tsx)。 |
+| 04.01 | 已完成 | 桌面 Shell 首期实现自绘标题栏、侧栏停靠与抽屉、主页与设置类型化路由、前进后退和快捷键、可点击面包屑及窄窗折叠。窗口框架后来迁入 `ui/layout/`，见 04.07。见[路由](ui/router/index.ts)、[框架布局](ui/layout/Frame.tsx)和 [Shell 用例](tests/ui/window-shell.test.tsx)。 |
 | 04.02 | 已完成 | 底部状态栏显示当前应用版本与设置保存状态，开关即时生效并落盘，隐藏后释放布局空间。见[底部状态栏](ui/layout/components/StatusBar.tsx)和 [Shell 用例](tests/ui/window-shell.test.tsx)。 |
 | 04.03 | 已完成 | macOS 开发宿主默认编入 AppKit 设置控件，支持的系统可在同一窗口切换控件族和样式，两套控件复用 Rust 设置。标准包及不可用环境回退到 NSH 控件。见 [AppKit 控件](platforms/macos/controls.rs)和[切换用例](tests/ui/appkit.test.tsx)。 |
 | 04.04 | 待办 | 补路由参数、可用条件、动态标题、更新页面和原生动作接入。验收移动导航栈、系统返回优先关闭浮层、安全区和系统字号。 |
@@ -73,6 +88,17 @@
 2026-11-11 外观调整：Default 与 NSH Gallery 的浅色毛玻璃窗口使用中性浅灰叠色，内容面板为白色；NSH Gallery 的 `panel` 映射到 `card`，窗口叠色与 Shell 阴影继承根主题。次级菜单使用主题 `shell-shadow`，停靠时允许边缘阴影溢出，收起时裁剪。macOS 布局与设置分类用例各 5 项通过，并查看浅色、深色与图片叠加截图。
 
 2026-11-11 窗口尺寸调整：macOS 默认启动外框及最小外框均为 800 × 600 点，由[原生窗口适配](platforms/macos/window_geometry.rs)按窗口实例设置，TSX 重挂载不重置尺寸。已通过 `nsh check`、`cargo test --locked --workspace`（71 项）及 macOS 宿主 Shell 用例（2 项）；拖动窗口边缘的最小尺寸限制和 HMR 尺寸保留尚未手工验收。
+
+### 独立路由实施子批次
+
+详细设计与选型见 [路由方案](docs/routing.md)。RT1 至 RT3 已交付代码和无头验证，现有页面已迁移；SM4 macOS 原生验收已完成，RT4 的目录升级、深链接及 macOS 原生返回已实施并验证；本机 macOS ad-hoc 发布包深链接与完整 VM reload 已通过，其他平台和分发 / 升级仍待验收。
+
+| 编号 | 状态 | 任务与验收 |
+| --- | --- | --- |
+| 04.10 | 已完成 | RT1：独立 usher-router、可替换 matchit 适配、路由目录与生成契约、纯解析及历史转换测试；无 NSH 和业务页面依赖。 |
+| 04.11 | 已完成 | RT2：RouterService / WindowState 桥接将历史与 session 放入唯一窗口 Store；目录注册、守卫取消 / 失败 / 重定向、乱序票据和关闭通过 8 项应用集成测试，复用 usher-test-support。 |
+| 04.12 | 已完成 | RT3：ui/pages 集中目录 / 页面注册与生成检查，ui/router 门面和 RouterView；首页、设置、菜单、快捷键、面包屑及历史已整改，旧 navigation 删除。门面 mock 4 项、RouterView 错误注入 1 项、真实桥接 3 项、实际 App 旅程 2 项及原有 UI 29 项通过；SM4 原生验收已由 03.11 完成，详见[整改记录](docs/routing.md#10-rt2--rt3-与现有页面整改记录)。 |
+| 04.13 | 部分完成 | RT4：usher://app/ 深链接、原生返回与异步守卫、原子目录迁移 / HMR 和旧绑定隔离已实施；229 项 Rust、11 项 router-ui、4 项无头与 4 项隔离 macOS 验收通过。公开 NavStack 能力已检查，当前不启用 iOS 交互式返回。macOS 发布包系统注册、外部冷启动、隐藏恢复和同进程前台唤醒完整 3 项通过，临时数据与系统注册已清理。完整 Cmd+R VM reload 1 项通过。iOS 模拟器因 Xcode 首次启动 / CoreSimulator 版本不匹配阻塞，未修改设备；其他宿主与分发回归待办，外部设备/runner 暂缺，见 [路由记录](docs/routing.md)。 |
 
 ## 批次 05 · 诊断日志 · 部分完成
 
@@ -107,10 +133,17 @@
 
 验证要求见[开发与贡献规范](CONTRIBUTING.md#验证与交付)。测试随对应功能交付，本批负责补齐跨层覆盖、平台验收和性能作业。
 
+新增设计见 [测试方案](docs/testing.md)，已调研 Rust Book、Tokio、Vue Router、Proptest 与 Playwright 的 GitHub 官方资料。UT1 状态和路由部分已完成；UT2 应用 / 桥接与 TE 无头部分已交付，原生验收和剩余覆盖继续按下表跟踪。
+
 | 编号 | 状态 | 任务与验收 |
 | --- | --- | --- |
 | 07.01 | 部分完成 | 已有 Rust 设置、迁移和主题单测，以及外观、主题、导航、AppKit 的 [NSH UI 用例](tests/ui/)。新增领域随实现补 reducer、更新策略、日志过滤和按日分桶单测。 |
-| 07.02 | 待办 | 补独立 Rust 集成测试和离线夹具，覆盖动作到快照及落盘、跨宿主桥接、更新和导出。建立合并检查、五端原生烟测及签名产物验收的 CI 矩阵。 |
+| 07.02 | 部分完成 | 已交付设置、窗口 / 路由、更新应用集成及隔离 / 离线夹具，覆盖动作到快照、设置落盘、更新执行交接；CI 已接入。五端原生烟测、实际更新 / 导出产物旅程及签名验收仍待对应批次。 |
 | 07.03 | 待办 | 在 `benches/` 建立微基准，测量派发、快照投影、列表转换和日志格式化，固定输入并保存结果。 |
 | 07.04 | 待办 | 在 `tests/performance/` 建立发布宿主性能作业，测冷启动、交互、帧时间、CPU、峰值内存、托盘长驻与恢复、移动前后台及资源释放。在同规格 runner 上保存原始样本、P50/P95 和平台基线，再定义回归门禁。 |
 | 07.05 | 待办 | 聚焦环在屏幕上的实际对比度。注册表按主题自己的前景色与背景色推导 `focus-ring`（[derive_focus_ring](src/style_themes.rs)），Rust 单测 `every_bundled_focus_ring_reaches_three_to_one_on_every_surface` 保证该 token 对 background、card、panel 三种表面不低于 3:1，推导时另外参考 sidebar 与 menu-surface。这只保证 token，不保证屏幕。2026-11-12 在 macOS 真机（NSH 0.5.0）对 Default、NSH Gallery、Primer、Slate 的浅色和深色做 Tab 前后截图差分，取变化像素作为环，实测对比度：按 Default、Gallery、Primer、Slate 的顺序，浅色 3.86、3.85、2.70、4.23，深色 2.76、2.61、2.13、2.83。深色四项和 Primer 浅色低于 3:1；Apple Glass、Geist、Radix Sand 未截图。已知现象：屏幕上的环比 token 暗，三通道按近似同一比例缩小：Default 浅色 0.92，Default 深色 0.90，Primer 深色约 0.90，Gallery 深色约 0.86，各样本不一致，不是固定倍数。例：Default 深色 token `#707070`，屏幕 `#656565`。变暗在浅色底上会抬高对比度，在深色底上会压低对比度，所以浅色大多达标而深色全部不达标。来源未查明，可能是颜色空间转换，也可能是 outline 的混合方式。不确定之处：对比度的参照色取的是 Tab 前同一位置的像素，outline 落在控件边缘时它可能是控件自己的边色而不是页面表面（Primer 浅色取到 `#ccd3db`，深色取到 `#2b2f35`，都不在已检查的表面里），所以 Primer 两项的数值可能偏低，需要用页面和卡片的真实颜色复核。另有一处观察：各控件聚焦偏移不统一，列表项使用负偏移，按钮不是。待办：1. 用已知 `outlineColor` 的纯色方块在浅色、深色底上截图，建立设定色到屏幕色的映射，确认压暗的原因。2. 按映射反推推导公式，并把验收改为对显示色断言：截图差分用例固定在 `tests/ui/`，覆盖七个内置主题的浅色和深色，参照色取页面、卡片、面板的真实像素。3. 统一聚焦偏移。4. 在 Windows 和 Linux 宿主复核同一映射，不假设与 macOS 相同。 |
+| 07.06 | 已完成 | UT1：状态两后端契约保留，RT1 新增独立路由参考 / matchit 同契约、固定 seed 属性、生成器拒绝及历史溢出测试。router 无默认 feature 9 项、matchit 14 项通过，state 20 / 35 项通过；共用测试支持 6 项，脚本 96 项通过。命令与 CI 已接入，远端 CI 未运行。 |
+| 07.07 | 部分完成 | UT2：设置 11 项、窗口 / 路由 8 项、更新 15 项应用集成，TS 投影、真实订阅 / 路由桥接、可控守卫门面、生成新鲜度检查及命令 / CI 已交付。RouterView 重试 / 返回错误注入已通过；统一跨语言 DTO fixture 目录仍待补齐，真实桥接另行验证生产 DTO。 |
+| 07.08 | 部分完成 | TE1：无头及 macOS 原生隔离数据目录、真实窗口 / HMR、清理、JUnit / JSON 已交付；e2e 支持 headless 和 macos。原生命令已配置手动专用图形 runner 作业，远端未运行；跨进程重启和其他平台仍待验收。 |
+| 07.09 | 部分完成 | TE2：2 项实际 App 无头旅程、桥接 / UI 回归与 3 项 macOS 原生窗口 / HMR 验收已交付。真实鼠标 / 键盘全产品旅程、长导出文件任务、跨进程重启及发布产物仍待对应批次，详见测试方案第 14 节。 |
+| 07.10 | 已完成 | 通用测试支持：独立 usher-test-support 无外部及业务依赖，仅开发依赖使用；复用 WakeCounter / poll / ready 与夹具身份校验。消费方为状态、路由及应用测试；业务 mock / fixtures 留在所属模块。当前工具 6 项、工作区 224 项通过，远端 CI 未运行。原抽取记录见 [第 10 节](docs/testing.md#10-通用测试支持抽取实施记录)。 |

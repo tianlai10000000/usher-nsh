@@ -15,7 +15,7 @@ function useSections(appearance: AppearanceStore) {
   const items = () =>
     settingsSections.map((id) => ({ id, label: t(`settings.section.${id}` as MessageKey) }));
   const choose = (id: string) => {
-    if (isSettingsSection(id)) settingsSection.set(id);
+    if (isSettingsSection(id)) appearance.setSettingsSection(id);
   };
   const currentLabel = () => items().find((item) => item.id === settingsSection())?.label ?? "";
   return { items, choose, currentLabel };

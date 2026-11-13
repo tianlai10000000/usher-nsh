@@ -33,7 +33,7 @@ const WRITE_FAILED: &str = "settings_write_failed";
 /// The user's selection, independent of the operating system's current appearance.
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "lowercase")]
-pub(crate) enum ColorMode {
+pub enum ColorMode {
     Light,
     Dark,
     #[default]
@@ -63,7 +63,7 @@ impl FromStr for ColorMode {
     }
 }
 
-pub(crate) enum Command {
+pub enum Command {
     SetColorMode(ColorMode),
     SetShowStatusBar(bool),
     SetSidebarDocked(bool),
@@ -81,7 +81,7 @@ pub(crate) enum Command {
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "lowercase")]
-pub(crate) enum ComponentFamily {
+pub enum ComponentFamily {
     #[default]
     Nsh,
     AppKit,
@@ -114,32 +114,32 @@ impl FromStr for ComponentFamily {
 
 /// A revision identifies a set of preferences, so retrying its write does not advance it.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct Snapshot {
-    pub(crate) color_mode: ColorMode,
-    pub(crate) show_status_bar: bool,
-    pub(crate) sidebar_docked: bool,
-    pub(crate) background_image: Option<BackgroundImage>,
-    pub(crate) background_image_opacity: u32,
-    pub(crate) content_background_transparency: u32,
-    pub(crate) component_family: ComponentFamily,
-    pub(crate) theme_id: String,
-    pub(crate) accent: Option<String>,
-    pub(crate) locale_preference: String,
-    pub(crate) diagnostic_level: DiagnosticLevel,
-    pub(crate) custom_themes: Vec<CustomTheme>,
-    pub(crate) style_themes: Vec<StyleTheme>,
-    pub(crate) theme_file_issues: Vec<ThemeFileIssue>,
-    pub(crate) revision: u32,
-    pub(crate) saved: bool,
-    pub(crate) problem: Option<&'static str>,
+pub struct Snapshot {
+    pub color_mode: ColorMode,
+    pub show_status_bar: bool,
+    pub sidebar_docked: bool,
+    pub background_image: Option<BackgroundImage>,
+    pub background_image_opacity: u32,
+    pub content_background_transparency: u32,
+    pub component_family: ComponentFamily,
+    pub theme_id: String,
+    pub accent: Option<String>,
+    pub locale_preference: String,
+    pub diagnostic_level: DiagnosticLevel,
+    pub custom_themes: Vec<CustomTheme>,
+    pub style_themes: Vec<StyleTheme>,
+    pub theme_file_issues: Vec<ThemeFileIssue>,
+    pub revision: u32,
+    pub saved: bool,
+    pub problem: Option<&'static str>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub(crate) struct Palette {
-    pub(crate) background: String,
-    pub(crate) surface: String,
-    pub(crate) text: String,
-    pub(crate) accent: String,
+pub struct Palette {
+    pub background: String,
+    pub surface: String,
+    pub text: String,
+    pub accent: String,
 }
 
 impl Palette {
@@ -158,11 +158,11 @@ impl Palette {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub(crate) struct CustomTheme {
-    pub(crate) id: String,
-    pub(crate) name: String,
-    pub(crate) light: Palette,
-    pub(crate) dark: Palette,
+pub struct CustomTheme {
+    pub id: String,
+    pub name: String,
+    pub light: Palette,
+    pub dark: Palette,
 }
 
 impl CustomTheme {
@@ -302,7 +302,7 @@ impl DiagnosticsSection {
 /// Stored as the level's name so the file stays readable.
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "UPPERCASE")]
-pub(crate) enum DiagnosticLevel {
+pub enum DiagnosticLevel {
     Off,
     Error,
     Warn,
@@ -889,6 +889,29 @@ fn parent_dir(path: &Path) -> &Path {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn publication_adapter_rejects_revision_exhaustion_before_mutation_or_io() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("settings.toml");
+        let mut store = SettingsStore::open(path.clone());
+        store.revision = u32::MAX;
+        let service = crate::app_state::SettingsService::new(
+            store,
+            usher_state::StoreId::new(u128::MAX),
+            &usher_state::backends::WatchBackend,
+        )
+        .unwrap();
+        let reader = service.reader();
+        let initial = reader.snapshot().unwrap();
+        assert_eq!(
+            service.apply(Command::SetColorMode(ColorMode::Dark)),
+            Err(crate::app_state::UNAVAILABLE)
+        );
+        assert_eq!(reader.snapshot().unwrap().state(), initial.state());
+        assert!(!path.exists());
+        assert_eq!(service.snapshot(), Err(crate::app_state::UNAVAILABLE));
+    }
 
     #[test]
     fn defaults_to_system_and_restores_each_selection() {

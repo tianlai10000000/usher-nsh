@@ -87,7 +87,7 @@ lefthook install
 | --- | --- | --- | --- |
 | 1 | `format-rust` | 暂存的 `.rs` | **自动格式化**，并把结果重新加入暂存（`stage_fixed`），所以提交里永远是格式化后的版本 |
 | 2 | `shellcheck` | 暂存的 `.sh` | 不通过就拒绝提交；没装 `shellcheck` 会打印一行“已跳过”，CI 会再检查 |
-| 3 | `actionlint` | 暂存的工作流 | 按暂存区里的版本检查；没装则同样打印跳过 |
+| 3 | `actionlint` | 暂存的工作流 | 工作流及 `.github/actionlint.yaml` / `.github/actionlint.yml` 配置均读取暂存区版本，包含自托管 runner 标签；没装则同样打印跳过 |
 | 4 | `validate-lefthook-config` | `lefthook.yml` | 配置写坏了就拒绝提交 |
 | 5 | `no-key-files` | 暂存的 `*.secret`、`*.pem`、`*.p12`、`*.key`、`*.pfx` | 拒绝提交 |
 | 5 | `no-private-key-block` | 所有暂存的改动 | 发现私钥块就拒绝提交 |
@@ -103,7 +103,7 @@ lefthook install
 1. **没装 lefthook，就没有任何检查。** 此时提交只打印一行 `Can't find lefthook in PATH`，照样成功。新克隆忘了装，保护就不存在，也没有提示。
 2. **`lefthook.yml` 在 `lefthook install` 之前就是坏的，不会写入钩子，之后的提交完全不被检查，也没有提示。** 已经装好之后再把它改坏，则提交会被拒绝（第 4 项检查）。
 
-所以 CI 里单独有一步 `lefthook validate`，并且运行整套钩子测试 [test_git_hooks.sh](../scripts/tests/test_git_hooks.sh)：它在临时仓库里真的提交一遍，覆盖自动格式化、部分暂存、语法错误、文件名带空格、`mod` 不会被牵连、密钥、工作流、`shellcheck`、坏配置等 22 项。这套测试我用 7 种故意弄坏的实现检验过，每一种都会让对应的用例失败。
+所以 CI 里单独有一步 `lefthook validate`，并且运行整套钩子测试 [test_git_hooks.sh](../scripts/tests/test_git_hooks.sh)：它在临时仓库里真的提交一遍，覆盖自动格式化、部分暂存、语法错误、文件名带空格、`mod` 不会被牵连、密钥、工作流、自托管 runner 配置的暂存区隔离、`shellcheck` 和坏配置。早期用例曾用 7 种故意弄坏的实现检验，每一种都会让对应的用例失败。
 
 ## 发一个版本
 

@@ -2,15 +2,14 @@
 """Local update simulation: runs the app's real update path against a mock update source.
 
 It builds an "old" app whose `updater.url` points at a local HTTP server, serves a manifest
-and packages the scenario describes, launches the app in an isolated HOME and asserts what
-ended up in the app's update directory. Nothing here touches GitHub or a real key: every run
-generates one-off keys under `.nsh/update-sim/`.
+and packages the scenario describes, launches a unique test application in isolated data
+roots and asserts what ended up in its update directory. Nothing here touches GitHub or a real key: every run
+generates one-off keys in a temporary tree and removes them after the run.
 
 Subcommands: list, run <scenario>|--all, serve <scenario>, clean. See docs/update.md, section 12.
 
-The slow step is `nsh package` (about five minutes, it compiles the Rust crate), so the old
-app is cached by a hash of the shell inputs. Packages, manifests and signatures are cheap and
-are rebuilt for every scenario.
+The slow step is `nsh package`. Each invocation builds its own app identity and reuses only
+Cargo compilation artifacts; source copies, application and keys are temporary.
 
 NSH accepts plain HTTP only for 127.0.0.1, localhost and [::1] (nsh-updater `check_url`); the
 rest of the verification path is the same as with a real HTTPS source.
@@ -19,14 +18,15 @@ rest of the verification path is the same as with a real HTTPS source.
 from __future__ import annotations
 
 import argparse
-import hashlib
 import http.server
 import io
 import json
 import os
+import plistlib
+import uuid
+import fcntl
 import shutil
 import signal
-import socket
 import subprocess
 import sys
 import tarfile
@@ -40,10 +40,8 @@ SIM = ROOT / ".nsh" / "update-sim"
 SCENARIOS = Path(__file__).resolve().parent / "scenarios"
 CONFIG = Path(__file__).resolve().parent / "config.json"
 
-# Paths hashed to decide whether the cached old app is still valid. Mirrors the shell inputs
-# of docs/update.md section 4.2; `nsh.json` is read separately because its version and build
-# change on every release.
-SHELL_INPUTS = ["src", "platforms", "crates", "build.rs", "Cargo.toml", "Cargo.lock", "ui/theme", "ui/config/background.json"]
+sys.path.insert(0, str(ROOT / 'scripts'))
+from macos_test_data import AppDataNamespace
 
 
 def load_config() -> dict:
@@ -55,36 +53,37 @@ def fail(message: str) -> "None":
     raise SystemExit(1)
 
 
+COMMAND_LOG: Path | None = None
+
+
 def run(cmd: list[str], **kwargs) -> subprocess.CompletedProcess:
-    result = subprocess.run(cmd, capture_output=True, text=True, **kwargs)
-    if result.returncode != 0:
-        fail(f"{' '.join(map(str, cmd))} failed:\n{result.stdout}{result.stderr}")
-    return result
+    """Capture command evidence and stop its process group on timeout or interruption."""
+    timeout = kwargs.pop('timeout', None)
+    process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                               text=True, start_new_session=True, **kwargs)
+    try:
+        output, _ = process.communicate(timeout=timeout)
+    except (subprocess.TimeoutExpired, KeyboardInterrupt):
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        output, _ = process.communicate()
+        if COMMAND_LOG:
+            with COMMAND_LOG.open('a') as log:
+                log.write(f'{cmd[0]} interrupted: {output}\n')
+        raise
+    if COMMAND_LOG:
+        with COMMAND_LOG.open('a') as log:
+            log.write(json.dumps(cmd) + '\n' + output + '\n')
+    if process.returncode:
+        raise RuntimeError(f'{cmd[0]} failed ({process.returncode}): {output}')
+    return subprocess.CompletedProcess(cmd, process.returncode, output)
 
 
 def require_nsh() -> None:
     if shutil.which("nsh") is None:
         fail("the nsh command line is not installed (scripts/ci/install-nsh.sh)")
-
-
-def shell_hash() -> str:
-    digest = hashlib.sha256()
-    for entry in SHELL_INPUTS:
-        base = ROOT / entry
-        files = [base] if base.is_file() else sorted(p for p in base.rglob("*") if p.is_file()) if base.exists() else []
-        for file in files:
-            digest.update(str(file.relative_to(ROOT)).encode())
-            digest.update(file.read_bytes())
-    # The NSH version is part of the shell, and so is everything the old app is configured with.
-    digest.update(subprocess.run(["nsh", "--version"], capture_output=True, text=True).stdout.encode())
-    digest.update(CONFIG.read_bytes())
-    return digest.hexdigest()[:16]
-
-
-def free_port() -> int:
-    with socket.socket() as sock:
-        sock.bind(("127.0.0.1", 0))
-        return sock.getsockname()[1]
 
 
 # --- keys -------------------------------------------------------------------------------------
@@ -110,7 +109,7 @@ def make_keys(directory: Path, config: dict) -> dict:
 def project_copy(destination: Path, version: str, build: int, keys: dict, url: str | None) -> Path:
     """A copy of the project with `version`, `build` and a simulation `updater` in nsh.json.
 
-    The repository's nsh.json is never modified: the simulation works on copies in .nsh/update-sim/.
+    The repository's nsh.json is never modified; source copies live in the temporary run tree.
     """
     if destination.exists():
         shutil.rmtree(destination)
@@ -122,6 +121,9 @@ def project_copy(destination: Path, version: str, build: int, keys: dict, url: s
         elif source.exists():
             shutil.copy2(source, destination / name)
     manifest = json.loads((ROOT / "nsh.json").read_text())
+    manifest["id"] = keys["app_id"]
+    manifest.pop("schemes", None)
+    manifest["rust"] = str(ROOT)
     manifest["version"] = version
     manifest["build"] = build
     if url is not None:
@@ -130,24 +132,39 @@ def project_copy(destination: Path, version: str, build: int, keys: dict, url: s
     return destination
 
 
-# --- the old app (cached) -------------------------------------------------------------------------
+# --- the temporary old app -------------------------------------------------------------------------
 
 
-def old_app(keys: dict, config: dict, port: int) -> Path:
-    """The installed "old" app. Built once per shell hash; its source URL is the fixed sim port."""
-    key = shell_hash()
-    cache = SIM / "apps" / key
-    app = cache / "Usher NSH.app"
-    if app.exists():
-        return app
-    print(f"building the old app (cache miss {key}); this compiles the Rust crate and takes minutes", flush=True)
-    project = project_copy(SIM / "work" / "old-src", config["oldVersion"], config["oldBuild"], keys,
+def build_environment() -> dict:
+    """Share compiler artifacts across shell and package builds, without sharing runtime data."""
+    return {**os.environ, 'CARGO_TARGET_DIR': str(ROOT / 'target/update-sim-build'),
+            'CARGO_INCREMENTAL': '0', 'USHER_MACOS_APPKIT': '0'}
+
+
+def old_app(keys: dict, config: dict, directory: Path) -> Path:
+    """Build one temporary application; reuse only Cargo artifacts, never an old identity."""
+    project = project_copy(directory / "old-src", config["oldVersion"], config["oldBuild"], keys,
                            f"http://127.0.0.1:{config['port']}/latest.json")
-    cache.mkdir(parents=True, exist_ok=True)
-    run(["nsh", "package", "--target", "macos", "-o", str(cache)], cwd=project)
-    if not app.exists():
-        fail("nsh package produced no .app")
-    return app
+    output = directory / 'app'
+    print('building the isolated old app; reusing Cargo compilation artifacts', flush=True)
+    run(['nsh', 'package', '--target', 'macos', '--arch', 'arm64', '-o', str(output)],
+        cwd=project, env=build_environment(), timeout=config['buildTimeoutSeconds'])
+    apps = list(output.glob('*.app'))
+    if len(apps) != 1:
+        raise RuntimeError('nsh package did not produce exactly one app')
+    validate_app(apps[0], keys['app_id'])
+    return apps[0]
+
+
+def validate_app(app: Path, app_id: str) -> Path:
+    """Reject a different application or URL registration before starting any process."""
+    info = plistlib.loads((app / 'Contents/Info.plist').read_bytes())
+    if info['CFBundleIdentifier'] != app_id or info.get('CFBundleURLTypes'):
+        raise RuntimeError('test app identity or URL registration mismatch')
+    executable = app / 'Contents/MacOS' / info['CFBundleExecutable']
+    if not executable.is_file() or executable.parent != app / 'Contents/MacOS':
+        raise RuntimeError('invalid test app executable')
+    return executable
 
 
 # --- artifacts of one scenario --------------------------------------------------------------------
@@ -187,7 +204,7 @@ def build_artifacts(scenario: dict, keys: dict, config: dict, directory: Path) -
     if manifest_spec.get("package", True):
         package = served / f"pkg-{build}.nshpkg"
         run(["nsh", "publish", "--key", str(keys["dir"] / "release.secret"), "--cert", str(keys["dir"] / "release.cert"),
-             "-o", str(package)], cwd=project)
+             "-o", str(package)], cwd=project, env=build_environment(), timeout=config["buildTimeoutSeconds"])
         args += ["--package", str(package)]
     args.append(str(archive))
     run(args)
@@ -209,7 +226,9 @@ def apply_tamper(served: Path, tamper: dict) -> None:
     elif kind == "truncate":
         data = data[: len(data) // 2]
     elif kind == "replace-id":
-        data = bytearray(data.replace(b"com.tianlai10000000.usher.nsh", b"com.example.other.app....."))
+        manifest = json.loads(data)
+        manifest["id"] = str(uuid.uuid4())
+        data = bytearray(json.dumps(manifest).encode())
     else:
         fail(f"unknown tamper kind {kind}")
     target.write_bytes(bytes(data))
@@ -281,8 +300,8 @@ def start_source(root: Path, behaviour: dict, port: int) -> Source | None:
 # --- running the app --------------------------------------------------------------------------------
 
 
-def updates_dir(home: Path, app_id: str) -> Path:
-    return home / "Library" / "Application Support" / app_id / "updates"
+def updates_dir(data: Path) -> Path:
+    return data / 'updates'
 
 
 def state_of(directory: Path) -> dict:
@@ -292,20 +311,40 @@ def state_of(directory: Path) -> dict:
             "partial": [n for n in names if n.endswith(".part")]}
 
 
-def launch(app: Path, home: Path, seconds: float, log: Path) -> None:
-    """Starts the app in an isolated HOME for `seconds`, then stops it the way a crash would."""
-    executable = next((app / "Contents" / "MacOS").iterdir())
-    env = {**os.environ, "HOME": str(home)}
-    with log.open("ab") as out:
-        process = subprocess.Popen([str(executable)], env=env, stdout=out, stderr=out, start_new_session=True)
-        try:
-            time.sleep(seconds)
-        finally:
+class AppProcess:
+    """Own a directly launched process group; never override HOME and always reap before cleanup."""
+
+    def __init__(self, app: Path, app_id: str, log: Path, timeout: float):
+        self.executable = validate_app(app, app_id)
+        self.log = log
+        self.timeout = timeout
+        self.process = None
+
+    def start(self) -> None:
+        with self.log.open('ab') as out:
+            self.process = subprocess.Popen([str(self.executable)], stdout=out, stderr=out,
+                                            start_new_session=True)
+
+    def stop(self) -> None:
+        if self.process is None:
+            return
+        if self.process.poll() is None:
             try:
-                os.killpg(process.pid, signal.SIGKILL)
+                os.killpg(self.process.pid, signal.SIGKILL)
             except ProcessLookupError:
                 pass
-            process.wait()
+        self.process.wait(timeout=self.timeout)
+
+    def launch(self, seconds: float) -> None:
+        self.start()
+        try:
+            try:
+                code = self.process.wait(timeout=seconds)
+            except subprocess.TimeoutExpired:
+                return
+            raise RuntimeError(f'test app exited prematurely with {code}')
+        finally:
+            self.stop()
 
 
 # --- scenarios ----------------------------------------------------------------------------------------
@@ -343,114 +382,193 @@ def check_expectations(name: str, expectations: list[dict], state: dict, extra: 
     return problems
 
 
-def preload(scenario: dict, served: Path, home: Path, app_id: str) -> None:
+def preload(scenario: dict, served: Path, data: Path) -> None:
     """Puts the package into `next.nshpkg` the way a finished download would, for scenarios that
     start from a downloaded package (the launch path), which needs no network at all."""
     if scenario.get("preload") != "next":
         return
     package = next(served.glob("*.nshpkg"))
-    target = updates_dir(home, app_id)
+    target = updates_dir(data)
     target.mkdir(parents=True, exist_ok=True)
     shutil.copy2(package, target / "next.nshpkg")
 
 
-def run_scenario(name: str, scenario: dict, keys: dict, config: dict) -> bool | None:
-    """True: passed. False: failed. None: skipped, the scenario is marked pending."""
-    print(f"\n== {name}: {scenario['description']}", flush=True)
-    pending = scenario.get("pending")
-    if pending:
-        # A pending scenario needs something the app does not do yet. Running it would only
-        # prove that nothing happened, which must not be reported as a pass.
-        print(f"   SKIP pending: {pending}")
-        return None
-    directory = SIM / "runs" / name
-    if directory.exists():
-        shutil.rmtree(directory)
-    directory.mkdir(parents=True)
-    app = old_app(keys, config, config["port"])
-    served = build_artifacts(scenario, keys, config, directory)
-    home = directory / "home"
-    home.mkdir()
-    app_id = json.loads((ROOT / "nsh.json").read_text())["id"]
-    preload(scenario, served, home, app_id)
-
-    source = start_source(served, scenario.get("source", {}), config["port"])
-    log = directory / "app.log"
+def run_scenario(name: str, scenario: dict, keys: dict, config: dict, app: Path,
+                 sandbox: Path, output: Path, host, interactive: bool = False, record: dict | None = None) -> dict:
+    """Run one scenario with fresh data; preserve evidence even when launch or cleanup fails."""
+    if record is None:
+        record = {'name': name, 'status': 'failed'}
+    record['cleanup_pending'] = True
+    directory = sandbox / name
+    directory.mkdir()
+    evidence = output / name
+    evidence.mkdir()
+    namespace = AppDataNamespace(host('directories'), keys['app_id'], directory / 'runtime')
+    process = AppProcess(app, keys['app_id'], evidence / 'app.log', config['processTimeoutSeconds'])
+    source = None
+    print(f"Running {name}: {scenario['description']}", flush=True)
     try:
-        for step in scenario.get("launches", [{"seconds": config["launchSeconds"]}]):
-            launch(app, home, step["seconds"], log)
+        if host('process', keys['app_id']):
+            raise RuntimeError('test identity already has a running app')
+        namespace.create()
+        served = build_artifacts(scenario, keys, config, directory)
+        preload(scenario, served, namespace.root / 'data')
+        source = start_source(served, scenario.get('source', {}), config['port'])
+        if interactive:
+            process.start()
+            print('Isolated app and source running; press Ctrl+C to stop and clean up.', flush=True)
+            while process.process.poll() is None:
+                time.sleep(1)
+            raise RuntimeError('interactive app exited before the session ended')
+        for step in scenario.get('launches', [{'seconds': config['launchSeconds']}]):
+            process.launch(step['seconds'])
+        state = state_of(updates_dir(namespace.root / 'data'))
+        record['state'] = state
+        record['expectations'] = len(scenario['expect'])
+        problems = check_expectations(name, scenario['expect'], state,
+                                      {'log': process.log.read_text(errors='replace'),
+                                       'requests': list(source.requests) if source else []})
+        if problems:
+            raise RuntimeError('; '.join(problems))
+        record['status'] = 'passed'
+    except KeyboardInterrupt:
+        record['status'] = 'observed' if interactive else 'interrupted'
+    except (Exception, SystemExit) as error:
+        record['error'] = str(error)
     finally:
-        requests = list(source.requests) if source else []
-        if source:
-            source.shutdown()
-            source.server_close()
-    state = state_of(updates_dir(home, app_id))
-    app_log = log.read_text(errors="replace") if log.exists() else ""
-    problems = check_expectations(name, scenario["expect"], state, {"log": app_log, "requests": requests})
-    for problem in problems:
-        print(f"   FAIL {problem}")
-    if not problems:
-        print(f"   PASS ({len(scenario['expect'])} expectations; state {state['files']})")
-    return not problems
+        record['isolated_roots'] = namespace.evidence()
+        record['requests'] = list(source.requests) if source else []
+        errors = []
+        try:
+            if source:
+                source.shutdown()
+                source.server_close()
+        except Exception as error:
+            errors.append(str(error))
+        try:
+            process.stop()
+            namespace.cleanup(lambda: bool(host('process', keys['app_id'])))
+        except Exception as error:
+            errors.append(str(error))
+        record['cleanup_errors'] = errors
+        record['cleanup_pending'] = bool(errors)
+        if errors:
+            record['status'] = 'failed'
+        (evidence / 'report.json').write_text(json.dumps(record, indent=2) + '\n')
+    print(f"{name}: {record['status']}", flush=True)
+    return record
+
+
+def summarize(records: list[dict]) -> dict:
+    """A nonempty successful executed set is required; pending scenarios never count as passes."""
+    passed = sum(record['status'] == 'passed' for record in records)
+    pending = sum(record['status'] == 'pending' for record in records)
+    failed = sum(record['status'] not in ('passed', 'pending') for record in records)
+    return {'passed': passed, 'pending': pending, 'failed': failed,
+            'status': 'passed' if passed and not failed else 'failed'}
+
+
+def execute_simulation(names: list[str], scenarios: dict, interactive: bool) -> int:
+    global COMMAND_LOG
+    config = load_config()
+    reports = ROOT / json.loads((ROOT / 'tests/config.json').read_text())['report_directory']
+    reports.mkdir(parents=True, exist_ok=True)
+    output = Path(tempfile.mkdtemp(prefix='update-sim-', dir=reports))
+    COMMAND_LOG = output / 'commands.log'
+    sandbox = Path(tempfile.mkdtemp(prefix='isolated-', dir=output))
+    native = json.loads((ROOT / 'tests/e2e/native/config.json').read_text())
+    app_id = native['appId'] + '.' + uuid.uuid4().hex
+    report = {'app_id': app_id, 'sandbox': str(sandbox), 'scenarios': [], 'status': 'failed'}
+    def interrupt(_signum, _frame):
+        raise KeyboardInterrupt('update simulation interrupted')
+    previous_term = signal.signal(signal.SIGTERM, interrupt)
+    try:
+        if sys.platform != 'darwin':
+            raise RuntimeError('update simulation requires a macOS graphical host')
+        require_nsh()
+        helper = sandbox / 'host'
+        run(['swiftc', '-module-cache-path', str(sandbox / 'swift-cache'),
+             str(ROOT / 'tests/e2e/packaged/host.swift'), '-o', str(helper)])
+        def host(*arguments):
+            return json.loads(run([str(helper), *arguments]).stdout)
+        report['session'] = host('session')
+        if report['session'].get('ready') is not True:
+            raise RuntimeError('requires an unlocked macOS graphical session')
+        keys = make_keys(sandbox / 'keys', config)
+        keys['app_id'] = app_id
+        active = [name for name in names if not scenarios[name].get('pending') or interactive]
+        app = old_app(keys, config, sandbox) if active else None
+        if app:
+            run(['codesign', '--verify', '--deep', '--strict', str(app)])
+        for name in names:
+            pending = scenarios[name].get('pending')
+            if pending and not interactive:
+                report['scenarios'].append({'name': name, 'status': 'pending', 'reason': pending})
+                print(f'{name}: pending ({pending})', flush=True)
+                continue
+            result = {'name': name, 'status': 'failed', 'cleanup_pending': True}
+            report['scenarios'].append(result)
+            run_scenario(name, scenarios[name], keys, config, app, sandbox, output, host, interactive, result)
+            if result['cleanup_errors'] or result['status'] == 'interrupted':
+                break
+        report.update(summarize(report['scenarios']))
+        if interactive and len(report['scenarios']) == 1 and report['scenarios'][0]['status'] == 'observed':
+            report.update(status='observed', failed=0, observed=1)
+    except (Exception, SystemExit, KeyboardInterrupt) as error:
+        report['error'] = str(error)
+        report['status'] = 'failed'
+        report['failed'] = report.get('failed', 0) + 1
+    finally:
+        # A surviving process or altered namespace must keep its complete isolation tree.
+        retained = any(record.get('cleanup_pending') or record.get('cleanup_errors') for record in report['scenarios'])
+        report['retained'] = retained
+        if not retained:
+            try:
+                shutil.rmtree(sandbox)
+            except OSError as error:
+                report['cleanup_error'] = str(error)
+                report['status'] = 'failed'
+                report['retained'] = retained = True
+        report['cleanup'] = 'retained for inspection' if retained else 'temporary source, app, keys and data removed'
+        signal.signal(signal.SIGTERM, previous_term)
+        (output / 'report.json').write_text(json.dumps(report, indent=2) + '\n')
+        print(f'Update simulation evidence: {output}', flush=True)
+        print(f"{report['status']}: {report.get('passed', 0)} passed, {report.get('failed', 0)} failed, {report.get('pending', 0)} pending", flush=True)
+    return 0 if report['status'] in ('passed', 'observed') else 1
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    sub = parser.add_subparsers(dest="command", required=True)
-    sub.add_parser("list")
-    run_parser = sub.add_parser("run")
-    run_parser.add_argument("scenario", nargs="?")
-    run_parser.add_argument("--all", action="store_true")
-    serve_parser = sub.add_parser("serve")
-    serve_parser.add_argument("scenario")
-    sub.add_parser("clean")
+    sub = parser.add_subparsers(dest='command', required=True)
+    sub.add_parser('list')
+    run_parser = sub.add_parser('run')
+    run_parser.add_argument('scenario', nargs='?')
+    run_parser.add_argument('--all', action='store_true')
+    serve_parser = sub.add_parser('serve')
+    serve_parser.add_argument('scenario')
+    sub.add_parser('clean')
     args = parser.parse_args(argv)
-
     scenarios = load_scenarios()
-    if args.command == "list":
+    if args.command == 'list':
         for name, scenario in scenarios.items():
-            mark = "  [pending]" if scenario.get("pending") else ""
-            print(f"{name:20} {scenario['description']}{mark}")
+            print(f"{name:20} {scenario['description']}" + (' [pending]' if scenario.get('pending') else ''))
         return 0
-    if args.command == "clean":
-        shutil.rmtree(SIM, ignore_errors=True)
-        print(f"removed {SIM}")
-        return 0
-
-    require_nsh()
-    config = load_config()
-    keys = make_keys(SIM / "keys", config)
-    if args.command == "serve":
-        scenario = scenarios.get(args.scenario) or fail(f"unknown scenario {args.scenario}")
-        directory = SIM / "runs" / args.scenario
-        served = build_artifacts(scenario, keys, config, directory)
-        source = start_source(served, scenario.get("source", {}), config["port"])
-        app = old_app(keys, config, config["port"])
-        print(f"serving {served} on http://127.0.0.1:{config['port']}/latest.json")
-        print(f'open the old app in an isolated HOME:\n  HOME="{directory}/home" "{next((app / "Contents" / "MacOS").iterdir())}"')
+    # The lock is outside the removable legacy cache; clean cannot remove an active run's lock.
+    SIM.parent.mkdir(parents=True, exist_ok=True)
+    with (SIM.parent / (SIM.name + '.lock')).open('a') as lock:
         try:
-            while True:
-                time.sleep(3600)
-        except KeyboardInterrupt:
-            if source:
-                source.shutdown()
-        return 0
-
-    if args.all:
-        names = list(scenarios)
-    elif args.scenario:
-        if args.scenario not in scenarios:
-            fail(f"unknown scenario {args.scenario}")
-        names = [args.scenario]
-    else:
-        fail("name a scenario or pass --all")
-    results = {name: run_scenario(name, scenarios[name], keys, config) for name in names}
-    passed = sum(1 for result in results.values() if result is True)
-    failed = sum(1 for result in results.values() if result is False)
-    skipped = sum(1 for result in results.values() if result is None)
-    print(f"\n{passed} passed, {failed} failed, {skipped} skipped (pending)")
-    return 0 if failed == 0 else 1
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            parser.error('another update simulation or cleanup is running')
+        if args.command == 'clean':
+            shutil.rmtree(SIM, ignore_errors=True)
+            print(f'removed legacy simulation cache {SIM}; reports and retained isolation are preserved')
+            return 0
+        names = list(scenarios) if getattr(args, 'all', False) else [args.scenario]
+        if any(name not in scenarios for name in names):
+            parser.error('name an existing scenario or pass --all')
+        return execute_simulation(names, scenarios, args.command == 'serve')
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     raise SystemExit(main())
