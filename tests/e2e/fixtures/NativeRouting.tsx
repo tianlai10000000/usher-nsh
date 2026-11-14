@@ -1,8 +1,8 @@
 /** Runs native back and modal arbitration against the production routing adapter. */
 import { mount, signal, Text, View } from "nsh";
 import { Button, Dialog } from "nsh/base";
-import { createWindowState } from "../../../ui/state/window";
-import { createRouter } from "../../../ui/router";
+import { createWindowState } from "../../../ui/state/window/index";
+import { createRouter } from "../../../ui/router/index";
 import { bindNativeRouting } from "../../../ui/router/native";
 function Probe() {
   const window = createWindowState();

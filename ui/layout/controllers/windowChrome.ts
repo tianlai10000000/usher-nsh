@@ -7,10 +7,10 @@
  */
 import { cleanup, effect, signal } from "nsh";
 import { currentWindow, isAvailable as hasWindowChrome, titleBar } from "nsh/desktop";
-import type { AppearanceStore } from "../../state/appearance";
+import type { AppState } from "../../state/app";
 
-export function createWindowChrome(appearance: AppearanceStore) {
-  const { palette } = appearance;
+export function createWindowChrome(appearance: AppState) {
+  const palette = appearance.appearance.palette;
 
   // titleBar() is all zeros in full screen. Keep the last measured height so the bar does not
   // jump when entering or leaving it.

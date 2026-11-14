@@ -1,15 +1,16 @@
-/** Renders production component looks without persistence and exposes their resolved style contract. */
+/** Renders production component looks from isolated Rust state and exposes their resolved style contract. */
 import { colorScheme, mount, signal, Text, View } from "nsh";
 import { Button, Input, Progress, Slider, Switch } from "nsh/base";
 import { galleryTheme } from "./gallery-theme";
-import { resolveTheme } from "../../../ui/theme";
+import { createAppState } from "../../../ui/state/app";
+import { resolveTheme } from "../../../ui/theme/index";
 import { buttonLook, fieldLook, popupLook, progressLook, sliderLook, switchLook, tabLook } from "../../../ui/theme/look";
 
 function Preview() {
-  const accent = signal<string | null>(null);
+  const appearance = createAppState();
   const checked = signal(true);
   const value = signal(50);
-  const palette = () => resolveTheme(galleryTheme, colorScheme() === "dark" ? "dark" : "light", { accent: accent() });
+  const palette = () => resolveTheme(appearance.appearance.styleThemes().find(theme => theme.id === galleryTheme.id) ?? galleryTheme, colorScheme());
   const contract = () => ({
     switch: switchLook(palette, checked()), slider: sliderLook(palette),
     progress: progressLook(palette), field: fieldLook(palette),
@@ -28,7 +29,7 @@ function Preview() {
     <Button style={buttonLook(palette, { selected: true }).style}><Text style={buttonLook(palette, { selected: true }).label}>Selected neutral button</Text></Button>
     <Button style={buttonLook(palette, { kind: "primary" }).style}><Text style={buttonLook(palette, { kind: "primary" }).label}>Primary button</Text></Button>
     <View style={{ ...popupLook(palette), padding: palette().metric.cardPad }}><Text style={{ color: palette().popoverText }}>Popup surface</Text></View>
-    <Button testID="override-accent" onPress={() => accent.set("#b42318")}><Text>Override accent</Text></Button>
+    <Button testID="override-accent" onPress={() => appearance.appearance.setAccent("#b42318")}><Text>Override accent</Text></Button>
     <Text style={{ numberOfLines: 1 }}>{`contract:${JSON.stringify(contract())}`}</Text>
   </View>;
 }

@@ -14,4 +14,5 @@ dispatch2 = "0.3.1"
 objc2 = "0.6"
 objc2-app-kit = { version = "0.3.2", default-features = false, features = [
     "NSApplication", "NSOpenPanel", "NSSavePanel", "NSWindow", "NSResponder",
+    "NSView", "NSControl", "NSButton", "NSPopUpButton", "NSSegmentedControl", "NSAccessibility",
 ] }

@@ -1,16 +1,18 @@
 /**
- * The app's title bar: menu toggle, history arrows, breadcrumbs and a light/dark switch.
+ * The app's title bar: menu toggle, history arrows, breadcrumbs and a System/Light/Dark appearance cycle.
  * Settings opens from the rail, so the bar carries no settings button.
  *
  * Desktop hides the system title bar and draws this one across the whole window width, leaving
  * room for the system window controls at either end. Everything that is not a control is a drag
  * handle for moving the window. Mobile uses the same bar below the safe area.
  */
-import { colorScheme, platform, View } from "nsh";
+import { platform, View } from "nsh";
 import { AsyncButton } from "../../components/AsyncButton";
 import { SystemIcon } from "../../components/SystemIcon";
-import type { Navigation } from "../../router";
-import type { AppearanceStore } from "../../state/appearance";
+import type { Navigation } from "../../router/index";
+import appearanceConfig from "../../config/appearance.json";
+import type { MessageKey } from "../../i18n/index";
+import type { ColorMode, AppState } from "../../state/app";
 import { iconButtonLook, spacing } from "../../theme/look";
 import type { MenuPresence } from "../controllers/menuPresence";
 import { Breadcrumbs, HistoryControls } from "./Navigation";
@@ -18,16 +20,19 @@ import type { WindowChrome } from "../controllers/windowChrome";
 import { ButtonTooltip } from "./ButtonTooltip";
 
 export function TitleBar(props: {
-  appearance: AppearanceStore;
+  appearance: AppState;
   navigation: Navigation;
   chrome: WindowChrome;
   menu: MenuPresence;
 }) {
-  const { palette, t } = props.appearance;
+  const palette = props.appearance.appearance.palette;
+  const t = props.appearance.preferences.t;
   const desktop = platform.desktop;
   const toggleLook = () => iconButtonLook(palette);
-  // The effective scheme, so a "system" preference still flips to the opposite of what is shown.
-  const dark = () => colorScheme() === "dark";
+  const modes = appearanceConfig.modes as readonly ColorMode[];
+  const nextMode = () => modes[(modes.indexOf(props.appearance.appearance.mode()) + 1) % modes.length];
+  const action = () => appearanceConfig.actions[nextMode()];
+  const currentIcon = () => appearanceConfig.actions[props.appearance.appearance.mode()];
   const colorLook = () => iconButtonLook(palette, false, true);
 
   return (
@@ -54,15 +59,15 @@ export function TitleBar(props: {
       </View>
       <Breadcrumbs appearance={props.appearance} navigation={props.navigation} />
       <View class="h-full min-w-4 flex-1" />
-      <AsyncButton palette={palette} iconOnly testID="titlebar-color-mode" accessibilityLabel={t(dark() ? "nav.switchToLight" : "nav.switchToDark")}
+      <AsyncButton palette={palette} iconOnly testID="titlebar-color-mode" accessibilityLabel={t(action().label as MessageKey)}
         tooltip={<ButtonTooltip appearance={props.appearance} testID="titlebar-color-mode-tooltip" placement="bottom"
-          label={t(dark() ? "nav.switchToLight" : "nav.switchToDark")} />}
-        disabled={props.appearance.busy()}
+          label={t(action().label as MessageKey)} />}
+        interactionBlocked={props.appearance.settings.busy()}
         style={colorLook().style} hoverStyle={colorLook().hoverStyle}
         activeStyle={colorLook().activeStyle} focusStyle={colorLook().focusStyle}
         disabledStyle={colorLook().disabledStyle}
-        onPress={() => props.appearance.choose(dark() ? "light" : "dark")}>
-        <SystemIcon name={dark() ? "sun.max" : "moon"} fallback={dark() ? "☀" : "☾"}
+        onPress={() => props.appearance.appearance.choose(nextMode())}>
+        <SystemIcon name={currentIcon().symbol} fallback={currentIcon().fallback}
           size={palette().metric.titlebarIcon} color={palette().text} />
       </AsyncButton>
     </View>

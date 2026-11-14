@@ -189,3 +189,22 @@ router-ui 的真实桥接 3 项也包含在 state-ui 中；routes-check 的 3 �
 未知 suite / target、零测试发现、夹具不合法、缺失 required 场景、报告缺失、原生能力不足或任何子命令失败均非零退出。能力矩阵区分 required 与明确不适用，不能运行时随意 skip 后报告成功。支持单例重放，但不能把过滤后的局部通过冒充完整验收。CI 必须发现新目录，不能继续只用根层 glob。
 
 CI 从统一配置运行状态 feature 组合、路由契约、应用集成、TS / UI 和目录检查。纯 crate 可在无 NSH 环境运行；应用和 UI 使用具备对应宿主的 runner。原生 macOS 作业由 workflow_dispatch 的 native_state 开关触发，要求 usher-native 标签和解锁桌面，不假定托管 runner 提供这些能力。平台编译、原生宿主、打包分发与实际升级是独立的证明范围。远端执行和门禁覆盖状态见 [迭代台账](todo.md#testing)。
+
+### 公共属性转发与连续输入
+
+公共控件契约用例必须让底层值真实变化，并在同一个挂载实例中再次输入；固定 checked / value 只证明事件被触发，无法证明新值重新投影。状态栏回归在完整 App 中选择 Gallery 主题，连续四次点击并检查 Shell 状态栏显隐、忙碌恢复与后续导航。原生脚本复制实际 App.tsx 为隔离的 ProductionApp.tsx，避免用只含 SettingsPage 的夹具替代 Shell 验收。
+
+`python3 scripts/native_button_acceptance.py --filter 'status bar remains responsive' --junit target/test-reports/statusbar-focused.xml` 可用于单项诊断；filter 运行不执行完整截图像素对照，不计为完整验收。交付必须去掉 filter 跑完整套件。证据和完成状态仅在 todo.md 维护。
+
+
+## 业务状态模块隔离测试
+
+`ui/state/__tests__/business-modules.test.ts` 使用 settings/session、延迟 Promise、picker、诊断健康与 owner hooks 的可控替身，直接调用生产模块。覆盖公共请求互斥、失败重试与重连、只读/校验反馈、开始操作与结果返回之间的销毁、取消/超限/读取失败、预览票据清理、独立诊断导出和语言快照投影。测试不访问真实文件或用户配置，不把 mock 导出与系统选择器等同于真实宿主验收。
+
+模块 mock 已纳入 state-ui 的递归发现及必测前缀；真实 NSH 响应式 owner 由 appearance-host 夹具验证，真实桥接与页面往返使用原 state-ui/UI 套件。picker 取消和公共按钮交互沿 `scripts/native_button_acceptance.py` 的隔离 macOS 宿主执行，保留生产调用入口、Rust 状态服务和 AppKit 控件。验收状态和报告仅记入 todo.md。
+
+## 状态模块边界回归
+
+`ui/state/__tests__/decode.test.ts` 使用注入的 wire 和命令 mock 覆盖读取、订阅、回执的非法快照、最后有效值与迟到回调；真实 NSH 桥接仍由 integration 用例独立验证。更新 controller mock 随实现位于 `ui/state/updates/__tests__/`，两处均进入 state-ui 发现目录。
+
+`tests/integration/settings_state.rs` 通过真实临时文件覆盖不同偏好分区并发提交、重新打开、无写权限及重试。`scripts/tests/test_state_boundaries.py` 防止旧门面回流、通用 crate 引入业务依赖、更新状态回到 feature 视图以及设置模型直接读写文件。生成启动主题由 Rust 完整内容比较，强调色 finish 与前景色由主题回归验证。原生 HMR、多窗口和 VM reload 继续使用隔离宿主脚本，不能以 mock 代替。

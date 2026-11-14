@@ -2,13 +2,14 @@
 import { signal, Text, View } from "nsh";
 import { Button } from "nsh/base";
 import { SettingsPage } from "../../../ui/features/settings/SettingsPage";
-import { createAppearanceStore } from "../../../ui/state/appearance";
+import { createAppState } from "../../../ui/state/app";
 import { spacing } from "../../../ui/theme/look";
 
 export function SettingsActionsPending(props: { controls?: import("nsh/jsx-runtime").JSX.Element }) {
-  const appearance = createAppearanceStore();
+  const appearance = createAppState();
   const pending = signal("");
   const calls = signal(0);
+  const pageTop = signal(0);
   let release: (() => void) | undefined;
   async function hold<T>(name: string, run: () => Promise<T>): Promise<T> {
     calls.update(value => value + 1);
@@ -20,25 +21,36 @@ export function SettingsActionsPending(props: { controls?: import("nsh/jsx-runti
   }
   const delayed: typeof appearance = {
     ...appearance,
-    busy: () => pending() !== "" || appearance.busy(),
-    chooseTheme: id => hold("theme", () => appearance.chooseTheme(id)),
-    choose: mode => hold("appearance", () => appearance.choose(mode)),
-    setAccent: value => hold("accent", () => appearance.setAccent(value)),
-    rescanThemes: () => hold("scan", () => appearance.rescanThemes()),
-    chooseBackgroundImage: () => hold("picker", () => appearance.chooseBackgroundImage()),
-    pickingBackground: () => pending() === "picker" || appearance.pickingBackground(),
-    exportDiagnostics: days => hold("export", () => appearance.exportDiagnostics(days)),
+    settings: { ...appearance.settings, busy: () => pending() !== "" || appearance.settings.busy() },
+    preferences: { ...appearance.preferences,
+    setShowStatusBar: value => hold("statusbar", () => appearance.preferences.setShowStatusBar(value)),
+    chooseLanguage: value => hold("language", () => appearance.preferences.chooseLanguage(value)),
+    },
+    appearance: { ...appearance.appearance,
+    chooseTheme: id => hold("theme", () => appearance.appearance.chooseTheme(id)),
+    choose: mode => hold("appearance", () => appearance.appearance.choose(mode)),
+    setAccent: value => hold("accent", () => appearance.appearance.setAccent(value)),
+    rescanThemes: () => hold("scan", () => appearance.appearance.rescanThemes()),
+    },
+    background: { ...appearance.background,
+    chooseBackgroundImage: () => hold("picker", () => appearance.background.chooseBackgroundImage()),
+    pickingBackground: () => pending() === "picker" || appearance.background.pickingBackground(),
+    },
+    diagnostics: { ...appearance.diagnostics,
+    exportDiagnostics: days => hold("export", () => appearance.diagnostics.exportDiagnostics(days)),
+    },
   };
-  return <View class="flex-1" style={{ backgroundColor: appearance.palette().panel, ...spacing(appearance.palette).stack }}>
+  return <View class="flex-1" style={{ backgroundColor: appearance.appearance.palette().panel, ...spacing(appearance.appearance.palette).stack }}>
     <View class="flex-row">
       <Text>Pending:{pending() || "none"}</Text>
       <Text>Calls:{calls()}</Text>
       <Button testID="release-settings" onPress={() => release?.()}><Text>Release settings</Text></Button>
     </View>
     {props.controls}
-    <Text>Picker:{appearance.pickingBackground() ? "running" : "idle"}</Text>
-    <Text>Background:{appearance.backgroundImageId() ?? "none"}</Text>
-    <Text>Picker error:{appearance.backgroundProblem() ?? "none"}</Text>
-    <SettingsPage appearance={delayed} />
+    <Text>Picker:{appearance.background.pickingBackground() ? "running" : "idle"}</Text>
+    <Text>Background:{appearance.background.backgroundImageId() ?? "none"}</Text>
+    <Text>Picker error:{appearance.background.backgroundProblem() ?? "none"}</Text>
+    <Text testID="settings-neutral">Page top:{pageTop()}</Text>
+    <View class="flex-1" onLayout={({ bounds }) => pageTop.set(bounds.origin.y)}><SettingsPage appearance={delayed} /></View>
   </View>;
 }

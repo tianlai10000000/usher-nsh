@@ -1,8 +1,8 @@
 /** Drives production update actions only in isolated packaged sources; never mocks native I/O. */
 import { Settings } from "usher/nsh";
 import { runningPackage, shellInfo } from "nsh/updater";
-import { onDispose } from "../../../ui/state/runtime/nsh";
-import type { Updates } from "../../../ui/features/updates";
+import { onDispose } from "../../../ui/state-runtime/nsh";
+import type { Updates } from "../../../ui/features/updates/index";
 import manifest from "../../../nsh.json";
 import native from "../native/config.json";
 import config from "./config.json";

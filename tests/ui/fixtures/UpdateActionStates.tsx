@@ -2,13 +2,14 @@
 import { mount, signal, Text, View } from "nsh";
 import { Button } from "nsh/base";
 import { UpdatesSettings } from "../../../ui/features/updates/UpdatesSettings";
-import { presentation } from "../../../ui/features/updates/indicator";
-import { initial, type Phase, type UpdateData } from "../../../ui/features/updates/contracts";
-import type { UpdateActions } from "../../../ui/features/updates";
-import { createAppearanceStore } from "../../../ui/state/appearance";
+import { presentation } from "../../../ui/state/updates/indicator";
+import { initial, type Phase, type UpdateData } from "../../../ui/state/updates/contracts";
+import type { UpdateActions } from "../../../ui/features/updates/index";
+import { createAppState } from "../../../ui/state/app";
 
 function Preview() {
-  const appearance = createAppearanceStore();
+  const appearance = createAppState();
+  const checks = signal(0);
   const candidate = { version: "1.1.0", kind: "shell" } as const;
   const state = signal<UpdateData>({
     ...initial,
@@ -20,13 +21,14 @@ function Preview() {
     data: state,
     view: () => presentation(state()),
     error: () => null,
-    check: async () => setPhase({ type: "checking" }),
+    check: async () => { checks.update(value => value + 1); setPhase({ type: "checking" }); },
     download: async () => setPhase({ type: "downloading", candidate, downloaded: "0", total: "100" }),
     install: async () => setPhase({ type: "installing", candidate }),
     autoCheck: async () => {},
     manual: async () => {},
   };
   return <View>
+    <Text testID="update-neutral">Checks:{checks()}</Text>
     <Button testID="await-launch" onPress={() => setPhase({ type: "awaiting_first_launch", candidate })}><Text>Await launch</Text></Button>
     <Button testID="fail-install" onPress={() => setPhase({ type: "install_failed", candidate, failure: "disk" })}><Text>Fail install</Text></Button>
     <UpdatesSettings appearance={appearance} updates={updates} />

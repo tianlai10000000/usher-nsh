@@ -23,7 +23,7 @@ test("every title-bar and rail icon has a hover tooltip, including disabled butt
     ["sidebar-toggle", "Hide sidebar"],
     ["nav-back", "Back"],
     ["nav-forward", "Forward"],
-    ["titlebar-color-mode", "Switch to dark mode"],
+    ["titlebar-color-mode", "Switch to light mode"],
     ["rail-home", "Home"],
     ["rail-settings", "Open settings"],
     ["rail-account", "Account"],
@@ -53,13 +53,17 @@ test("tooltips follow the sidebar action, appearance action and selected languag
   await app.hover("id:breadcrumb-current-home");
   await showTooltip(app, "sidebar-toggle", "Show sidebar");
 
+  await showTooltip(app, "titlebar-color-mode", "Switch to light mode");
+  await app.press("id:titlebar-color-mode");
+  await app.waitUntil(() => app.enabled("label:Switch to dark mode"));
+  await app.hover("id:breadcrumb-current-home");
   await showTooltip(app, "titlebar-color-mode", "Switch to dark mode");
   await app.press("id:titlebar-color-mode");
   await app.waitFor("id:titlebar-color-mode-tooltip", { state: "gone" });
   await app.waitFor("text:Current appearance: Dark");
   await app.waitUntil(() => app.enabled("id:titlebar-color-mode"));
   await app.hover("id:breadcrumb-current-home");
-  await showTooltip(app, "titlebar-color-mode", "Switch to light mode");
+  await showTooltip(app, "titlebar-color-mode", "Switch to system appearance");
 
   await app.press("id:rail-settings");
   await app.waitUntil(() => app.enabled("id:locale-zh-Hans"));
@@ -70,7 +74,7 @@ test("tooltips follow the sidebar action, appearance action and selected languag
     ["sidebar-toggle", "显示侧边栏"],
     ["nav-back", "后退"],
     ["nav-forward", "前进"],
-    ["titlebar-color-mode", "切换到浅色模式"],
+    ["titlebar-color-mode", "切换到跟随系统外观"],
     ["rail-home", "主页"],
     ["rail-settings", "打开设置"],
     ["rail-account", "账户"],

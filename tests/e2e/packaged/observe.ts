@@ -1,7 +1,7 @@
 /** Observes the real product router only in the isolated packaged acceptance source copy. */
 import { currentWindow } from "nsh/desktop";
-import type { Navigation } from "../../../ui/router";
-import { observe } from "../../../ui/state/runtime/nsh";
+import type { Navigation } from "../../../ui/router/index";
+import { observe } from "../../../ui/state-runtime/nsh";
 import config from "./config.json";
 export function observePackagedRouter(router: Navigation) {
   const window = currentWindow();

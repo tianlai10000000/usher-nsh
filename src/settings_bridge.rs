@@ -7,15 +7,15 @@ use nsh_core::{
     prelude::*,
 };
 
-use crate::settings::{
+use crate::state::settings::{
     ColorMode, Command, ComponentFamily, CustomTheme, DiagnosticLevel, DiagnosticOutput, Palette,
     Snapshot,
 };
 use std::collections::BTreeMap;
 
-use crate::style_themes::{StyleCssVars, StyleTheme, ThemeFileIssue};
+use crate::state::appearance::theme::{StyleCssVars, StyleTheme, ThemeFileIssue};
 
-use crate::app_state::{SETTINGS, SettingsError, SettingsService};
+use crate::state::settings::{SETTINGS, SettingsError, SettingsService};
 
 #[derive(Default)]
 struct SessionSettings(OnceCell<Result<Arc<SettingsService>, SettingsError>>);
@@ -113,8 +113,10 @@ pub struct ThemeValue {
 /// the interface reads tokens by name and never needs per-theme knowledge.
 #[derive(JsObject)]
 pub struct StyleCssVarsValue {
-    /// Metrics for touch screens. A name missing here uses the scheme table's value.
+    /// Legacy authored overrides. Current clients render the resolved touch scheme tables.
     pub touch: BTreeMap<String, String>,
+    pub touch_light: BTreeMap<String, String>,
+    pub touch_dark: BTreeMap<String, String>,
     pub light: BTreeMap<String, String>,
     pub dark: BTreeMap<String, String>,
 }
@@ -143,6 +145,8 @@ impl From<StyleCssVars> for StyleCssVarsValue {
     fn from(vars: StyleCssVars) -> Self {
         Self {
             touch: vars.touch.0,
+            touch_light: vars.touch_light.0,
+            touch_dark: vars.touch_dark.0,
             light: vars.light.0,
             dark: vars.dark.0,
         }
@@ -344,8 +348,8 @@ impl Settings {
     ) -> Result<SettingsSnapshot, String> {
         if !value.is_finite()
             || value.fract() != 0.0
-            || value < f64::from(crate::background::CONFIG.min_opacity)
-            || value > f64::from(crate::background::CONFIG.max_opacity)
+            || value < f64::from(crate::state::appearance::background::CONFIG.min_opacity)
+            || value > f64::from(crate::state::appearance::background::CONFIG.max_opacity)
         {
             return Err("background_opacity_invalid".to_owned());
         }
@@ -357,7 +361,7 @@ impl Settings {
         value: f64,
         sys: System,
     ) -> Result<SettingsSnapshot, String> {
-        let range = &crate::background::CONFIG.content_transparency;
+        let range = &crate::state::appearance::background::CONFIG.content_transparency;
         if !value.is_finite()
             || value.fract() != 0.0
             || value < f64::from(range.min)
@@ -538,10 +542,12 @@ impl Settings {
                 .ok_or("style_theme_directory_unavailable")?
                 .join("themes");
             let directory_to_create = directory.clone();
-            blocking(move || crate::style_themes::ensure_directory(&directory_to_create))
-                .await
-                .map_err(|_| "style_theme_directory_unavailable")?
-                .map_err(|_| "style_theme_directory_unavailable")?;
+            blocking(move || {
+                crate::state::appearance::theme::ensure_directory(&directory_to_create)
+            })
+            .await
+            .map_err(|_| "style_theme_directory_unavailable")?
+            .map_err(|_| "style_theme_directory_unavailable")?;
             open_path(directory)
                 .await
                 .map_err(|_| "style_theme_directory_open_failed".to_owned())

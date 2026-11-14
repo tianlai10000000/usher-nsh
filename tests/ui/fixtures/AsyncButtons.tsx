@@ -3,12 +3,12 @@ import { mount, signal, Text, View } from "nsh";
 import { Button } from "nsh/base";
 import { AsyncButton, useButtonAction } from "../../../ui/components/AsyncButton";
 import { ThemeButton } from "../../../ui/components/ThemeControls";
-import { createAppearanceStore } from "../../../ui/state/appearance";
+import { createAppState } from "../../../ui/state/app";
 import { buttonLook, spacing } from "../../../ui/theme/look";
 
 function Preview() {
-  const appearance = createAppearanceStore();
-  const { palette } = appearance;
+  const appearance = createAppState();
+  const palette = appearance.appearance.palette;
   const calls = signal(0);
   const themedSize = signal({ width: 0, height: 0 });
   const iconSize = signal({ width: 0, height: 0 });

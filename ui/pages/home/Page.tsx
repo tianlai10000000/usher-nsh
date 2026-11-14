@@ -5,7 +5,8 @@ import { EffectiveAppearance } from "../../features/settings/EffectiveAppearance
 import { headingLook, spacing } from "../../theme/look";
 import type { PageProps } from "../contracts";
 export function HomePage(props: PageProps) {
-  const { palette, t } = props.appearance;
+  const palette = props.appearance.appearance.palette;
+  const t = props.appearance.preferences.t;
   return <View class="flex-1 items-center justify-center" style={spacing(palette).stack}>
     <Text style={headingLook(palette, "display")}>{t("home.greeting")}</Text>
     <ThemeButton palette={palette} label={t("home.click")} prominent native={false}

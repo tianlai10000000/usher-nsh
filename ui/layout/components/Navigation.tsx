@@ -7,15 +7,16 @@
 import { keymap, platform, Text, View, windowSize } from "nsh";
 import { AsyncButton } from "../../components/AsyncButton";
 import { SystemIcon } from "../../components/SystemIcon";
-import type { Navigation } from "../../router";
-import type { AppearanceStore } from "../../state/appearance";
+import type { Navigation } from "../../router/index";
+import type { AppState } from "../../state/app";
 import { focusRing, iconButtonLook, noteLook, spacing } from "../../theme/look";
 import { ButtonTooltip } from "./ButtonTooltip";
 
-type NavigationProps = { appearance: AppearanceStore; navigation: Navigation };
+type NavigationProps = { appearance: AppState; navigation: Navigation };
 
 export function HistoryControls(props: NavigationProps) {
-  const { palette, t } = props.appearance;
+  const palette = props.appearance.appearance.palette;
+  const t = props.appearance.preferences.t;
   const { canGoBack, canGoForward, goBack, goForward } = props.navigation;
   const mobile = platform.os === "ios" || platform.os === "android";
   // Raise the SF Symbol artwork by one point to align it with the sidebar icon.
@@ -53,7 +54,8 @@ export function HistoryControls(props: NavigationProps) {
 }
 
 export function Breadcrumbs(props: NavigationProps) {
-  const { palette, t } = props.appearance;
+  const palette = props.appearance.appearance.palette;
+  const t = props.appearance.preferences.t;
   const { breadcrumbs, navigate } = props.navigation;
   const compact = () => !platform.desktop || windowSize().width < 460;
   const visibleTrail = () => compact() ? breadcrumbs().slice(-1) : breadcrumbs();

@@ -68,7 +68,7 @@ flowchart TD
 | `config/defaults.json` | 文件名、容量、时间和默认输出策略 |
 | 应用 `src/diagnostics.rs` | 进程装配、健康源代次与启动 / 配置事件 |
 | 应用 `diagnostic_state.rs`、`diagnostic_bridge.rs` | 状态所有权及 NSH 只读订阅 |
-| 应用 `settings_service.rs`、`settings_bridge.rs` | 偏好持久化、串行更新运行配置、宿主目录、导出展示 |
+| 应用 `state/settings/service/mod.rs`、`settings_bridge.rs` | 偏好持久化、串行更新运行配置、宿主目录、导出展示 |
 
 文件后端的 chrono、serde_json、tar 等依赖仍在 crate 内；公开门面不泄漏它们。当前没有拆成多个后端 feature，不宣称不选择文件适配器就不编译这些依赖。
 

@@ -11,9 +11,9 @@ import { View } from "nsh";
 import { Avatar, Button } from "nsh/base";
 import { SystemIcon } from "../../components/SystemIcon";
 import navigationIcons from "../../config/navigation-icons.json";
-import type { MessageKey } from "../../i18n";
-import { routeList, routes, type Navigation, type RouteId } from "../../router";
-import type { AppearanceStore } from "../../state/appearance";
+import type { MessageKey } from "../../i18n/index";
+import { routeList, routes, type Navigation, type RouteId } from "../../router/index";
+import type { AppState } from "../../state/app";
 import { iconButtonLook } from "../../theme/look";
 import type { AccountEntry } from "../contracts/account";
 import type { UpdateIndicator } from "../contracts/updates";
@@ -23,12 +23,13 @@ import { ButtonTooltip } from "./ButtonTooltip";
 const primaryRoutes = routeList.filter(route => route.menu === "primary").map(route => route.id);
 
 export function Rail(props: {
-  appearance: AppearanceStore;
+  appearance: AppState;
   navigation: Navigation;
   updates?: UpdateIndicator;
   account?: AccountEntry;
 }) {
-  const { palette, t } = props.appearance;
+  const palette = props.appearance.appearance.palette;
+  const t = props.appearance.preferences.t;
   const { route, navigate } = props.navigation;
 
   function routeButton(id: RouteId, labelKey: MessageKey, testID: string, iconSize: () => number) {

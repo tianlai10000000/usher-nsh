@@ -1,6 +1,6 @@
 /** Tests public projection semantics with delayed, reordered and failing transport operations. */
 import { expect, test } from "nsh/test";
-import { compareSequence, createProjection } from "../projection";
+import { compareSequence, createProjection } from "../../state-runtime/projection";
 import { controlled, envelope, initial, plainRuntime } from "./support/controlled";
 
 function setup() {

@@ -14,8 +14,8 @@
 import { platform, safeArea, View } from "nsh";
 import { Sheet } from "nsh/base";
 import type { JSX } from "nsh/jsx-runtime";
-import type { Navigation } from "../router";
-import type { AppearanceStore } from "../state/appearance";
+import type { Navigation } from "../router/index";
+import type { AppState } from "../state/app";
 import { contentBackgroundColor } from "../theme/look";
 import type { AccountEntry } from "./contracts/account";
 import { ContentPanel } from "./components/ContentPanel";
@@ -29,7 +29,7 @@ import { createWindowChrome } from "./controllers/windowChrome";
 import { WindowBackdrop } from "./components/WindowBackdrop";
 
 export function Frame(props: {
-  appearance: AppearanceStore;
+  appearance: AppState;
   navigation: Navigation;
   /** Drives the rail's update button; the button is disabled without it. */
   updates?: UpdateIndicator;
@@ -37,7 +37,8 @@ export function Frame(props: {
   account?: AccountEntry;
   children: JSX.Element;
 }) {
-  const { palette, showStatusBar } = props.appearance;
+  const palette = props.appearance.appearance.palette;
+  const showStatusBar = props.appearance.preferences.showStatusBar;
   const desktop = platform.desktop;
   const chrome = createWindowChrome(props.appearance);
   const menu = createMenuPresence(props.appearance);
@@ -80,7 +81,7 @@ export function Frame(props: {
 
       <Sheet open={menu.drawerOpen()} side="left"
         popupStyle={{ height: "100%", width: palette().metric.menuWidth,
-          backgroundColor: contentBackgroundColor(palette().background, props.appearance.contentBackgroundTransparency()),
+          backgroundColor: contentBackgroundColor(palette().background, props.appearance.background.contentBackgroundTransparency()),
           paddingTop: safeArea().top + palette().metric.panelInset, paddingBottom: safeArea().bottom }}
         backdropStyle={{ backgroundColor: palette().scrim }}
         onOpenChange={({ open }) => menu.drawerOpen.set(open)}>

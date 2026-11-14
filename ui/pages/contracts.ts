@@ -1,5 +1,5 @@
 /** Dependencies lent to page entries by the application composition root. */
-import type { AppearanceStore } from "../state/appearance";
-import type { WindowSession } from "../state/window";
-import type { Navigation } from "../router";
-export type PageProps = { updates?: import("../features/updates").Updates; appearance: AppearanceStore; session: WindowSession; navigation: Navigation };
+import type { AppState } from "../state/app";
+import type { WindowSession } from "../state/window/index";
+import type { Navigation } from "../router/index";
+export type PageProps = { updates?: import("../features/updates").Updates; appearance: AppState; session: WindowSession; navigation: Navigation };

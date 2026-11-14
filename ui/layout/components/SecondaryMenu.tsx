@@ -11,17 +11,18 @@ import { AsyncButton } from "../../components/AsyncButton";
 import { SystemIcon } from "../../components/SystemIcon";
 import navigationIcons from "../../config/navigation-icons.json";
 import { contentBackgroundColor, menuItemLook } from "../../theme/look";
-import { routes, routeList, type Navigation, type RouteId } from "../../router";
-import type { AppearanceStore } from "../../state/appearance";
+import { routes, routeList, type Navigation, type RouteId } from "../../router/index";
+import type { AppState } from "../../state/app";
 
 export function SecondaryMenu(props: {
-  appearance: AppearanceStore;
+  appearance: AppState;
   navigation: Navigation;
   /** Draw the panel's rounded surface; the drawer already has its own background. */
   framed?: boolean;
   onNavigate?: () => void;
 }) {
-  const { palette, t } = props.appearance;
+  const palette = props.appearance.appearance.palette;
+  const t = props.appearance.preferences.t;
   const { route, navigate } = props.navigation;
 
   function item(id: RouteId) {
@@ -63,7 +64,7 @@ export function SecondaryMenu(props: {
         marginBottom: framed() ? palette().metric.panelInset : 0,
         borderRadius: framed() ? radius() : 0,
         backgroundColor: framed()
-          ? contentBackgroundColor(palette().menuSurface, props.appearance.contentBackgroundTransparency())
+          ? contentBackgroundColor(palette().menuSurface, props.appearance.background.contentBackgroundTransparency())
           : undefined,
         boxShadow: framed() ? palette().shellShadow : undefined,
         borderWidth: framed() ? palette().metric.borderWidth : 0,

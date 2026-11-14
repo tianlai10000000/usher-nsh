@@ -3,11 +3,11 @@ mod logging;
 
 use crate::{
     settings_bridge::with_settings_store,
-    state_bridge::{Binding, Event},
-    update_service::{
+    state::updates::{
         self, UpdateService,
         transport::{self, Configuration, Reply, Request},
     },
+    state_bridge::{Binding, Event},
 };
 use nsh_core::{
     element::{CallCx, Callback, Stop, System},
@@ -20,8 +20,8 @@ pub struct Envelope {
     pub sequence: String,
     pub value: String,
 }
-impl From<usher_state::Snapshot<update_service::State>> for Envelope {
-    fn from(snapshot: usher_state::Snapshot<update_service::State>) -> Self {
+impl From<usher_state::Snapshot<updates::State>> for Envelope {
+    fn from(snapshot: usher_state::Snapshot<updates::State>) -> Self {
         Self {
             store_id: snapshot.store_id().value().to_string(),
             sequence: snapshot.sequence().to_string(),
@@ -34,8 +34,8 @@ pub struct Notification {
     pub snapshot: Option<Envelope>,
     pub end: Option<String>,
 }
-impl From<Event<update_service::State>> for Notification {
-    fn from(event: Event<update_service::State>) -> Self {
+impl From<Event<updates::State>> for Notification {
+    fn from(event: Event<updates::State>) -> Self {
         match event {
             Event::Snapshot(snapshot) => Self {
                 snapshot: Some(snapshot.into()),
@@ -57,11 +57,11 @@ impl From<Event<update_service::State>> for Notification {
 }
 async fn with_service<T: Send + 'static>(
     sys: System,
-    operation: impl FnOnce(&UpdateService) -> Result<T, update_service::Error> + Send + 'static,
+    operation: impl FnOnce(&UpdateService) -> Result<T, updates::Error> + Send + 'static,
 ) -> Result<T, String> {
     with_settings_store(sys, move |settings| {
         let service = settings.updates()?;
-        let result = operation(&service).map_err(crate::settings_service::Error::Update);
+        let result = operation(&service).map_err(crate::state::settings::service::Error::Update);
         // Drain only committed records. Invalid callbacks must not produce detail logs.
         logging::drain(&service);
         result
@@ -101,7 +101,7 @@ impl UpdateState {
                 .updates()?
                 .snapshot()
                 .map(Into::into)
-                .map_err(crate::settings_service::Error::Update)
+                .map_err(crate::state::settings::service::Error::Update)
         })
         .await
     }
@@ -112,16 +112,16 @@ impl UpdateState {
             let service = settings.updates()?;
             if service
                 .snapshot()
-                .map_err(crate::settings_service::Error::Update)?
+                .map_err(crate::state::settings::service::Error::Update)?
                 .state()
                 .domain
                 .is_none()
             {
-                return Err(update_service::Error::NotConfigured.into());
+                return Err(updates::Error::NotConfigured.into());
             }
             match request {
                 Request::AutoCheck { enabled } => {
-                    settings.apply(crate::settings::Command::SetUpdateAutoCheck(enabled))?;
+                    settings.apply(crate::state::settings::Command::SetUpdateAutoCheck(enabled))?;
                 }
                 Request::Install => {
                     let saved = settings.retry_save()?;
@@ -129,22 +129,22 @@ impl UpdateState {
                         return Err("updates_settings_unsaved".into());
                     }
                     service
-                        .request(update_service::Command::Install)
-                        .map_err(crate::settings_service::Error::Update)?;
+                        .request(updates::Command::Install)
+                        .map_err(crate::state::settings::service::Error::Update)?;
                 }
                 request => service
                     .request(
                         request
                             .command()
-                            .map_err(crate::settings_service::Error::Update)?,
+                            .map_err(crate::state::settings::service::Error::Update)?,
                     )
-                    .map_err(crate::settings_service::Error::Update)?,
+                    .map_err(crate::state::settings::service::Error::Update)?,
             }
             logging::drain(&service);
             service
                 .snapshot()
                 .map(Into::into)
-                .map_err(crate::settings_service::Error::Update)
+                .map_err(crate::state::settings::service::Error::Update)
         })
         .await
     }
@@ -192,7 +192,7 @@ impl UpdateState {
         with_service(sys, move |service| {
             let claim = service.claim_token(&claim)?;
             let failure = match completion {
-                update_service::Completion::Failed(failure) => Some(failure),
+                updates::Completion::Failed(failure) => Some(failure),
                 _ => None,
             };
             service.complete(&claim, completion)?;

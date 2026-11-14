@@ -1,8 +1,8 @@
 /** Remounts the composition owner in one VM to distinguish projection cleanup from store lifetime. */
 import { mount, signal, Text, View } from "nsh";
 import { Button } from "nsh/base";
-import { createWindowState } from "../../../ui/state/window";
-import { createRouter } from "../../../ui/router";
+import { createWindowState } from "../../../ui/state/window/index";
+import { createRouter } from "../../../ui/router/index";
 function Owner() {
   const state = createWindowState();
   const router = createRouter(state.routing);

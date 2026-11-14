@@ -3,28 +3,31 @@ import { Text, View } from "nsh";
 import { Select, Tab, Tabs } from "nsh/base";
 import { AppKitPopup, AppKitSidebar } from "../../components/AppKitControls";
 import { SystemIcon } from "../../components/SystemIcon";
-import type { MessageKey } from "../../i18n";
+import type { MessageKey } from "../../i18n/index";
 import { createSelectMotion } from "../../theme/motion";
 import { fieldLook, selectLook, spacing, tabLook } from "../../theme/look";
-import { isSettingsSection, settingsSections, type AppearanceStore } from "../../state/appearance";
+import { isSettingsSection, settingsSections, type AppState } from "../../state/app";
 
 /** Native rows are 32 points tall (see `SIDEBAR_ROW` in `platforms/macos/controls.rs`). */
 const nativeRow = 32;
 
-function useSections(appearance: AppearanceStore) {
-  const { t, settingsSection } = appearance;
+function useSections(appearance: AppState) {
+  const t = appearance.preferences.t;
+  const settingsSection = appearance.settings.settingsSection;
   const items = () =>
     settingsSections.map((id) => ({ id, label: t(`settings.section.${id}` as MessageKey) }));
   const choose = (id: string) => {
-    if (isSettingsSection(id)) appearance.setSettingsSection(id);
+    if (isSettingsSection(id)) appearance.settings.setSettingsSection(id);
   };
   const currentLabel = () => items().find((item) => item.id === settingsSection())?.label ?? "";
   return { items, choose, currentLabel };
 }
 
 /** Wide windows: the sections down the left side. */
-export function SettingsNavigation(props: { appearance: AppearanceStore }) {
-  const { palette, t, settingsSection } = props.appearance;
+export function SettingsNavigation(props: { appearance: AppState }) {
+  const palette = props.appearance.appearance.palette;
+  const t = props.appearance.preferences.t;
+  const settingsSection = props.appearance.settings.settingsSection;
   const { items, choose } = useSections(props.appearance);
 
   return (
@@ -72,8 +75,10 @@ export function SettingsNavigation(props: { appearance: AppearanceStore }) {
 }
 
 /** Narrow windows: one drop-down in place of the list. */
-export function SettingsSectionPicker(props: { appearance: AppearanceStore }) {
-  const { palette, t, settingsSection } = props.appearance;
+export function SettingsSectionPicker(props: { appearance: AppState }) {
+  const palette = props.appearance.appearance.palette;
+  const t = props.appearance.preferences.t;
+  const settingsSection = props.appearance.settings.settingsSection;
   const { items, choose, currentLabel } = useSections(props.appearance);
   const popup = createSelectMotion(palette);
 

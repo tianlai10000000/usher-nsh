@@ -1,7 +1,7 @@
 //! Isolated settings repositories and application-specific fixture inputs.
 
 use std::{path::PathBuf, sync::Arc};
-use usher_nsh::app_state::{SettingsRegistry, SettingsService};
+use usher_nsh::state::settings::{SettingsRegistry, SettingsService};
 
 pub const LEGACY: &str = include_str!("../fixtures/settings-v1.toml");
 pub const FUTURE: &str = include_str!("../fixtures/settings-future.toml");

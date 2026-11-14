@@ -14,6 +14,7 @@
   "nav.openSettings": "Open settings",
   "nav.switchToLight": "Switch to light mode",
   "nav.switchToDark": "Switch to dark mode",
+  "nav.switchToSystem": "Switch to system appearance",
   "home.greeting": "Hello, World!",
   "home.click": "Click me",
   "home.clicks": "Clicks: {count}",

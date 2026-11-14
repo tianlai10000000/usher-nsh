@@ -1,7 +1,7 @@
 /** Exercises production animation lifetimes and public NSH overlay transitions without persistence. */
 import { cleanup, colorScheme, mount, signal, Text, View } from "nsh";
 import { Button, Popover, Progress, Select, Sheet, Slider, Switch, Tooltip } from "nsh/base";
-import { resolveTheme } from "../../../ui/theme";
+import { resolveTheme } from "../../../ui/theme/index";
 import { galleryTheme } from "./gallery-theme";
 import { buttonLook, createProgressLook, createSwitchLook, fieldLook, popupLook, sliderLook } from "../../../ui/theme/look";
 import { createSelectMotion, followSpring, popupMotion } from "../../../ui/theme/motion";

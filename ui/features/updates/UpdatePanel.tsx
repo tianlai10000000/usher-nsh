@@ -2,7 +2,7 @@
 import { safeArea, signal, Text, View, windowSize } from "nsh";
 import { Button, Popover } from "nsh/base";
 import type { JSX } from "nsh/jsx-runtime";
-import type { AppearanceStore } from "../../state/appearance";
+import type { AppState } from "../../state/app";
 import type { UpdateActions } from "./index";
 import { UpdateDetails } from "./UpdatesSettings";
 import { SystemIcon } from "../../components/SystemIcon";
@@ -11,14 +11,15 @@ import { popupMotion, type PopupSide } from "../../theme/motion";
 import { iconButtonLook, popupLook } from "../../theme/look";
 export function UpdatePanel(
   props: {
-    appearance: AppearanceStore;
+    appearance: AppState;
     updates: UpdateActions;
     trigger: JSX.Element;
   },
 ) {
   const open = signal(false);
   const side = signal<PopupSide>("right");
-  const { palette, t } = props.appearance;
+  const palette = props.appearance.appearance.palette;
+  const t = props.appearance.preferences.t;
   const motion = () => popupMotion(palette, side());
   const closeLook = () => iconButtonLook(palette, false, true);
   return (

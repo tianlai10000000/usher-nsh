@@ -1,14 +1,15 @@
 /** Adds opt-in request feedback to the public NSH Button without owning business state. */
 import { cleanup, signal, View } from "nsh";
 import { Button, type ButtonProps } from "nsh/base";
-import type { AppearanceStore } from "../state/appearance";
+import type { ThemeAccessor } from "../theme/index";
+import { controlInteraction, type InteractionProps } from "./interaction";
+import { forwardProps } from "./forwardProps";
 import { ProgressRing } from "./ProgressRing";
 
-type ActionProps = {
+type ActionProps = InteractionProps & {
   /** Enable for waitful tasks; immediate settings and navigation do not show loading. */
   loadingFeedback?: boolean;
   busy?: boolean;
-  disabled?: boolean;
   onPress?: () => void | Promise<unknown>;
 };
 
@@ -19,7 +20,9 @@ export function useButtonAction(props: ActionProps) {
   let disposed = false;
   cleanup(() => { disposed = true; });
   const busy = () => props.busy === true || (props.loadingFeedback === true && pending());
-  const disabled = () => props.disabled === true || busy();
+  const interaction = controlInteraction(props);
+  const disabled = () => interaction.disabled() || busy();
+  const dimmed = () => interaction.dimmed() || busy();
   async function run() {
     if (disposed || locked || disabled()) return;
     locked = true;
@@ -34,11 +37,11 @@ export function useButtonAction(props: ActionProps) {
       if (!disposed) pending.set(false);
     }
   }
-  return { busy, disabled, run };
+  return { busy, disabled, dimmed, run };
 }
 
 type Props = Omit<ButtonProps, "onPress"> & ActionProps & {
-  palette: AppearanceStore["palette"];
+  palette: ThemeAccessor;
   /** Icon-only controls replace their existing icon while busy to preserve the hit target's size. */
   iconOnly?: boolean;
 };
@@ -48,12 +51,9 @@ export function AsyncButton(props: Props) {
   const action = useButtonAction(props);
   const supportsLoading = () => props.loadingFeedback === true || props.busy !== undefined;
   const iconSize = () => props.iconOnly ? props.palette().metric.titlebarIcon : props.palette().metric.controlIcon;
-  const forwarded = () => {
-    const { palette, busy, loadingFeedback, iconOnly, ...button } = props;
-    return button;
-  };
+  const forwarded = forwardProps(props, ["palette", "busy", "loadingFeedback", "iconOnly", "interactionBlocked"]);
   return (
-    <Button {...forwarded()} disabled={action.disabled()} onPress={action.run}>
+    <Button {...forwarded} disabled={action.disabled()} disabledStyle={action.dimmed() ? props.disabledStyle : undefined} onPress={action.run}>
       <If when={supportsLoading()}>
         <View class="items-center justify-center" style={{ width: iconSize(), height: iconSize(), flexShrink: 0 }}>
           <If when={action.busy()} else={<If when={props.iconOnly}>{props.children}</If>}>

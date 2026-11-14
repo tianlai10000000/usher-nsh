@@ -53,14 +53,28 @@ test("the status bar spans the window below the menus and can be hidden", async 
   expect(app.shows("id:application-rail")).toBe(true);
 });
 
-test("the title bar switches between light and dark", async () => {
+test("the title bar cycles saved appearance preferences and follows settings changes", async () => {
   const app = await open("../../App.tsx", { platform: "macos", width: 900, height: 740, locale: "en-US", colorScheme: "light" });
   await app.waitUntil(() => app.enabled("id:titlebar-color-mode"));
   await app.press("id:rail-settings");
+  await app.waitUntil(() => app.enabled("id:appearance-system"));
+  const labels = app.texts().filter((text) => ["System", "Light", "Dark"].includes(text));
+  expect(labels.slice(0, 3)).toEqual(["System", "Light", "Dark"]);
+  await app.press("id:appearance-system");
+  for (const [action, scheme] of [
+    ["Switch to light mode", "Light"],
+    ["Switch to dark mode", "Dark"],
+    ["Switch to system appearance", "Light"],
+    ["Switch to light mode", "Light"],
+  ]) {
+    await app.waitUntil(() => app.enabled(`label:${action}`));
+    await app.press(`label:${action}`);
+    await app.waitFor(`text:Current appearance: ${scheme}`);
+  }
+  await app.waitUntil(() => app.enabled("id:appearance-dark"));
+  await app.press("id:appearance-dark");
+  await app.waitUntil(() => app.enabled("label:Switch to system appearance"));
+  await app.press("label:Switch to system appearance");
   await app.waitFor("text:Current appearance: Light");
-  await app.press("id:titlebar-color-mode");
-  await app.waitFor("text:Current appearance: Dark");
-  await app.waitUntil(() => app.enabled("id:titlebar-color-mode"));
-  await app.press("id:titlebar-color-mode");
-  await app.waitFor("text:Current appearance: Light");
+  await app.waitUntil(() => app.enabled("label:Switch to light mode"));
 });

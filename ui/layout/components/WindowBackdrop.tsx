@@ -1,7 +1,7 @@
 /** Composes the window material, theme tint and user image below every interactive region. */
 import { cleanup, effect, Image, nativeComponent, platform, signal, View } from "nsh";
 import { Settings } from "usher/nsh";
-import type { AppearanceStore } from "../../state/appearance";
+import type { AppState } from "../../state/app";
 import backgroundConfig from "../../config/background.json";
 
 const WindowMaterial = nativeComponent<object, { ready: { installed: boolean } }>("UsherMacWindowMaterial", {
@@ -9,8 +9,9 @@ const WindowMaterial = nativeComponent<object, { ready: { installed: boolean } }
   events: ["ready"],
 });
 
-export function WindowBackdrop(props: { appearance: AppearanceStore }) {
-  const { palette, backgroundImageId } = props.appearance;
+export function WindowBackdrop(props: { appearance: AppState }) {
+  const palette = props.appearance.appearance.palette;
+  const backgroundImageId = props.appearance.background.backgroundImageId;
   const hasMaterial = platform.os === "macos" && Settings.windowMaterialAvailable();
   const materialReady = signal(false);
   const imageSource = signal<string | undefined>();
@@ -25,7 +26,7 @@ export function WindowBackdrop(props: { appearance: AppearanceStore }) {
       if (objectURL) URL.revokeObjectURL(objectURL);
     });
     if (!id) {
-      props.appearance.reportBackgroundLoadFailure(false);
+      props.appearance.background.reportBackgroundLoadFailure(false);
       return;
     }
     // Ignore late loads after replacement or unmount; only the current image owns its URL.
@@ -33,9 +34,9 @@ export function WindowBackdrop(props: { appearance: AppearanceStore }) {
       if (!active) return;
       objectURL = URL.createObjectURL(new Blob([bytes]));
       imageSource.set(objectURL);
-      props.appearance.reportBackgroundLoadFailure(false);
+      props.appearance.background.reportBackgroundLoadFailure(false);
     }).catch(() => {
-      if (active) props.appearance.reportBackgroundLoadFailure(true);
+      if (active) props.appearance.background.reportBackgroundLoadFailure(true);
     });
   });
 
@@ -51,11 +52,11 @@ export function WindowBackdrop(props: { appearance: AppearanceStore }) {
       <If when={imageSource()}>
         <Image testID="window-background-image" src={imageSource()} accessibilityElementsHidden
           style={{ position: "absolute", left: 0, top: 0, right: 0, bottom: 0, objectFit: "cover",
-            opacity: props.appearance.backgroundImageOpacity() / backgroundConfig.maxOpacity,
+            opacity: props.appearance.background.backgroundImageOpacity() / backgroundConfig.maxOpacity,
             pointerEvents: "none" }}
           onError={() => {
             imageSource.set(undefined);
-            props.appearance.reportBackgroundLoadFailure(true);
+            props.appearance.background.reportBackgroundLoadFailure(true);
           }} />
       </If>
     </View>

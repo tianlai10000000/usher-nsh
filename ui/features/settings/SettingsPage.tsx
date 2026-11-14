@@ -1,27 +1,29 @@
 /** Composes general, theme, diagnostic and update sections over shared Rust projections. */
+import appearanceConfig from "../../config/appearance.json";
 import { UpdatesSettings } from "../updates/UpdatesSettings";
-import type { Updates } from "../updates";
+import type { Updates } from "../updates/index";
 import { signal, Text, View } from "nsh";
-import { Switch } from "nsh/base";
-import { isLocalePreference, type LocalePreference } from "../../i18n";
-import { isComponentFamily, type AppearanceStore, type ColorMode } from "../../state/appearance";
+import { ThemeSwitch } from "../../components/ValueControls";
+import { isLocalePreference, type LocalePreference } from "../../i18n/index";
+import { isComponentFamily, type AppState, type ColorMode } from "../../state/app";
 import { AppKitPopup, AppKitSegments } from "../../components/AppKitControls";
-import type { ComponentFamily } from "../../theme";
+import type { ComponentFamily } from "../../theme/index";
 import { EffectiveAppearance } from "./EffectiveAppearance";
 import { ThemeButton } from "../../components/ThemeControls";
 import { DiagnosticsSettings } from "./DiagnosticsSettings";
 import { SettingsNavigation, SettingsSectionPicker } from "./SettingsNavigation";
 import { ThemeSettings } from "./ThemeSettings";
 import { BackgroundSettings } from "./BackgroundSettings";
-import { groupLook, headingLook, noteLook, rowLook, sectionTitleLook, spacing, switchLook, createSwitchLook } from "../../theme/look";
+import { groupLook, headingLook, noteLook, rowLook, sectionTitleLook, spacing } from "../../theme/look";
 
-const modes: readonly ColorMode[] = ["light", "dark", "system"];
+const modes = appearanceConfig.modes as readonly ColorMode[];
 const languages: readonly LocalePreference[] = ["system", "en", "zh-Hans"];
 
-function GeneralSettings(props: { appearance: AppearanceStore }) {
-  const { palette, t, busy } = props.appearance;
-  const statusSwitch = createSwitchLook(palette, props.appearance.showStatusBar);
-  const componentFamilies: readonly ComponentFamily[] = props.appearance.appKitAvailable
+function GeneralSettings(props: { appearance: AppState }) {
+  const palette = props.appearance.appearance.palette;
+  const t = props.appearance.preferences.t;
+  const busy = props.appearance.settings.busy;
+  const componentFamilies: readonly ComponentFamily[] = props.appearance.appearance.appKitAvailable
     ? ["nsh", "appkit"]
     : ["nsh"];
 
@@ -31,7 +33,7 @@ function GeneralSettings(props: { appearance: AppearanceStore }) {
         <Text role="header" style={sectionTitleLook(palette)}>
           {t("settings.appearance")}
         </Text>
-        <View style={groupLook(palette, props.appearance.contentBackgroundTransparency())}>
+        <View style={groupLook(palette, props.appearance.background.contentBackgroundTransparency())}>
           <View class="flex-row items-center" style={rowLook(palette)}>
             <View class="min-w-0 flex-1" style={spacing(palette).text}>
               <Text style={{ color: palette().text }}>{t("settings.appearance")}</Text>
@@ -46,8 +48,8 @@ function GeneralSettings(props: { appearance: AppearanceStore }) {
                     <Each of={modes}>
                       {(mode) => (
                         <ThemeButton palette={palette} testID={`appearance-${mode()}`} label={t(`mode.${mode()}`)}
-                          selected={props.appearance.mode() === mode()} disabled={busy()}
-                          onPress={() => props.appearance.choose(mode())} />
+                          selected={props.appearance.appearance.mode() === mode()} interactionBlocked={busy()}
+                          onPress={() => props.appearance.appearance.choose(mode())} />
                       )}
                     </Each>
                   </View>
@@ -58,11 +60,11 @@ function GeneralSettings(props: { appearance: AppearanceStore }) {
                   style={{ width: "100%", height: 28 }}
                   label={t("settings.appearance")}
                   items={modes.map((mode) => ({ id: mode, label: t(`mode.${mode}`) }))}
-                  selectedId={props.appearance.mode()}
-                  enabled={!busy()}
+                  selectedId={props.appearance.appearance.mode()}
+                  enabled interactionBlocked={busy()}
                   onChange={({ id }) => {
                     const mode = modes.find((candidate) => candidate === id);
-                    if (mode !== undefined) void props.appearance.choose(mode);
+                    if (mode !== undefined) void props.appearance.appearance.choose(mode);
                   }}
                 />
               </If>
@@ -71,7 +73,7 @@ function GeneralSettings(props: { appearance: AppearanceStore }) {
           <View class="flex-row items-center" style={rowLook(palette, { divider: true })}>
             <View class="min-w-0 flex-1" style={spacing(palette).text}>
               <Text style={{ color: palette().text }}>{t("settings.componentFamily")}</Text>
-              <If when={props.appearance.componentFamily() === "appkit"}>
+              <If when={props.appearance.appearance.componentFamily() === "appkit"}>
                 <Text testID="appkit-status" style={noteLook(palette)}>
                   {t(palette().nativeAppKit ? "theme.appKitActive" : "theme.appKitFallback")}
                 </Text>
@@ -88,9 +90,9 @@ function GeneralSettings(props: { appearance: AppearanceStore }) {
                           palette={palette}
                           testID={`component-family-${family()}`}
                           label={t(`settings.family.${family()}`)}
-                          selected={props.appearance.componentFamily() === family()}
-                          disabled={busy()}
-                          onPress={() => props.appearance.chooseComponentFamily(family())}
+                          selected={props.appearance.appearance.componentFamily() === family()}
+                          interactionBlocked={busy()}
+                          onPress={() => props.appearance.appearance.chooseComponentFamily(family())}
                         />
                       )}
                     </Each>
@@ -102,10 +104,10 @@ function GeneralSettings(props: { appearance: AppearanceStore }) {
                   style={{ width: "100%", height: 28 }}
                   label={t("settings.componentFamily")}
                   items={componentFamilies.map((id) => ({ id, label: t(`settings.family.${id}`) }))}
-                  selectedId={props.appearance.componentFamily()}
-                  enabled={!busy()}
+                  selectedId={props.appearance.appearance.componentFamily()}
+                  enabled interactionBlocked={busy()}
                   onChange={({ id }) => {
-                    if (isComponentFamily(id)) void props.appearance.chooseComponentFamily(id);
+                    if (isComponentFamily(id)) void props.appearance.appearance.chooseComponentFamily(id);
                   }}
                 />
               </If>
@@ -119,17 +121,12 @@ function GeneralSettings(props: { appearance: AppearanceStore }) {
               <If
                 when={palette().nativeAppKit}
                 else={
-                  <Switch
+                  <ThemeSwitch palette={palette}
                     testID="show-status-bar"
                     accessibilityLabel={t("settings.showStatusBar")}
-                    checked={props.appearance.showStatusBar()}
-                    disabled={busy()}
-                    disabledStyle={switchLook(palette, false).disabledStyle}
-                    focusStyle={switchLook(palette, false).focusStyle}
-                    trackClass={statusSwitch.trackClass}
-                    trackStyle={statusSwitch.trackStyle}
-                    thumbStyle={statusSwitch.thumbStyle}
-                    onChange={({ checked }) => void props.appearance.setShowStatusBar(checked)}
+                    checked={props.appearance.preferences.showStatusBar()}
+                    interactionBlocked={busy()}
+                    onChange={({ checked }) => void props.appearance.preferences.setShowStatusBar(checked)}
                   />
                 }
               >
@@ -141,10 +138,10 @@ function GeneralSettings(props: { appearance: AppearanceStore }) {
                     { id: "show", label: t("settings.statusBarShown") },
                     { id: "hide", label: t("settings.statusBarHidden") },
                   ]}
-                  selectedId={props.appearance.showStatusBar() ? "show" : "hide"}
-                  enabled={!busy()}
+                  selectedId={props.appearance.preferences.showStatusBar() ? "show" : "hide"}
+                  enabled interactionBlocked={busy()}
                   onChange={({ id }) => {
-                    if (id === "show" || id === "hide") void props.appearance.setShowStatusBar(id === "show");
+                    if (id === "show" || id === "hide") void props.appearance.preferences.setShowStatusBar(id === "show");
                   }}
                 />
               </If>
@@ -157,7 +154,7 @@ function GeneralSettings(props: { appearance: AppearanceStore }) {
         <Text role="header" style={sectionTitleLook(palette)}>
           {t("settings.language")}
         </Text>
-        <View style={groupLook(palette, props.appearance.contentBackgroundTransparency())}>
+        <View style={groupLook(palette, props.appearance.background.contentBackgroundTransparency())}>
           <View class="flex-row items-center" style={rowLook(palette)}>
             <View class="min-w-0 flex-1" style={spacing(palette).text}>
               <Text style={{ color: palette().text }}>{t("settings.language")}</Text>
@@ -171,8 +168,8 @@ function GeneralSettings(props: { appearance: AppearanceStore }) {
                     <Each of={languages}>
                       {(language) => (
                         <ThemeButton palette={palette} testID={`locale-${language()}`} label={t(`locale.${language()}`)}
-                          selected={props.appearance.language() === language()} disabled={busy()}
-                          onPress={() => props.appearance.chooseLanguage(language())} />
+                          selected={props.appearance.preferences.language() === language()} interactionBlocked={busy()}
+                          onPress={() => props.appearance.preferences.chooseLanguage(language())} />
                       )}
                     </Each>
                   </View>
@@ -183,10 +180,10 @@ function GeneralSettings(props: { appearance: AppearanceStore }) {
                   style={{ width: "100%", height: 28 }}
                   label={t("settings.language")}
                   items={languages.map((language) => ({ id: language, label: t(`locale.${language}`) }))}
-                  selectedId={props.appearance.language()}
-                  enabled={!busy()}
+                  selectedId={props.appearance.preferences.language()}
+                  enabled interactionBlocked={busy()}
                   onChange={({ id }) => {
-                    if (isLocalePreference(id)) void props.appearance.chooseLanguage(id);
+                    if (isLocalePreference(id)) void props.appearance.preferences.chooseLanguage(id);
                   }}
                 />
               </If>
@@ -204,8 +201,12 @@ function GeneralSettings(props: { appearance: AppearanceStore }) {
  */
 const wideBreakpoint = 560;
 
-export function SettingsPage(props: { appearance: AppearanceStore; updates?: Updates }) {
-  const { palette, t, busy, retryable, settingsSection } = props.appearance;
+export function SettingsPage(props: { appearance: AppState; updates?: Updates }) {
+  const palette = props.appearance.appearance.palette;
+  const t = props.appearance.preferences.t;
+  const busy = props.appearance.settings.busy;
+  const retryable = props.appearance.settings.retryable;
+  const settingsSection = props.appearance.settings.settingsSection;
   // The page's own width, not the window's: the docked sidebar takes room too.
   const width = signal(0);
   const wide = () => width() >= wideBreakpoint;
@@ -235,7 +236,7 @@ export function SettingsPage(props: { appearance: AppearanceStore; updates?: Upd
       </Text>
       <If when={retryable()}>
         <ThemeButton palette={palette} label={t("settings.retry")} testID="settings-retry" loadingFeedback
-          onPress={() => props.appearance.retry()} />
+          onPress={() => props.appearance.settings.retry()} />
       </If>
       <If
         when={wide()}

@@ -4,14 +4,15 @@ import { Button } from "nsh/base";
 import { SystemIcon } from "../../components/SystemIcon";
 import { ProgressRing } from "../../components/ProgressRing";
 import icons from "../../config/navigation-icons.json";
-import type { AppearanceStore } from "../../state/appearance";
+import type { AppState } from "../../state/app";
 import { iconButtonLook } from "../../theme/look";
 import type { UpdateIndicator } from "../contracts/updates";
 import { ButtonTooltip } from "./ButtonTooltip";
 export function RailUpdate(
-  props: { appearance: AppearanceStore; updates?: UpdateIndicator },
+  props: { appearance: AppState; updates?: UpdateIndicator },
 ) {
-  const { palette, t } = props.appearance;
+  const palette = props.appearance.appearance.palette;
+  const t = props.appearance.preferences.t;
   const state = () => props.updates?.state();
   const look = () => iconButtonLook(palette);
   const checking = () => state()?.shape === "checking";

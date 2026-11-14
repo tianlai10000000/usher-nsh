@@ -4,7 +4,7 @@ import { currentWindow, focusedWindow } from "nsh/desktop";
 import { BackHandler } from "nsh/mobile";
 import manifest from "../../nsh.json";
 import policy from "../config/routing.json";
-import { observe, onDispose } from "../state/runtime/nsh";
+import { observe, onDispose } from "../state-runtime/nsh";
 import type { Navigation } from "./index";
 import { bindHostRouting } from "./host";
 /** Application links belong to the main window; back belongs to the active window.

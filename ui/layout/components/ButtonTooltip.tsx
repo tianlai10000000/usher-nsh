@@ -2,16 +2,16 @@
 import { safeArea, Text, windowSize } from "nsh";
 import { Tooltip, type TooltipProps } from "nsh/base";
 import { popupMotion } from "../../theme/motion";
-import type { AppearanceStore } from "../../state/appearance";
+import type { AppState } from "../../state/app";
 
 /** Attach to a button's `tooltip` prop so disabled buttons retain their native hint behavior. */
 export function ButtonTooltip(props: {
-  appearance: AppearanceStore;
+  appearance: AppState;
   label: string;
   placement: TooltipProps["placement"];
   testID: string;
 }) {
-  const { palette } = props.appearance;
+  const palette = props.appearance.appearance.palette;
   const motion = () => popupMotion(palette, props.placement ?? "top", true);
 
   return (

@@ -1,7 +1,7 @@
 /** The update settings section reads a shared projection and dispatches semantic commands. */
 import { Text, View } from "nsh";
 import { Progress, Switch } from "nsh/base";
-import type { AppearanceStore } from "../../state/appearance";
+import type { AppState } from "../../state/app";
 import type { UpdateActions } from "./index";
 import { ThemeButton } from "../../components/ThemeControls";
 import {
@@ -16,12 +16,13 @@ import {
 
 export function UpdateDetails(
   props: {
-    appearance: AppearanceStore;
+    appearance: AppState;
     updates: UpdateActions;
     testID?: string;
   },
 ) {
-  const { palette, t } = props.appearance;
+  const palette = props.appearance.appearance.palette;
+  const t = props.appearance.preferences.t;
   const updates = props.updates;
   const view = updates.view;
   const downloading = () => updates.data().domain?.phase.type === "downloading";
@@ -79,7 +80,7 @@ export function UpdateDetails(
             testID="update-download" loadingFeedback
             prominent
             busy={downloading()}
-            disabled={view().working}
+            interactionBlocked={view().working}
             label={t("update.download")}
             onPress={() => updates.download()}
           />
@@ -101,7 +102,8 @@ export function UpdateDetails(
             native={false}
             busy={updates.data().domain?.phase.type === "checking"}
             label={t("update.check")}
-            disabled={!view().canCheck}
+            disabled={view().unavailable || view().ready}
+            interactionBlocked={view().working}
             onPress={() => updates.check()}
           />
         </If>
@@ -122,9 +124,10 @@ export function UpdateDetails(
   );
 }
 export function UpdatesSettings(
-  props: { appearance: AppearanceStore; updates: UpdateActions },
+  props: { appearance: AppState; updates: UpdateActions },
 ) {
-  const { palette, t } = props.appearance;
+  const palette = props.appearance.appearance.palette;
+  const t = props.appearance.preferences.t;
   const data = props.updates.data;
   const enabled = () => data().domain?.auto_check ?? true;
   const animatedSwitch = createSwitchLook(palette, enabled);
@@ -134,7 +137,7 @@ export function UpdatesSettings(
       <View
         style={groupLook(
           palette,
-          props.appearance.contentBackgroundTransparency(),
+          props.appearance.background.contentBackgroundTransparency(),
         )}
       >
         <View class="flex-row items-center" style={rowLook(palette)}>

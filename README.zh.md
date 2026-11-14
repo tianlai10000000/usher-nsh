@@ -45,7 +45,7 @@ nsh run --target macos
 
 文件选择与读写、主题扫描与保存、诊断导出、更新等需要等待的操作在按钮内部显示加载图标并保持禁用，加载前后按钮尺寸不变。主题、明暗模式、语言和导航等即时切换不显示加载图标。仅含图标的按钮在加载期间替换原图标；最左侧窄菜单栏保持现有交互。
 
-导航支持前进、后退和面包屑。macOS 桌面快捷键为 `⌘+[` 和 `⌘+]`，其他桌面目标为 `Ctrl+[` 和 `Ctrl+]`。窗口由通栏标题栏（菜单开关、前进后退、面包屑和浅色/深色切换）、固定窄菜单（上方主页，底部依次为更新、设置、用户头像按钮）、可显示或隐藏的二级菜单、内容区和可选的通栏底部状态栏组成。隐藏二级菜单时内容区带动画向左延伸，窄窗改用抽屉显示二级菜单。更新按钮展示可用更新、下载进度和重启就绪状态；不支持更新（包括开发运行）或显式下载期间禁用。头像按钮仍禁用。二级菜单停靠和底部状态栏开关会保存到本地。
+导航支持前进、后退和面包屑。macOS 桌面快捷键为 `⌘+[` 和 `⌘+]`，其他桌面目标为 `Ctrl+[` 和 `Ctrl+]`。窗口由通栏标题栏（菜单开关、前进后退、面包屑和外观循环切换（跟随系统 → 浅色 → 深色 → 跟随系统））、固定窄菜单（上方主页，底部依次为更新、设置、用户头像按钮）、可显示或隐藏的二级菜单、内容区和可选的通栏底部状态栏组成。隐藏二级菜单时内容区带动画向左延伸，窄窗改用抽屉显示二级菜单。更新按钮展示可用更新、下载进度和重启就绪状态；不支持更新（包括开发运行）或显式下载期间禁用。头像按钮仍禁用。二级菜单停靠和底部状态栏开关会保存到本地。
 
 标题栏和窄菜单的八个图标按钮使用 NSH `Tooltip`，支持鼠标悬停和键盘焦点，禁用按钮也可显示提示。提示文案随所选语言和当前动作更新，优先显示在标题栏按钮下方、窄菜单按钮右侧；NSH 在窗口内容之上绘制浮层，按安全区域自动翻转或平移，较长文案按可用宽度换行。面包屑不显示 Tooltip。
 
@@ -66,7 +66,7 @@ macOS 窗口的默认启动尺寸和最小外框尺寸均为 800 × 600 点。TS
 
 ## 样式主题
 
-所有主题使用同一种 JSON 格式，无论随应用发布还是由用户在本地添加。Rust 注册表（[src/style_themes.rs](src/style_themes.rs)）负责加载主题、与 `extends` 指向的基础主题合并、替换 `var(--name)` 引用，再向界面提供完整的 token 表。界面按名称读取 token，新增主题不需要修改代码。
+所有主题使用同一种 JSON 格式，无论随应用发布还是由用户在本地添加。Rust 注册表（[src/state/appearance/theme.rs](src/state/appearance/theme.rs)）负责加载主题、与 `extends` 指向的基础主题合并、替换 `var(--name)` 引用，再向界面提供完整的 token 表。界面按名称读取 token，新增主题不需要修改代码。
 
 内置主题在构建时从 [ui/theme/builtin/](ui/theme/builtin) 和 [ui/theme/presets/](ui/theme/presets) 发现。在这两个目录添加文件即可新增主题，`order` 字段决定它在列表中的位置。[default](ui/theme/builtin/default/theme.json) 是根主题，定义全部 token，其他主题只需覆盖差异部分。
 
@@ -130,6 +130,7 @@ macOS 上的主页和设置使用系统 SF Symbols，选中时为实心，未选
 
 ```sh
 python3 -I scripts/sync-gallery-theme.py --revision main
+cargo run --locked --bin theme-snapshots -- ui/state/appearance/bundled.generated.json
 cargo test --locked --lib
 ```
 
@@ -165,6 +166,9 @@ sh scripts/package-macos.sh appkit
 Release 优化参数统一放在 [.cargo/config.toml](.cargo/config.toml)。在项目根目录直接运行 `nsh package --target macos` 也会读取该配置，默认输出到 `.nsh/out/`。其余目标在接入时分别验证配置生效情况。
 
 ## 验证
+
+启动主题产物由 Rust 注册表生成。修改主题规则或内置主题后，执行 `cargo run --locked --bin theme-snapshots -- ui/state/appearance/bundled.generated.json`；工作区测试会拒绝过期产物。
+
 
 从项目根目录按变更范围运行检查。工作区命令包含更新、状态、路由与测试支持 crate；应用依赖启用 watch 和 matchit 适配器，独立套件另行验证不启用这些 feature 的核心。
 
@@ -206,7 +210,7 @@ python3 scripts/test.py ui
 
 `test-support`、`logging`、`logging-mock`、`state` 和 `router` 不需要 NSH。日志规则单测就近放置，公共契约通过注入后端捕捉全部类型和等级，并将真实文件适配器与 capture 后端对照。状态和路由以参考及真实后端运行同一消费者契约，路由属性测试使用夹具中的固定种子。`integration` 运行 11 项设置、13 项窗口 / 路由、17 项更新与 3 项诊断测试，使用真实服务和隔离数据。`state-ui` 验证 TS 投影及真实订阅桥接，`router-ui` 验证路由门面及真实页面生命周期。`e2e --target headless` 使用隔离内存会话，运行实际 App 到 Rust 服务的四项旅程。macOS 原生验收命令已验证同 VM 窗口共享持久偏好、窗口会话隔离、真实源码 HMR 及关闭重开身份。
 
-窗口状态由 `WindowService` 原子提交，页面会话规则位于 `src/window_session.rs`。Rust 服务保留类型化错误，桥接输出稳定错误码。生成的路由契约包含字面量元数据，并校验页面与文案类型。旧会话桥接保持兼容。
+窗口状态由 `WindowService` 原子提交，页面会话规则位于 `src/state/window/session/mod.rs`。Rust 服务保留类型化错误，桥接输出稳定错误码。生成的路由契约包含字面量元数据，并校验页面与文案类型。旧会话桥接保持兼容。
 
 报告写入 `target/test-reports/`；失败、空测试、跳过或必测组缺失均非零退出。NSH 套件递归发现源文件并验证新生成的 JUnit。同一 checkout 内的 NSH 命令须串行运行，类型检查单独执行 `nsh check`。`routes-check` 验证生成器测试及实际目录生成契约的新鲜度，不修改文件；后者单独计为检查，不额外计为测试。修改 `ui/pages/routes.json` 后执行：
 
@@ -292,6 +296,8 @@ USHER_MACOS_APPKIT=0 nsh test tests/ui/appkit.test.tsx --target macos
 | `ui/layout/controllers/`、`ui/layout/contracts/` | 菜单与窗口控制逻辑，以及布局消费的接口 |
 | `ui/router/`、`ui/pages/` | 路由门面、RouterView、路由目录与页面注册 |
 | `ui/features/`、`ui/state/`、`ui/components/` | 功能视图、表现状态和复用控件 |
+| `src/state/appearance/`, `ui/state/appearance/` | 应用层外观主题注册表与响应式投影；迁移期间保留旧设置门面 |
+| `ui/state/{diagnostics,background,preferences,settings}/` | 诊断、背景和语言业务模块共用设置请求协调器；通用 NSH 绑定位于 `ui/state-runtime/` |
 | `ui/theme/` | 内置主题文件、Gallery 映射与 token 投影 |
 | `i18n/messages/`、`ui/i18n/` | 翻译目录与界面国际化 |
 | `platforms/macos/` | AppKit 窗口材质、控件与图标 |

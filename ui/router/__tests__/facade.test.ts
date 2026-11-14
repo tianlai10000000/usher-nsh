@@ -1,8 +1,8 @@
 /** Router facade contracts with controlled guard replies and an injected window binding. */
 import { expect, test } from "nsh/test";
 import { createRouter } from "../index";
-import type { RoutingBinding } from "../../state/window";
-import type { WindowData } from "../../state/window-contracts";
+import type { RoutingBinding } from "../../state/window/index";
+import type { WindowData } from "../../state/window/contracts";
 function setup() {
   const data: WindowData = { history: { entries: [{ key: "1", location: { id: "home", page: "home", path: "/", params: {}, query: {}, ancestors: ["home"] } }], cursor: 0, catalogIdentity: "fixture" }, session: { section: "general", clicks: 0, operations: {} }, pending: null, navigationResult: "committed" };
   const calls: unknown[] = [];

@@ -1,9 +1,9 @@
 /** Owns native animation lifetimes and shared Gallery popup motion, independent of business state. */
 import { cleanup, createAnimatedValue, createMotion, Easing, effect, platform, reduceMotion } from "nsh";
 import type { SpringConfig, ViewStyle } from "nsh";
-import type { AppearanceStore } from "../state/appearance";
+import type { ThemeAccessor } from "./index";
 
-type Palette = AppearanceStore["palette"];
+type Palette = ThemeAccessor;
 export type PopupSide = "top" | "bottom" | "left" | "right";
 const origins: Record<PopupSide, string> = { top: "bottom", bottom: "top", left: "right", right: "left" };
 

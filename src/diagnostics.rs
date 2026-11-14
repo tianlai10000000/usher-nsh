@@ -10,13 +10,13 @@ use usher_logging::{
 };
 struct Observer {
     source: u64,
-    service: Arc<crate::diagnostic_state::StatusService>,
+    service: Arc<crate::state::diagnostics::StatusService>,
 }
 impl StatusObserver for Observer {
     fn changed(&self, sample: &dyn Fn() -> HealthSnapshot) {
         self.service.update(self.source, || {
             let sample = sample();
-            crate::diagnostic_state::Status {
+            crate::state::diagnostics::Status {
                 problem: sample.health.code().map(str::to_owned),
                 dropped: sample.dropped,
             }
@@ -28,7 +28,7 @@ pub(crate) fn install(root: PathBuf, level: Level, outputs: Outputs) -> Runtime 
     static INSTALL: Mutex<()> = Mutex::new(());
     let _guard = INSTALL.lock().unwrap_or_else(|p| p.into_inner());
     let runtime = usher_logging::runtime::install(root, level, outputs);
-    if let Ok(status) = &*crate::diagnostic_state::STATUS
+    if let Ok(status) = &*crate::state::diagnostics::STATUS
         && let Ok(source) = status.activate()
     {
         runtime.observe(Arc::new(Observer {
@@ -70,7 +70,7 @@ mod tests {
         std::fs::write(&path, "file").unwrap();
         let runtime = Runtime::file(path, Level::Info);
         let service = Arc::new(
-            crate::diagnostic_state::StatusService::new(usher_state::StoreId::new(u128::MAX))
+            crate::state::diagnostics::StatusService::new(usher_state::StoreId::new(u128::MAX))
                 .unwrap(),
         );
         let source = service.activate().unwrap();

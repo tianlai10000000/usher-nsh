@@ -8,11 +8,12 @@
 import { platform, Scroll, View, type ViewStyle } from "nsh";
 import type { ScrollbarTheme } from "nsh/base";
 import type { JSX } from "nsh/jsx-runtime";
-import type { AppearanceStore } from "../../state/appearance";
+import type { AppState } from "../../state/app";
+import type { ThemeAccessor } from "../../theme/index";
 import { contentBackgroundColor } from "../../theme/look";
 
 /** Keeps one scrollbar object while its part getters follow theme changes. */
-const themedScrollBar = (palette: AppearanceStore["palette"]): ScrollbarTheme => ({
+const themedScrollBar = (palette: ThemeAccessor): ScrollbarTheme => ({
   mode: "hover",
   get motion() { return { idle: palette().metric.scrollbarIdleMs,
     enter: palette().metric.scrollbarEnterMs, exit: palette().metric.scrollbarExitMs }; },
@@ -31,8 +32,8 @@ const themedScrollBar = (palette: AppearanceStore["palette"]): ScrollbarTheme =>
   },
 });
 
-export function ContentPanel(props: { appearance: AppearanceStore; children: JSX.Element }) {
-  const { palette } = props.appearance;
+export function ContentPanel(props: { appearance: AppState; children: JSX.Element }) {
+  const palette = props.appearance.appearance.palette;
   const desktop = platform.desktop;
   // Built once so a theme change never replaces the bar.
   const scrollBar = platform.os === "macos" ? themedScrollBar(palette) : true;
@@ -46,7 +47,7 @@ export function ContentPanel(props: { appearance: AppearanceStore; children: JSX
       style={{ marginRight: inset(), marginBottom: inset(), borderRadius: radius() }}>
       <View class="min-h-0 min-w-0 flex-1 overflow-hidden"
         style={{ borderRadius: radius(),
-          backgroundColor: contentBackgroundColor(palette().panel, props.appearance.contentBackgroundTransparency()) }}>
+          backgroundColor: contentBackgroundColor(palette().panel, props.appearance.background.contentBackgroundTransparency()) }}>
         <Scroll testID="main-content" class="min-h-0 flex-1" contentClass="grow p-4" scrollbar={scrollBar}>
           {props.children}
         </Scroll>

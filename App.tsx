@@ -7,18 +7,17 @@ import { createRouter, RouterProvider } from "./ui/router";
 import { bindNativeRouting } from "./ui/router/native";
 import { RouterView } from "./ui/router/RouterView";
 import { pages } from "./ui/pages";
-import { SettingsProvider } from "./ui/state/app";
-import { createAppearanceStore } from "./ui/state/appearance";
-import { createWindowState } from "./ui/state/window";
+import { SettingsProvider } from "./ui/state/settings/store";
+import { createAppState } from "./ui/state/app";
 import { translate } from "./ui/i18n";
 
 function App() {
-  const window = createWindowState();
-  const appearance = createAppearanceStore(window.session);
+  const appearance = createAppState();
+  const window = appearance.window;
   const updates = createUpdates(appearance);
   const navigation = createRouter(window.routing);
   bindNativeRouting(navigation);
-  return <SettingsProvider value={appearance.state}>
+  return <SettingsProvider value={appearance.settings.view}>
     <RouterProvider value={navigation}>
       <Frame appearance={appearance} navigation={navigation} updates={updates.indicator}>
         <RouterView pages={pages} appearance={appearance} navigation={navigation} session={window.session} updates={updates} />

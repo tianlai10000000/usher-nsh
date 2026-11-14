@@ -213,7 +213,7 @@ NSH 原生体系有三类互相独立的材料，其中清单密钥与代码包�
 
 ### 8.1 总览
 
-NSH 的更新接口（`checkForUpdate`、`downloadPackage`、`installAndRestart` 等）是 `nsh/updater` 这个 **JS 模块**，Rust 侧没有等价入口，所以**执行者只能是 TSX 控制器**。Rust 的 `update_bridge` 是把 `update_service` 暴露给 TSX 的传输层，自己不碰 NSH 更新接口。
+NSH 的更新接口（`checkForUpdate`、`downloadPackage`、`installAndRestart` 等）是 `nsh/updater` 这个 **JS 模块**，Rust 侧没有等价入口，所以**执行者只能是 TSX 控制器**。Rust 的 `update_bridge` 是把 `state::updates` 暴露给 TSX 的传输层，自己不碰 NSH 更新接口。
 
 ```mermaid
 flowchart LR
@@ -287,7 +287,7 @@ crate 保持无 I/O、无 NSH 依赖：输入事件，输出状态与效果。�
 
 **不取消、不交接**（执行策略的独立决定，与服务初始化的 A 方案无关）。NSH 不能取消更新操作（V12），所以应用层也不提供取消，也不提供执行者交接：
 
-- `src/update_service/` 中以下内容删除：`Command::Cancel`、`Command::Channel`、`reset_after_stop`、`Model.recovery` 与 `Model.draining`、`Settlement`、`Recovery`、`revoke`、`settle`、`reconcile`、`Execution::Draining`、`Execution::RecoveryRequired`、`Error::RecoveryRequired`。它们存在的全部理由是"撤销旧身份后确认原操作已停止"，而这个确认在 NSH 下做不到。
+- `src/state/updates/` 中以下内容删除：`Command::Cancel`、`Command::Channel`、`reset_after_stop`、`Model.recovery` 与 `Model.draining`、`Settlement`、`Recovery`、`revoke`、`settle`、`reconcile`、`Execution::Draining`、`Execution::RecoveryRequired`、`Error::RecoveryRequired`。它们存在的全部理由是"撤销旧身份后确认原操作已停止"，而这个确认在 NSH 下做不到。
 - 保留单执行者的核心：`acquire`、`claim`、`progress`、`complete`、`Lease`、`Claim`、票据与迟到回执拒绝、`close`。
 - 执行者持有租约直到应用作用域关闭。目录设置服务创建时同时创建未配置的更新服务；窗口仅借用，关闭窗口或释放订阅不关闭共享服务。无目录的测试会话随其宿主结束而关闭。进程重启后重新创建并配置，状态机从 `Idle` 开始。HMR 若仅重建视图，服务与配置保留；若销毁持有执行租约的 JS 执行环境，当前无交接协议，不能重新领取执行身份，也不能假定原操作停止，须重启应用恢复执行。任意 VM 重载均可继续更新不属于当前承诺。
 
@@ -308,9 +308,9 @@ crate 保持无 I/O、无 NSH 依赖：输入事件，输出状态与效果。�
 
 #### 服务契约（无取消、无交接；初始化采用 A 方案）
 
-`src/update_service/` 是应用层协调器，业务转换调用 `usher-update::Machine`。NSH 不能取消更新操作（V12），所以服务不建模停止与交接；取舍与删除清单见 8.2"不取消、不交接"。
+`src/state/updates/` 是应用层协调器，业务转换调用 `usher-update::Machine`。NSH 不能取消更新操作（V12），所以服务不建模停止与交接；取舍与删除清单见 8.2"不取消、不交接"。
 
-- 应用注册表以宿主设置服务的 StoreId 为作用域；同目录的消费方借用同一更新服务，不同临时目录独立。无数据目录的会话由所属装配持有并显式关闭。
+- 设置路径注册表负责唯一作用域，SettingsService 创建并拥有唯一 UpdateService；消费方通过 `settings.updates()` 借用，不另建 UpdateRegistry 或关闭所有者。释放借用句柄不关闭共享服务；所属 SettingsService 显式关闭或销毁时关闭更新服务，即使借用者仍保留 Arc。不同目录和无目录会话保持隔离。
 - 纯领域转换在副本中计算，快照成功提交后才更换内部模型和效果队列；发布失败不丢任务、不推进票据、不允许执行候选效果。订阅只含状态和队列数量，不广播效果。
 - 单一执行租约与单一在途领取均由服务签发，绑定 StoreId、租约代次、效果 ID 和原领域票据。重复领取返回空；普通消费方只能提交用户命令，不能伪造网络回执。租约持有到服务关闭，没有撤销。
 - 状态机产生的日志记录不是执行者的工作，服务自己收集，由 `take_logs` 取走；积压有上限，调用方不取也不会无限增长。

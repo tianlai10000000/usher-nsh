@@ -1,10 +1,10 @@
 /** Public router facade: all navigation reaches the same window-owned Rust history. */
 import { routeMetadata } from "../pages/routes.generated";
 import type { PageKey, RouteId, RouteParams, RouteQuery } from "../pages/routes.generated";
-import type { MessageKey } from "../i18n";
-import { createScope, onDispose } from "../state/runtime/nsh";
-import { createWindowState, type RoutingBinding } from "../state/window";
-import type { NavigationCommand, NavigationResult, RouteLocation, RouteTarget } from "../state/window-contracts";
+import type { MessageKey } from "../i18n/index";
+import { createScope, onDispose } from "../state-runtime/nsh";
+import { createWindowState, type RoutingBinding } from "../state/window/index";
+import type { NavigationCommand, NavigationResult, RouteLocation, RouteTarget } from "../state/window/contracts";
 export type { RouteId } from "../pages/routes.generated";
 export type Target = RouteTarget;
 export type Command = NavigationCommand;

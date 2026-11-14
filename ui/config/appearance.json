@@ -1,0 +1,24 @@
+{
+  "modes": [
+    "system",
+    "light",
+    "dark"
+  ],
+  "actions": {
+    "system": {
+      "label": "nav.switchToSystem",
+      "symbol": "desktopcomputer",
+      "fallback": "▣"
+    },
+    "light": {
+      "label": "nav.switchToLight",
+      "symbol": "sun.max",
+      "fallback": "☀"
+    },
+    "dark": {
+      "label": "nav.switchToDark",
+      "symbol": "moon",
+      "fallback": "☾"
+    }
+  }
+}

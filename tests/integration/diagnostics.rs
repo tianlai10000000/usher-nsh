@@ -8,7 +8,7 @@ use usher_logging::{
     Fields, Level, LogKind, Output,
     runtime::{Health, LogWriter, Record, Runtime},
 };
-use usher_nsh::app_state::{Command, DiagnosticLevel, DiagnosticOutput, SettingsRegistry};
+use usher_nsh::state::settings::{Command, DiagnosticLevel, DiagnosticOutput, SettingsRegistry};
 #[derive(Clone, Default)]
 struct Capture(Arc<Mutex<Vec<(Output, Record)>>>);
 impl LogWriter for Capture {

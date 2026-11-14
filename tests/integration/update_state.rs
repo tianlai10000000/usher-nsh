@@ -3,8 +3,8 @@
 mod memory;
 use std::sync::{Arc, Barrier, atomic::Ordering};
 use usher_nsh::{
-    app_state::{ColorMode, Command as SettingsCommand, SettingsRegistry},
-    update_service::*,
+    state::settings::{ColorMode, Command as SettingsCommand, SettingsRegistry},
+    state::updates::*,
 };
 use usher_state::{BackendFactory, SubscriptionEnd, backends::WatchBackend};
 use usher_test_support::task::ready;
@@ -475,7 +475,7 @@ fn updates_concurrent_windows_claim_one_effect_and_receive_the_same_state() {
     assert_eq!(claims.iter().filter(|claim| claim.is_some()).count(), 1);
 }
 #[test]
-fn updates_registry_shares_only_host_settings_scope_and_preserves_persisted_bytes() {
+fn updates_scope_shares_only_host_settings_scope_and_preserves_persisted_bytes() {
     let directory = tempfile::tempdir().unwrap();
     let settings = SettingsRegistry::default();
     let path = directory.path().join("settings.toml");
@@ -484,16 +484,13 @@ fn updates_registry_shares_only_host_settings_scope_and_preserves_persisted_byte
         .apply(SettingsCommand::SetColorMode(ColorMode::Dark))
         .unwrap();
     let before = std::fs::read(&path).unwrap();
-    let registry = UpdateRegistry::default();
-    let main = registry.for_settings(&first).unwrap();
-    let second = registry
-        .for_settings(&settings.for_path(path.clone()).unwrap())
-        .unwrap();
+    let main = first.updates().unwrap();
+    let second = settings.for_path(path.clone()).unwrap().updates().unwrap();
     assert!(Arc::ptr_eq(&main, &second));
     let isolated_settings = settings
         .for_path(directory.path().join("other/settings.toml"))
         .unwrap();
-    let isolated = registry.for_settings(&isolated_settings).unwrap();
+    let isolated = isolated_settings.updates().unwrap();
     assert_ne!(
         main.snapshot().unwrap().store_id(),
         isolated.snapshot().unwrap().store_id()
@@ -514,18 +511,20 @@ fn updates_registry_shares_only_host_settings_scope_and_preserves_persisted_byte
         main.request(Command::Configure(other)),
         Err(Error::Invalid)
     ));
-    registry.close();
+    drop(second);
+    assert!(main.snapshot().is_ok());
+    first.close();
     assert_eq!(main.acquire(), Err(Error::Closed));
-    assert!(matches!(registry.for_settings(&first), Err(Error::Closed)));
+    assert!(first.updates().is_err());
+    assert!(isolated.snapshot().is_ok());
     assert_eq!(std::fs::read(path).unwrap(), before);
 }
 #[test]
-fn updates_registry_drop_closes_retained_services_and_new_sessions_do_not_replay_work() {
-    let settings = usher_nsh::app_state::SettingsService::session().unwrap();
+fn updates_scope_drop_closes_retained_services_and_new_sessions_do_not_replay_work() {
     let service;
     {
-        let registry = UpdateRegistry::default();
-        service = registry.for_settings(&settings).unwrap();
+        let settings = usher_nsh::state::settings::SettingsService::session().unwrap();
+        service = settings.updates().unwrap();
         service
             .request(Command::Configure(machine_settings()))
             .unwrap();
@@ -560,7 +559,7 @@ fn configuration_publication_failure_can_retry_on_both_backends() {
 
 #[test]
 fn dropping_window_borrows_keeps_application_configuration_and_lease() {
-    let settings = usher_nsh::app_state::SettingsService::session().unwrap();
+    let settings = usher_nsh::state::settings::SettingsService::session().unwrap();
     let first = settings.updates().unwrap();
     assert!(first.snapshot().unwrap().state().domain.is_none());
     first

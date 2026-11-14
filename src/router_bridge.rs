@@ -1,8 +1,8 @@
 //! Window-scoped routing/session registration within an engine and versioned subscription transport.
 use crate::{
+    state::window::session::{OperationKind, Receipt, SessionCommand, Stage, Ticket},
+    state::window::{Decision, WindowService, WindowSnapshot},
     state_bridge::{Binding, Event},
-    window_service::{Decision, WindowService, WindowSnapshot},
-    window_session::{OperationKind, Receipt, SessionCommand, Stage, Ticket},
 };
 use nsh_core::{
     element::{CallCx, Callback, Local, Stop, System},

@@ -2,8 +2,9 @@
 import { mount, signal, Text, View } from "nsh";
 import { Button } from "nsh/base";
 import { Settings, SettingsState } from "usher/nsh";
-import { createSettingsState, SettingsProvider, useSettingsStore } from "../../../ui/state/app";
-import { observe, onDispose } from "../../../ui/state/runtime/nsh";
+import { createSettingsState, SettingsProvider, useSettingsStore } from "../../../ui/state/settings/store";
+import { observe, onDispose } from "../../../ui/state-runtime/nsh";
+import { decodeSettings } from "../../../ui/state/settings/decode";
 import initial from "./state-initial.json";
 
 function Borrower() {
@@ -12,7 +13,7 @@ function Borrower() {
   return <Text testID="borrowed">Borrowed:{mode()}</Text>;
 }
 function Consumer(props: { name: string; observed?: (mode: string) => void; disposed?: () => void }) {
-  const view = createSettingsState(initial);
+  const view = createSettingsState(decodeSettings(initial));
   observe(() => { if (view.status() === "live") props.observed?.(view.value().colorMode); });
   onDispose(() => props.disposed?.());
   return <SettingsProvider value={view}>

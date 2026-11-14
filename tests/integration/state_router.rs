@@ -2,10 +2,10 @@
 use std::{cell::Cell, future::poll_fn, task::Poll};
 #[path = "../../crates/usher-state/tests/support/memory.rs"]
 mod memory;
-use usher_nsh::window_service::{Decision, WindowService};
-use usher_nsh::window_session::{
+use usher_nsh::state::window::session::{
     OperationKind as Kind, Receipt, SessionCommand as Session, Stage, Ticket,
 };
+use usher_nsh::state::window::{Decision, WindowService};
 use usher_router::{Catalog, NavigationCommand as Command, NavigationResult as ResultKind, Target};
 use usher_test_support::task::{poll, ready};
 fn catalog() -> Catalog {
@@ -461,7 +461,7 @@ fn ticket(receipt: Receipt) -> Ticket {
 #[test]
 fn router_publication_fault_preserves_session_tickets_and_allows_retry() {
     use std::sync::atomic::Ordering;
-    use usher_nsh::window_service::Error;
+    use usher_nsh::state::window::Error;
     use usher_state::StoreError;
     let backend = memory::MemoryFactory::default();
     let service = WindowService::with_backend(catalog(), &backend).unwrap();

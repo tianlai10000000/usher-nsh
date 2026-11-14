@@ -10,7 +10,7 @@
 | --- | --- | --- |
 | 界面 | `ui/features/`、`ui/components/`、`ui/layout/` | 页面、控件和窗口布局；读取视图投影并发送动作。 |
 | 视图投影 | `ui/state/`、`ui/router/` | 设置快照、操作状态、路由历史和本地化投影；调用类型化桥接接口。 |
-| 设置与资源 | `src/settings.rs`、`src/style_themes.rs`、`src/background.rs` | 偏好校验、状态变更、持久化、主题解析和背景资源管理。 |
+| 设置与资源 | `src/state/settings/model.rs`、`src/state/appearance/theme.rs`、`src/state/appearance/background.rs` | 偏好校验、状态变更、持久化、主题解析和背景资源管理。 |
 | NSH 桥接 | `src/settings_bridge.rs` | DTO 转换、后台调用、宿主目录解析及原生能力查询。 |
 | 平台适配 | `platforms/macos/` | 窗口材质、系统图标和原生控件；持有 AppKit 对象并处理其生命周期。 |
 | 诊断 | `crates/usher-logging/`、`src/diagnostics.rs` | 独立日志门面 / 后端；应用负责装配与健康状态适配。 |
@@ -19,20 +19,29 @@
 
 设置、主题和背景能力当前以根 crate 内的模块组织。更新规则独立为 crate，隔离 NSH、窗口和系统 I/O。
 
-按钮的异步交互由 `ui/components/AsyncButton.tsx` 与 ThemeButton 统一适配 NSH 的公开组件 API：只持有当前按钮激活的 Promise 生命周期、重复激活锁和卸载保护。加载反馈通过 loadingFeedback 或业务 busy 显式启用；即时主题、语言和导航切换不因返回 Promise 显示加载图标。需要加载反馈的按钮预留图标空间、保持文案和控件实现不变，避免状态切换改变尺寸。下载、安装、导出、目录与图片选择等业务状态仍由所属 Store 管理，通过 busy 投影驱动跨视图加载反馈。最左侧窄菜单栏保留其现有实现。交互要求见 [交互设计规范](docs/interaction-design.md)。
+按钮的异步交互由 `ui/components/AsyncButton.tsx` 与 ThemeButton 统一适配 NSH 的公开组件 API：只持有当前按钮激活的 Promise 生命周期、重复激活锁和卸载保护。加载反馈通过 loadingFeedback 或业务 busy 显式启用；即时主题、语言和导航切换不因返回 Promise 显示加载图标。需要加载反馈的按钮预留图标空间、保持文案和控件实现不变，避免状态切换改变尺寸。下载、安装、导出、目录与图片选择等业务状态仍由所属 Store 管理，通过 busy 投影驱动跨视图加载反馈。公共 `interaction.ts` 将业务不可用、临时交互锁与当前任务加载分开；按钮及 `ValueControls.tsx` 的值控件适配复用这一语义，AppKit 在平台目标动作入口拦截并恢复受控选择。共享保存互斥不再驱动无关控件灰显，业务层串行执行保护继续保留。最左侧窄菜单栏保留其现有实现。交互要求见 [交互设计规范](docs/interaction-design.md)。
 
 ## 2. 状态与设置桥接
+
+### 模块化目标与兼容边界
+
+业务共享状态统一组织在应用 `src/state/<domain>/` 和 `ui/state/<domain>/`，外观域为 `appearance`，包含主题、主题色和外观偏好。`usher-state` 保持业务无关，不放业务 Store、文件仓库或 NSH 适配。TS 通用适配目录为 `ui/state-runtime/`；以 NSH 原生 signal/computed/context/cleanup 承接快照和生命周期，不另建响应式系统。
+
+共享偏好只有一个 Rust 写入口，TS 负责只读投影与动作门面。NSH 有效明暗由外观适配统一读取，不能为了统一状态而复制成双向同步源；未接收有效快照前不向宿主应用占位偏好。设置文件由应用持久化协调器统一串行合并各模块分区，业务 Store 不各自覆盖整份文件。具体契约见 [模块化收敛设计](docs/state-management.md#模块化收敛设计)。
+
+应用业务状态集中在 `src/state/` 与 `ui/state/`，按 appearance、preferences、diagnostics、updates、window 分域；设置协调器处理共享配置文档的事务。旧源码兼容出口已移除。`ui/state/app.ts` 只组合分域门面，各模块借用契约，不相互创建 Store。`ui/state-runtime/` 复用 NSH 响应式和 owner 生命周期，`usher-state` 继续保持业务无关。`src/persistence/settings.rs` 只负责字节读取、备份和原子替换，持久化文档唯一归设置事务所有。
+
 
 ### 状态归属
 
 | 状态 | 拥有者 | 生命周期 |
 | --- | --- | --- |
 | 生效的用户偏好、主题和保存状态 | Rust `SettingsStore` | 按设置文件路径共享于进程内；无数据目录时使用引擎局部的会话 Store。 |
-| 设置只读投影 | `ui/state/projection.ts` | App 装配订阅，appearance 与借用门面读取同一投影。 |
-| 请求、预览、分类和主页计数 | `window_session` 规则 / `WindowService` 提交 | Rust 窗口 Store；TS 仅借用投影，回执与预览清理使用票据。 |
+| 设置只读投影 | `ui/state-runtime/projection.ts` | App 装配订阅，appearance 与借用门面读取同一投影。 |
+| 请求、预览、分类和主页计数 | `state::window::session` 规则 / `WindowService` 提交 | Rust 窗口 Store；TS 仅借用投影，回执与预览清理使用票据。 |
 | 路由、历史游标和面包屑 | `usher-router` / `WindowService` | 同一 VM 内每个宿主窗口各有唯一历史，动作绑定 Rust StoreId，关闭后身份失效。 |
 | 焦点、悬停、抽屉和组件临时状态 | TSX 组件及布局控制器 | 随所属组件挂载和释放。 |
-| 日志队列、写入线程和实时健康 | Rust 诊断模块 / `diagnostic_state` | 进程级管理，同一日志目录复用实例；健康和丢弃计数独立发布，旧管线代次不能回写。 |
+| 日志队列、写入线程和实时健康 | Rust 诊断模块 / `state::diagnostics` | 进程级管理，同一日志目录复用实例；健康和丢弃计数独立发布，旧管线代次不能回写。 |
 
 `SettingsStore` 是偏好的写入入口。TSX 通过框架无关门面读取快照，NSH 响应式图由状态适配器管理；共享拖动预览位于 Rust 窗口 session，提交偏好仍由设置服务校验并保存。
 
@@ -44,7 +53,8 @@ flowchart LR
     Projection -->|调用| Bridge[usher/nsh Settings]
     Bridge -->|命令| Service[SettingsService]
     Service -->|串行调用| Store[SettingsStore]
-    Store -->|保存| Files[设置与资源文件]
+    Store -->|合并配置后保存| Repository[persistence/settings]
+    Repository --> Files[设置文件]
     Store -->|完整快照| Service
     Service -->|变化时发布| State[usher-state]
     State -->|只读快照 / Rust 订阅| Consumers[Rust 消费者]
@@ -55,21 +65,21 @@ flowchart LR
     Projection -->|selector| View
 ```
 
-`ui/state/appearance.ts` 串行提交设置请求，防止较早的回执覆盖较新的选择。`settings_bridge.rs` 在后台任务中通过 `app_state` 获取路径对应的 `SettingsService`。全局注册表锁不覆盖初始化或 I/O，每个服务串行执行设置变更、保存和通用快照发布。原 Store 保留规则与文件格式；只读 `StoreReader` 无需业务锁即可读取和订阅。旧 JS 命令仍返回原 `SettingsSnapshot`；新增 `SettingsState` 提供版本读取和订阅，TS transport 在旧命令完成后重新读取一致信封。所有输入通过同一版本接收器，旧回执和销毁后的回调不能覆盖新值。
+`ui/state/settings/operations.ts` 串行提交设置请求，防止较早的回执覆盖较新的选择。`settings_bridge.rs` 在后台任务中通过 `state::settings` 获取路径对应的 `SettingsService`。全局注册表锁不覆盖初始化或 I/O，每个服务串行执行设置变更、保存和通用快照发布。原 Store 保留规则与文件格式；只读 `StoreReader` 无需业务锁即可读取和订阅。旧 JS 命令仍返回原 `SettingsSnapshot`；新增 `SettingsState` 提供版本读取和订阅，TS transport 在旧命令完成后重新读取一致信封。所有输入通过同一版本接收器，旧回执和销毁后的回调不能覆盖新值。
 
 快照包含偏好、已解析主题、资源元数据、`revision` 和保存状态。实际状态变更推进版本，重试保存沿用当前版本。业务错误通过稳定错误码返回，展示层负责翻译和操作反馈。
 
 ### 通用状态管理目标设计
 
-设计与实施顺序以 [通用状态管理方案](docs/state-management.md) 为准，任务、优先级和状态见 [迭代台账](docs/todo.md#settings)。SM1 已实现独立核心，SM2 已将设置接入并保持请求—响应兼容。`app_state.rs` 装配目录注册表与独立会话，`settings_service.rs` 负责预检、串行提交、变化比较与异常关闭；SM3 已实现引擎局部订阅、独立 TS 传输及 NSH 适配器；SM4 已迁移窗口历史、分类、预览、操作反馈、导出与计数；macOS 原生同 VM 多窗口、真实源码 HMR 与关闭重开已在隔离数据目录验收。
+设计与实施顺序以 [通用状态管理方案](docs/state-management.md) 为准，任务、优先级和状态见 [迭代台账](docs/todo.md#settings)。SM1 已实现独立核心，SM2 已将设置接入并保持请求—响应兼容。`state/settings/mod.rs` 装配目录注册表与独立会话，`state/settings/service/mod.rs` 负责预检、串行提交、变化比较与异常关闭；SM3 已实现引擎局部订阅、独立 TS 传输及 NSH 适配器；SM4 已迁移窗口历史、分类、预览、操作反馈、导出与计数；macOS 原生同 VM 多窗口、真实源码 HMR 与关闭重开已在隔离数据目录验收。
 
 通用转换结果与状态发布层已独立为内部 crate `crates/usher-state/`，提供纯转换契约、不可变快照、只读句柄与后端无关的订阅接口。应用通过工厂注入具体实现，`tokio::sync::watch` 仅为首个可选后端；公共接口不暴露通道、锁守卫或后端错误，更换实现以相同调用方通过契约测试为验收条件。crate 不依赖 NSH、平台、网络与文件系统。更新业务状态机继续归 `usher-update`；设置校验及持久化继续归设置模块，通过应用适配复用底座。
 
-窗口装配由 `src/window_service.rs` 承担，`src/window_session.rs` 隔离页面会话规则；历史与会话共用一个原子快照。窗口服务与设置服务使用带 code() 的错误枚举并保留内部原因，桥接负责兼容编码。窗口的纯候选发布失败允许重试；设置可能已完成持久化，内部发布故障仍关闭服务。通用 crate 不承载设置专用预检，也不要求领域实现统一状态机 trait。
+窗口装配由 `src/state/window/mod.rs` 承担，`src/state/window/session/mod.rs` 隔离页面会话规则；历史与会话共用一个原子快照。窗口服务与设置服务使用带 code() 的错误枚举并保留内部原因，桥接负责兼容编码。窗口的纯候选发布失败允许重试；设置可能已完成持久化，内部发布故障仍关闭服务。通用 crate 不承载设置专用预检，也不要求领域实现统一状态机 trait。
 
 测试依赖独立于运行时架构：`crates/usher-test-support/` 仅提供不含业务依赖的 poll / 唤醒及夹具身份校验工具，由状态、路由和应用的开发依赖使用，不进入其生产依赖图。状态参考后端和场景夹具仍在 `usher-state/tests/`。单测与 crate 契约就近，跨模块应用集成及 E2E 分别集中在 `tests/integration/`、`tests/e2e/`；具体边界和当前实现见 [测试方案](docs/testing.md#3-测试分层与目录)。
 
-应用按数据目录或引擎会话装配应用域，并按宿主窗口身份装配窗口域，由领域服务接收类型化动作并有序发布快照。领域版本与通用发布序号分开，保存状态变化即使没有推进设置 `revision` 也必须通知。桥接在引擎线程投递并管理订阅清理，TS 传输适配器隐藏原生桥接，`ui/state/runtime/nsh.ts` 集中封装 NSH context、signal、computed 与生命周期，组件通过项目状态门面访问投影。状态订阅保留最新值；需要逐条送达的消息和只执行一次的业务效果由各自领域执行器负责，不通过快照广播执行。
+应用按数据目录或引擎会话装配应用域，并按宿主窗口身份装配窗口域，由领域服务接收类型化动作并有序发布快照。领域版本与通用发布序号分开，保存状态变化即使没有推进设置 `revision` 也必须通知。桥接在引擎线程投递并管理订阅清理，TS 传输适配器隐藏原生桥接，`ui/state-runtime/nsh.ts` 集中封装 NSH context、signal、computed 与生命周期，组件通过项目状态门面访问投影。状态订阅保留最新值；需要逐条送达的消息和只执行一次的业务效果由各自领域执行器负责，不通过快照广播执行。
 
 迁移范围为全部跨页面共享或跨页面切换保留的数据，包括设置和诊断状态、导航历史、设置分类、共享透明度预览、导出及操作反馈、主页保留计数和相关 selector。导航等会话状态同样复用新 crate，但保持窗口隔离；单视图测量、焦点、动画及资源句柄仍按局部生命周期管理。逐项清单见 [状态管理方案第 8.3 节](docs/state-management.md#83-共享状态归属)，不能只完成设置订阅就标为全量迁移完成。
 
@@ -105,6 +115,16 @@ Store 先保存待提交的主题文件，再将完整设置写入同目录临�
 
 账户和更新入口由 `Frame` 接收可选契约，未提供实现时按钮禁用。窗口布局通过契约消费能力，与账户和更新的内部实现解耦。
 
+### 快捷键模块目标
+
+快捷键目标独立为 `crates/usher-shortcuts/`，负责通用绑定集合、不透明作用域冲突、注册计划和初始化/恢复状态；NSH `keymap` 与 `GlobalShortcut` 继续负责本地输入和系统注册。业务快捷键统一在应用 `src/shortcuts/` 管理，通过 `modules/` 按导航、窗口、设置等实际接入模块拆分；`catalog.rs` 汇总声明，service/context 管理状态及可用性，adapters/bridge 管理接入。`ui/shortcuts/` 封装 NSH 生命周期，业务动作仍调用所属 Router 或 Feature。核心不接收业务 CommandId、路由、页面或业务处理器，只消费不透明身份、作用域关系及 enabled 值。应用将系统 Global 映射为进程级唯一拥有，Application 为窗口级，Page 通过路由实例租约启停。
+
+Global 在程序启动时初始化，Application 在窗口创建时初始化；Page 在首次进入时懒加载并于处理器就绪后注册，离开解绑，重入复用同版本不可变声明并创建新租约。启动仅读取轻量模块索引，不初始化未访问页面；加载并发、迟到结果及缓存失效由应用 loader 管理，不进入通用 crate。状态栏分别投影启动级和当前页面状态，未加载页面不阻止启动就绪，查看详情不触发加载。
+
+当前只在 `HistoryControls` 中直接绑定历史快捷键，独立模块尚未实现。设计要求把绑定移至窗口装配，区分本地 API 安装和系统注册确认，拒绝过期回执并清理旧代资源；NSH 原生先消费按键，JS 返回 false 不代表透传。接口、恢复限制与验证见 [快捷键模块方案](docs/shortcuts.md)，实施与验收统一见 [SK 批次](docs/todo.md#shortcuts)。
+
+底部状态栏在启动时实时展示快捷键初始化阶段，并提供分项详情和重试入口。状态由应用快捷键服务独立通过 usher-state 发布，ui/shortcuts/status.ts 转为只读投影，App 经布局契约注入 Frame/StatusBar；核心与应用快捷键模块均不依赖状态栏。状态栏隐藏或卸载不停止初始化、不释放注册，重新显示读取最新状态；窗口本地状态与进程全局状态分别展示。
+
 ## 4. 主题与背景资源
 
 ### 外观模型
@@ -120,7 +140,7 @@ Store 先保存待提交的主题文件，再将完整设置写入同目录临�
 
 ### 主题解析
 
-所有主题采用统一 JSON 格式。`build.rs` 收集 `ui/theme/builtin/` 和 `ui/theme/presets/` 中的内置主题；`src/style_themes.rs` 合并本地 `themes/`，解析继承链与 `var()` 引用，校验取值并生成完整 token 表。无效文件被隔离，其错误随快照返回。
+所有主题采用统一 JSON 格式。`build.rs` 收集 `ui/theme/builtin/` 和 `ui/theme/presets/` 中的内置主题；`src/state/appearance/theme.rs` 合并本地 `themes/`，解析继承链与 `var()` 引用，校验取值并生成完整 token 表。无效文件被隔离，其错误随快照返回。
 
 `default` 定义基础 token，其他主题通过 `extends` 覆盖差异。`cssVars` 区分共享、明暗和触控度量；主题名称及本地化名称由主题文件提供。调色板编辑器生成的主题同样由注册表解析。
 
@@ -128,7 +148,7 @@ Store 先保存待提交的主题文件，再将完整设置写入同目录临�
 
 ### 背景资源
 
-背景图片由 `src/background.rs` 校验并保存为应用自有资源，设置快照仅携带 ID 和名称，图片字节通过独立二进制桥接按 ID 读取。导入先写入完整资源，再提交设置引用；设置保存成功后回收旧资源，失败时保留候选供重试。共享限制和默认值来自 `ui/config/background.json`。
+背景图片由 `src/state/appearance/background.rs` 校验并保存为应用自有资源，设置快照仅携带 ID 和名称，图片字节通过独立二进制桥接按 ID 读取。导入先写入完整资源，再提交设置引用；设置保存成功后回收旧资源，失败时保留候选供重试。共享限制和默认值来自 `ui/config/background.json`。
 
 `WindowBackdrop` 在交互区域下方组合原生材质、主题叠色和用户图片。组件持有图片的 blob URL，在资源替换或卸载时释放，并忽略过期加载结果。图片加载失败时回退到主题背景。
 
@@ -201,7 +221,7 @@ macOS 验收使用真实 Window、生产投影与官方 dev watcher，覆盖同 
 
 ### 更新应用服务（SM5）
 
-`src/update_service/` 组合 usher-update 和 usher-state，负责单执行租约与效果领取。采用 A 方案：SettingsService 创建时同时持有未配置更新服务，窗口借用同一实例，Configure 只成功一次；未配置业务命令与执行者领取返回 updates_not_configured。目录作用域由进程设置注册表保留，借用视图或订阅销毁不关闭服务；无目录会话随 VM 关闭。执行者身份保留到作用域关闭，无撤销和交接；执行 VM 销毁后需重启应用恢复执行，不能宣称 VM reload 可续接。
+`src/state/updates/` 组合 usher-update 和 usher-state，负责单执行租约与效果领取。采用 A 方案：SettingsService 创建时同时持有未配置更新服务，窗口借用同一实例，Configure 只成功一次；未配置业务命令与执行者领取返回 updates_not_configured。目录作用域由进程设置注册表保留，借用视图或订阅销毁不关闭服务；无目录会话随 VM 关闭。执行者身份保留到作用域关闭，无撤销和交接；执行 VM 销毁后需重启应用恢复执行，不能宣称 VM reload 可续接。
 
 `src/update_bridge.rs` 提供配置、读取 / 订阅、意图、领取、进度及完成 DTO。私有效果通过服务签发的标识领取，快照不广播租约；发布失败保持领域与队列原状。`[updates].auto_check` 默认开启且默认段省略；旧文件可直接读取。设置事务串行配置和偏好同步，保存失败保留真实 saved=false 并即时更新运行中策略，安装前重试保存，未保存则拒绝交接。复杂 DTO 使用 JSON 字符串，整数序号和字节数用十进制字符串。桥接将已提交日志与通过校验的 NSH 失败详情写入 usher-logging，reason 仅用于排查。
 

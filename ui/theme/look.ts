@@ -11,13 +11,13 @@
 import type { InputStyle, TextStyle, ViewStyle } from "nsh";
 import { cleanup, createAnimatedValue, effect } from "nsh";
 import { followSpring, motionReduced, nativeCurve } from "./motion";
-import type { AppearanceStore } from "../state/appearance";
+import type { ThemeAccessor } from "./index";
 import backgroundConfig from "../config/background.json";
 
 export type ButtonKind = "primary" | "secondary" | "ghost";
 export type ButtonSize = "small" | "regular" | "large";
 
-type Palette = AppearanceStore["palette"];
+type Palette = ThemeAccessor;
 
 /** A `rgba`-style wash of `color` over its surface, as NSH resolves `color-mix`. */
 const mix = (color: string, percent: number) =>
@@ -361,14 +361,14 @@ export function switchLook(palette: Palette, checked: boolean) {
 }
 
 /** The framework slider's track, selected range and thumb, sized entirely by theme metrics. */
-export function sliderLook(palette: Palette) {
+export function sliderLook(palette: Palette, dimmed = true) {
   const p = palette();
   const brightness = (filter: string) => {
     const value = /^brightness\(([\d.]+)\)$/.exec(filter)?.[1];
     return `brightness-${value === undefined ? 100 : Math.round(Number(value) * 100)}`;
   };
   return {
-    trackClass: `transition-opacity duration-[${p.metric.stateMs}ms] motion-reduce:transition-none disabled:opacity-[${p.metric.disabledOpacity}]`,
+    trackClass: `transition-opacity duration-[${p.metric.stateMs}ms] motion-reduce:transition-none ${dimmed ? `disabled:opacity-[${p.metric.disabledOpacity}]` : ""}`,
     thumbClass: `transition duration-[${p.metric.stateMs}ms] motion-reduce:transition-none
       hover:${brightness(p.motion.sliderHover)} active:${brightness(p.motion.sliderActive)}
       disabled:brightness-100 focus-visible:outline-[${p.metric.focusWidth}px]

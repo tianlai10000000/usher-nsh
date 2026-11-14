@@ -26,7 +26,7 @@
 - **Infrastructure** 实现持久化、日志、网络和外部服务边界。耗时 I/O 放到后台，结果通过应用层契约返回。
 - **Native host / Bridge** 负责装配、DTO、线程投递和原生生命周期。平台代码集中在 `platforms/<platform>/`，原生句柄由所属平台线程持有。
 
-当前设置规则与持久化集中在 `src/settings.rs`，`src/settings_service.rs` 负责串行提交与通用状态发布，`src/app_state.rs` 负责作用域装配，`src/settings_bridge.rs` 保留兼容桥接。随实际功能增长按职责拆分，保持现有设置格式和桥接调用兼容；独立编译或复用需求明确时再拆 crate。
+业务状态位于应用 `src/state/`，外观、语言、诊断、更新与窗口按域组织。`src/state/settings/` 协调同一配置文件的分区命令和串行发布，`src/persistence/settings.rs` 只负责字节读取、损坏备份与原子替换。领域模块不各自缓存或覆盖整份设置文件。桥接仍保留原生调用协议；源码调用方统一使用新的业务目录。
 
 通用状态管理层已确定独立为 `crates/usher-state/`，设计与分批计划见 [通用状态管理方案](docs/state-management.md)。SM1 已实现该 crate 的通用转换、快照与订阅契约，不依赖 NSH、平台或业务 I/O，领域规则继续由所属模块维护。
 

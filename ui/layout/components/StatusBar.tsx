@@ -7,11 +7,13 @@
  */
 import { Text, View } from "nsh";
 import appMetadata from "../../../nsh.json";
-import type { AppearanceStore } from "../../state/appearance";
+import type { AppState } from "../../state/app";
 import { noteLook } from "../../theme/look";
 
-export function StatusBar(props: { appearance: AppearanceStore }) {
-  const { palette, statusKey, t } = props.appearance;
+export function StatusBar(props: { appearance: AppState }) {
+  const palette = props.appearance.appearance.palette;
+  const statusKey = props.appearance.settings.statusKey;
+  const t = props.appearance.preferences.t;
   return (
     <View testID="bottom-status-bar" role="summary" accessibilityLabel={t("statusBar.label")}
       class="flex-row flex-wrap items-center content-center justify-between border-t"

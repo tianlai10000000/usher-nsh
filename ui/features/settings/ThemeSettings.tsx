@@ -1,8 +1,8 @@
 /** Presents theme selection, local theme management and palette editing with shared settings. */
 import { computed, effect, platform, signal, Text, View } from "nsh";
-import { defaultThemeId, editorPalette, fallbackTheme, type CustomPalette, type CustomTheme, type Scheme } from "../../theme";
-import type { MessageKey } from "../../i18n";
-import type { AppearanceStore } from "../../state/appearance";
+import { defaultThemeId, editorPalette, fallbackTheme, type CustomPalette, type CustomTheme, type Scheme } from "../../theme/index";
+import type { MessageKey } from "../../i18n/index";
+import type { AppState } from "../../state/app";
 import { ThemeButton, ThemeInput } from "../../components/ThemeControls";
 import { AppKitPopup, AppKitSegments } from "../../components/AppKitControls";
 import { groupLook, headingLook, noteLook, rowLook, sectionTitleLook, spacing } from "../../theme/look";
@@ -32,8 +32,9 @@ function copyPalette({ background, surface, text, accent }: CustomPalette): Cust
   return { background, surface, text, accent };
 }
 
-export function ThemeSettings(props: { appearance: AppearanceStore; busy: () => boolean }) {
-  const { palette, t } = props.appearance;
+export function ThemeSettings(props: { appearance: AppState; busy: () => boolean }) {
+  const palette = props.appearance.appearance.palette;
+  const t = props.appearance.preferences.t;
   const accentDraft = signal("");
   const draft = signal<CustomTheme | null>(null);
   const copiedStyle = signal<string | undefined>();
@@ -41,14 +42,14 @@ export function ThemeSettings(props: { appearance: AppearanceStore; busy: () => 
   const activeDraft = computed(() => draft()?.[scheme()]);
   // The registry lists every selectable theme, bundled, file-based and editor-made, in order.
   const themeChoices = computed(() =>
-    props.appearance.styleThemes().map((theme) => ({ id: theme.id, label: props.appearance.themeName(theme) })),
+    props.appearance.appearance.styleThemes().map((theme) => ({ id: theme.id, label: props.appearance.preferences.themeName(theme) })),
   );
   const selectedStyle = computed(() =>
-    themeChoices().find(({ id }) => id === props.appearance.themeId()),
+    themeChoices().find(({ id }) => id === props.appearance.appearance.themeId()),
   );
-  const baseTheme = () => props.appearance.styleThemes().find((theme) => theme.id === defaultThemeId) ?? fallbackTheme;
+  const baseTheme = () => props.appearance.appearance.styleThemes().find((theme) => theme.id === defaultThemeId) ?? fallbackTheme;
   const canOpenDirectory = platform.desktop && platform.os !== "web";
-  effect(() => accentDraft.set(props.appearance.accent() ?? ""));
+  effect(() => accentDraft.set(props.appearance.appearance.accent() ?? ""));
 
   function edit(theme: CustomTheme | undefined) {
     scheme.set("light");
@@ -72,8 +73,8 @@ export function ThemeSettings(props: { appearance: AppearanceStore; busy: () => 
     // Match the settings schema's character limit without splitting surrogate pairs.
     const name = Array.from(t("theme.copyName", { name: source.label })).slice(0, 80).join("").trimEnd();
     copiedStyle.set(undefined);
-    if (await props.appearance.cloneStyleTheme(source.id, name)) {
-      copiedStyle.set(props.appearance.themeId());
+    if (await props.appearance.appearance.cloneStyleTheme(source.id, name)) {
+      copiedStyle.set(props.appearance.appearance.themeId());
     }
   }
 
@@ -84,7 +85,7 @@ export function ThemeSettings(props: { appearance: AppearanceStore; busy: () => 
 
   async function save() {
     const current = draft();
-    if (current && await props.appearance.saveTheme(current)) draft.set(null);
+    if (current && await props.appearance.appearance.saveTheme(current)) draft.set(null);
   }
 
   function previewColor(field: keyof CustomPalette) {
@@ -98,7 +99,7 @@ export function ThemeSettings(props: { appearance: AppearanceStore; busy: () => 
         <Text role="header" style={sectionTitleLook(palette)}>
           {t("theme.title")}
         </Text>
-        <View style={groupLook(palette, props.appearance.contentBackgroundTransparency())}>
+        <View style={groupLook(palette, props.appearance.background.contentBackgroundTransparency())}>
           <View class="flex-row items-center" style={rowLook(palette)}>
             <View class="min-w-0 flex-1" style={spacing(palette).text}>
               <Text style={{ color: palette().text }}>{t("theme.title")}</Text>
@@ -112,7 +113,7 @@ export function ThemeSettings(props: { appearance: AppearanceStore; busy: () => 
                   {t("theme.unavailable")}
                 </Text>
               </If>
-              <If when={copiedStyle() === props.appearance.themeId()}>
+              <If when={copiedStyle() === props.appearance.appearance.themeId()}>
                 <Text testID="theme-copied" style={noteLook(palette)}>
                   {t("theme.copyDone")}
                 </Text>
@@ -129,9 +130,9 @@ export function ThemeSettings(props: { appearance: AppearanceStore; busy: () => 
                           palette={palette}
                           testID={`theme-${choice().id}`}
                           label={choice().label}
-                          selected={props.appearance.themeId() === choice().id}
-                          disabled={props.busy()}
-                          onPress={() => props.appearance.chooseTheme(choice().id)}
+                          selected={props.appearance.appearance.themeId() === choice().id}
+                          interactionBlocked={props.busy()}
+                          onPress={() => props.appearance.appearance.chooseTheme(choice().id)}
                         />
                       )}
                     </Each>
@@ -143,9 +144,9 @@ export function ThemeSettings(props: { appearance: AppearanceStore; busy: () => 
                   style={{ width: "100%", height: 28 }}
                   label={t("theme.title")}
                   items={themeChoices()}
-                  selectedId={props.appearance.themeId()}
-                  enabled={!props.busy()}
-                  onChange={({ id }) => void props.appearance.chooseTheme(id)}
+                  selectedId={props.appearance.appearance.themeId()}
+                  enabled interactionBlocked={props.busy()}
+                  onChange={({ id }) => void props.appearance.appearance.chooseTheme(id)}
                 />
               </If>
             </View>
@@ -159,11 +160,11 @@ export function ThemeSettings(props: { appearance: AppearanceStore; busy: () => 
                 placeholder={t("theme.accentPlaceholder")} value={accentDraft()} onChange={(value) => accentDraft.set(value)} />
               <View class="flex-row flex-wrap justify-end" style={spacing(palette).wrap}>
                 <ThemeButton palette={palette} testID="accent-apply" label={t("theme.applyAccent")}
-                  disabled={props.busy()} onPress={() => props.appearance.setAccent(accentDraft().trim())} />
+                  interactionBlocked={props.busy()} onPress={() => props.appearance.appearance.setAccent(accentDraft().trim())} />
                 <ThemeButton palette={palette} testID="accent-reset" label={t("theme.accentDefault")}
-                  disabled={props.busy()} onPress={() => {
+                  interactionBlocked={props.busy()} onPress={() => {
                     accentDraft.set("");
-                    return props.appearance.setAccent(null);
+                    return props.appearance.appearance.setAccent(null);
                   }} />
               </View>
             </View>
@@ -174,16 +175,16 @@ export function ThemeSettings(props: { appearance: AppearanceStore; busy: () => 
         <Text role="header" style={sectionTitleLook(palette)}>
           {t("theme.custom")}
         </Text>
-        <View style={groupLook(palette, props.appearance.contentBackgroundTransparency())}>
+        <View style={groupLook(palette, props.appearance.background.contentBackgroundTransparency())}>
           <View class="flex-row items-center" style={rowLook(palette)}>
             <View class="min-w-0 flex-1" style={spacing(palette).text}>
               <If when={canOpenDirectory}>
                 <Text style={{ color: palette().text }}>{t("theme.openDirectory")}</Text>
               </If>
-              <If when={props.appearance.directoryProblem()}>{(problem) => (
+              <If when={props.appearance.appearance.directoryProblem()}>{(problem) => (
                 <Text testID="theme-directory-problem" style={noteLook(palette)}>{t(problem())}</Text>
               )}</If>
-              <Each of={props.appearance.themeFileIssues()}>
+              <Each of={props.appearance.appearance.themeFileIssues()}>
                 {(issue) => (
                   <Text testID="theme-file-issue" style={noteLook(palette)}>
                     {issue().code === "style_theme_directory_unavailable"
@@ -199,26 +200,26 @@ export function ThemeSettings(props: { appearance: AppearanceStore; busy: () => 
             <View class="min-w-0 flex-1 flex-row flex-wrap items-center justify-end" style={spacing(palette).wrap}>
               <If when={canOpenDirectory}>
                 <ThemeButton palette={palette} testID="theme-directory-open" loadingFeedback label={t("theme.openDirectory")}
-                  busy={props.appearance.openingDirectory()}
-                  disabled={props.busy() || props.appearance.openingDirectory()}
-                  onPress={() => props.appearance.openThemeDirectory()} />
+                  busy={props.appearance.appearance.openingDirectory()}
+                  interactionBlocked={props.busy()}
+                  onPress={() => props.appearance.appearance.openThemeDirectory()} />
               </If>
               <ThemeButton palette={palette} testID="theme-directory-rescan" loadingFeedback label={t("theme.rescan")}
-                disabled={props.busy()} onPress={() => props.appearance.rescanThemes()} />
+                interactionBlocked={props.busy()} onPress={() => props.appearance.appearance.rescanThemes()} />
             </View>
           </View>
           <View class="flex-row flex-wrap items-center justify-end" style={{ ...rowLook(palette, { divider: true }), ...spacing(palette).wrap }}>
             <ThemeButton palette={palette} testID="theme-add" label={t("theme.add")}
-              disabled={props.busy()} onPress={() => createDraft()} />
-            <If when={selectedStyle() !== undefined && props.appearance.selectedCustomTheme() === undefined}>
+              interactionBlocked={props.busy()} onPress={() => createDraft()} />
+            <If when={selectedStyle() !== undefined && props.appearance.appearance.selectedCustomTheme() === undefined}>
               <ThemeButton palette={palette} testID="theme-clone" loadingFeedback label={t("theme.cloneStyle")}
-                disabled={props.busy()} onPress={() => duplicateStyle()} />
+                interactionBlocked={props.busy()} onPress={() => duplicateStyle()} />
             </If>
-            <If when={props.appearance.selectedCustomTheme() !== undefined}>
+            <If when={props.appearance.appearance.selectedCustomTheme() !== undefined}>
               <ThemeButton palette={palette} testID="theme-edit" label={t("theme.edit")}
-                disabled={props.busy()} onPress={() => edit(props.appearance.selectedCustomTheme())} />
+                interactionBlocked={props.busy()} onPress={() => edit(props.appearance.appearance.selectedCustomTheme())} />
               <ThemeButton palette={palette} testID="theme-remove" loadingFeedback label={t("theme.remove")}
-                disabled={props.busy()} onPress={() => props.appearance.removeTheme(props.appearance.themeId())} />
+                interactionBlocked={props.busy()} onPress={() => props.appearance.appearance.removeTheme(props.appearance.appearance.themeId())} />
             </If>
           </View>
           <If when={draft() !== null}>
@@ -271,7 +272,7 @@ export function ThemeSettings(props: { appearance: AppearanceStore; busy: () => 
               </View>
               <View class="flex-row flex-wrap justify-end" style={spacing(palette).wrap}>
                 <ThemeButton palette={palette} testID="theme-save" loadingFeedback label={t("theme.save")}
-                  prominent disabled={props.busy()} onPress={() => save()} />
+                  prominent interactionBlocked={props.busy()} onPress={() => save()} />
                 <ThemeButton palette={palette} testID="theme-cancel" label={t("theme.cancel")}
                   onPress={() => draft.set(null)} />
               </View>

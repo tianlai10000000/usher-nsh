@@ -3,7 +3,10 @@
 //! Settings text fields reuse NSH's native NSTextField integration, including
 //! keyboard input and the shared AppKit field editor.
 
-use std::{cell::RefCell, rc::Rc};
+use std::{
+    cell::{Cell, RefCell},
+    rc::Rc,
+};
 
 use nsh_core::JsonValue;
 use nsh_platform_macos::{
@@ -75,6 +78,9 @@ impl Choice {
 struct ActionState {
     context: ComponentContext,
     choices: RefCell<Vec<Choice>>,
+    interaction_blocked: Cell<bool>,
+    enabled: Cell<bool>,
+    selected_index: Cell<Option<usize>>,
 }
 
 define_class!(
@@ -87,11 +93,29 @@ define_class!(
     impl ActionTarget {
         #[unsafe(method(selectSegment:))]
         fn select_segment(&self, sender: &NSSegmentedControl) {
+            if self.blocked() {
+                if let Some(index) = self.ivars().selected_index.get() {
+                    sender.setSelectedSegment(index as isize);
+                } else {
+                    sender.setSelectedSegment(-1);
+                }
+                return;
+            }
             self.emit_selection(sender.selectedSegment());
         }
 
         #[unsafe(method(selectPopupItem:))]
         fn select_popup_item(&self, sender: &NSPopUpButton) {
+            if self.blocked() {
+                match self.ivars().selected_index.get() {
+                    Some(index) => {
+                        sender.selectItemAtIndex(index as isize);
+                        sender.synchronizeTitleAndSelectedItem();
+                    }
+                    None => sender.selectItemAtIndex(-1),
+                }
+                return;
+            }
             self.emit_selection(sender.indexOfSelectedItem());
         }
 
@@ -102,16 +126,24 @@ define_class!(
 
         #[unsafe(method(activate:))]
         fn activate(&self, _sender: &NSButton) {
+            if self.blocked() { return; }
             self.ivars().context.emit("activate", JsonValue::Object(Default::default()));
         }
     }
 );
 
 impl ActionTarget {
+    fn blocked(&self) -> bool {
+        self.ivars().interaction_blocked.get() || !self.ivars().enabled.get()
+    }
+
     fn new(context: ComponentContext, mtm: MainThreadMarker) -> Retained<Self> {
         let target = Self::alloc(mtm).set_ivars(ActionState {
             context,
             choices: RefCell::default(),
+            interaction_blocked: Cell::new(false),
+            enabled: Cell::new(true),
+            selected_index: Cell::new(None),
         });
         // SAFETY: NSObject's initializer leaves the ivars installed by objc2 intact.
         unsafe { msg_send![super(target), init] }
@@ -179,19 +211,17 @@ impl Control {
                 if let Some(index) = index {
                     segments.setSelectedSegment(index as isize);
                 } else {
-                    let selected = segments.selectedSegment();
-                    if (0..segments.segmentCount()).contains(&selected) {
-                        segments.setSelected_forSegment(false, selected);
-                    }
+                    segments.setSelectedSegment(-1);
                 }
             }
-            Self::Popup(popup) => {
-                match index {
-                    Some(index) => popup.selectItemAtIndex(index as isize),
-                    None => popup.selectItem(None),
+            Self::Popup(popup) => match index {
+                Some(index) => {
+                    popup.selectItemAtIndex(index as isize);
+                    popup.synchronizeTitleAndSelectedItem();
                 }
-                popup.synchronizeTitleAndSelectedItem();
-            }
+                // Title synchronization would implicitly select the first item when empty.
+                None => popup.selectItemAtIndex(-1),
+            },
             Self::Button(_) => {}
         }
     }
@@ -230,6 +260,7 @@ impl SettingsControl {
             .selected_id
             .as_ref()
             .and_then(|id| choices.iter().position(|choice| &choice.id == id));
+        self.target.ivars().selected_index.set(index);
         self.control.select(index);
     }
 
@@ -267,8 +298,15 @@ impl NativeComponent for SettingsControl {
                 self.selected_id = value.and_then(JsonValue::as_str).map(str::to_owned);
                 self.refresh_selection();
             }
+            "interactionBlocked" => {
+                self.target
+                    .ivars()
+                    .interaction_blocked
+                    .set(value.and_then(JsonValue::as_bool).unwrap_or(false));
+            }
             "enabled" => {
                 let enabled = value.and_then(JsonValue::as_bool).unwrap_or(true);
+                self.target.ivars().enabled.set(enabled);
                 self.control.as_control().setEnabled(enabled);
                 if enabled {
                     self.refresh_selection();
@@ -277,6 +315,7 @@ impl NativeComponent for SettingsControl {
             "label" => {
                 let label = value.and_then(JsonValue::as_str).map(NSString::from_str);
                 if let Control::Button(button) = &self.control {
+                    button.setAccessibilityLabel(label.as_deref());
                     button.setTitle(&label.unwrap_or_default());
                     self.report_size();
                 } else {

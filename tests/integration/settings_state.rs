@@ -8,7 +8,9 @@ use std::{
     thread,
 };
 use support::{FUTURE, LEGACY, Repository, THEME};
-use usher_nsh::app_state::{ColorMode, Command, SettingsError, SettingsRegistry, SettingsService};
+use usher_nsh::state::settings::{
+    ColorMode, Command, SettingsError, SettingsRegistry, SettingsService,
+};
 use usher_state::SubscriptionEnd;
 use usher_test_support::task::{WakeCounter, poll, ready};
 
@@ -386,4 +388,115 @@ fn settings_background_assets_publish_after_persistence_and_remain_readable() {
         reopened.load_background_image(&image.id),
         Err(SettingsError::Domain("background_image_unavailable"))
     );
+}
+
+#[test]
+fn settings_concurrent_partitions_merge_and_survive_reopening() {
+    use usher_nsh::state::settings::{DiagnosticLevel, DiagnosticOutput};
+    let repo = Repository::new();
+    let service = repo.service();
+    let barrier = Arc::new(Barrier::new(4));
+    let commands = [
+        vec![
+            Command::SetColorMode(ColorMode::Dark),
+            Command::SetAccent(Some("#b42318".into())),
+        ],
+        vec![
+            Command::SetLocale("zh-Hans".into()),
+            Command::SetShowStatusBar(false),
+        ],
+        vec![
+            Command::SetDiagnosticLevel(DiagnosticLevel::Debug),
+            Command::SetDiagnosticOutput(DiagnosticOutput::Console, false),
+        ],
+        vec![
+            Command::SetUpdateAutoCheck(false),
+            Command::SetSidebarDocked(false),
+        ],
+    ];
+    let workers: Vec<_> = commands
+        .into_iter()
+        .map(|commands| {
+            let service = service.clone();
+            let barrier = barrier.clone();
+            thread::spawn(move || {
+                barrier.wait();
+                for command in commands {
+                    assert!(service.apply(command).unwrap().saved);
+                }
+            })
+        })
+        .collect();
+    for worker in workers {
+        worker.join().unwrap();
+    }
+    let current = service.snapshot().unwrap();
+    assert_eq!(current.color_mode, ColorMode::Dark);
+    assert_eq!(current.locale_preference, "zh-Hans");
+    assert_eq!(current.diagnostic_level, DiagnosticLevel::Debug);
+    assert!(
+        !current.update_auto_check
+            && !current.show_status_bar
+            && !current.sidebar_docked
+            && !current.diagnostic_console
+    );
+    // A distinct registry models a new process after all prior transactions finish.
+    let restored = SettingsRegistry::default()
+        .for_path(repo.path.clone())
+        .unwrap()
+        .snapshot()
+        .unwrap();
+    assert_eq!(restored.color_mode, current.color_mode);
+    assert_eq!(restored.accent, current.accent);
+    assert_eq!(restored.locale_preference, current.locale_preference);
+    assert_eq!(restored.diagnostic_level, current.diagnostic_level);
+    assert_eq!(restored.diagnostic_console, current.diagnostic_console);
+    assert_eq!(restored.update_auto_check, current.update_auto_check);
+    assert_eq!(restored.show_status_bar, current.show_status_bar);
+    assert_eq!(restored.sidebar_docked, current.sidebar_docked);
+}
+
+#[cfg(unix)]
+#[test]
+fn settings_read_only_directory_preserves_pending_partitions_until_retry() {
+    use std::os::unix::fs::PermissionsExt;
+    struct Restore(std::path::PathBuf, fs::Permissions);
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            fs::set_permissions(&self.0, self.1.clone()).unwrap();
+        }
+    }
+    let repo = Repository::new();
+    let service = repo.service();
+    assert!(
+        service
+            .apply(Command::SetColorMode(ColorMode::Dark))
+            .unwrap()
+            .saved
+    );
+    let original = fs::read_to_string(&repo.path).unwrap();
+    let directory = repo.path.parent().unwrap();
+    let restore = Restore(
+        directory.to_path_buf(),
+        fs::metadata(directory).unwrap().permissions(),
+    );
+    fs::set_permissions(directory, fs::Permissions::from_mode(0o500)).unwrap();
+    let language = service.apply(Command::SetLocale("zh-Hans".into())).unwrap();
+    let updates = service.apply(Command::SetUpdateAutoCheck(false)).unwrap();
+    assert!(!language.saved && !updates.saved);
+    assert_eq!(updates.problem, Some("settings_write_failed"));
+    assert_eq!(fs::read_to_string(&repo.path).unwrap(), original);
+    assert_eq!(updates.locale_preference, "zh-Hans");
+    drop(restore);
+    let retried = service.apply(Command::SetUpdateAutoCheck(false)).unwrap();
+    assert!(retried.saved);
+    assert_eq!(retried.revision, updates.revision);
+    let restored = SettingsRegistry::default()
+        .for_path(repo.path.clone())
+        .unwrap()
+        .snapshot()
+        .unwrap();
+    assert_eq!(restored.color_mode, ColorMode::Dark);
+    assert_eq!(restored.locale_preference, "zh-Hans");
+    assert!(!restored.update_auto_check);
 }

@@ -1,22 +1,22 @@
 /** Composes themed controls with native adapters and optional inline busy feedback. */
 import { Text, View } from "nsh";
 import { Button, Input } from "nsh/base";
-import type { AppearanceStore } from "../state/appearance";
+import type { ThemeAccessor } from "../theme/index";
 import { buttonLook, fieldLook } from "../theme/look";
 import { AppKitButton } from "./AppKitControls";
 import { ProgressRing } from "./ProgressRing";
+import type { InteractionProps } from "./interaction";
 import { useButtonAction } from "./AsyncButton";
 
-export type PaletteAccessor = AppearanceStore["palette"];
+export type PaletteAccessor = ThemeAccessor;
 
-export function ThemeButton(props: {
+export function ThemeButton(props: InteractionProps & {
   palette: PaletteAccessor;
   label: string;
   testID?: string;
   selected?: boolean;
   prominent?: boolean;
   native?: boolean;
-  disabled?: boolean;
   loadingFeedback?: boolean;
   busy?: boolean;
   onPress: () => void | Promise<unknown>;
@@ -36,7 +36,7 @@ export function ThemeButton(props: {
           hoverStyle={look().hoverStyle}
           activeStyle={look().activeStyle}
           focusStyle={look().focusStyle}
-          disabledStyle={look().disabledStyle}
+          disabledStyle={action.dimmed() ? look().disabledStyle : undefined}
           selected={props.selected}
           disabled={action.disabled()}
           onPress={action.run}
@@ -62,7 +62,8 @@ export function ThemeButton(props: {
         testID={props.testID}
         style={{ height: props.palette().metric.buttonHeight }}
         label={props.label}
-        enabled={!action.disabled()}
+        enabled={!props.disabled && !action.busy()}
+        interactionBlocked={props.interactionBlocked}
         onActivate={action.run}
       />
     </If>

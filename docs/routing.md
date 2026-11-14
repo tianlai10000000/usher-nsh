@@ -30,8 +30,8 @@
 
 ```text
 crates/usher-router/        # Pure routing contracts, matching and transitions
-src/window_service.rs      # Window scope, guards and atomic state commits
-src/window_session.rs      # Page session rules and typed operation receipts
+src/state/window/mod.rs      # Window scope, guards and atomic state commits
+src/state/window/session/mod.rs      # Page session rules and typed operation receipts
 src/router_bridge.rs       # NSH DTOs and typed commands
 ui/router/                 # Public facade, transport and NSH RouterView binding
 ui/pages/

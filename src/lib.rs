@@ -2,21 +2,13 @@
 
 use nsh_core::prelude::*;
 
-pub mod app_state;
-mod background;
 mod diagnostic_bridge;
-mod diagnostic_state;
 mod diagnostics;
 mod router_bridge;
-mod settings;
 mod settings_bridge;
-mod settings_service;
+pub mod state;
 mod state_bridge;
-mod style_themes;
 mod update_bridge;
-pub mod update_service;
-pub mod window_service;
-pub mod window_session;
 
 #[cfg(target_os = "macos")]
 #[path = "../platforms/macos/mod.rs"]
@@ -50,3 +42,5 @@ impl Greeting {
         "Hello, World!".to_owned()
     }
 }
+
+mod persistence;

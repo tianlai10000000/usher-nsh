@@ -1,14 +1,14 @@
 /** Injects failing page components while retaining the actual RouterView and history owner. */
 import { mount, Text, View } from "nsh";
 import { Button } from "nsh/base";
-import { createWindowState } from "../../../state/window";
-import { createAppearanceStore } from "../../../state/appearance";
+import { createWindowState } from "../../../state/window/index";
+import { createAppState } from "../../../state/app";
 import { createRouter } from "../../index";
 import { RouterView, type PageRegistry } from "../../RouterView";
 
 function Probe() {
   const window = createWindowState();
-  const appearance = createAppearanceStore(window.session);
+  const appearance = createAppState(window);
   const navigation = createRouter(window.routing);
   let failHome = true;
   const pages: PageRegistry = {

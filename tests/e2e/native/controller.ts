@@ -2,11 +2,11 @@
 import { signal } from "nsh";
 import { Window, type WindowRef } from "nsh/desktop";
 import { WindowState } from "usher/nsh";
-import type { Navigation } from "../../../ui/router";
-import type { AppearanceStore } from "../../../ui/state/appearance";
-import type { createWindowState } from "../../../ui/state/window";
+import type { Navigation } from "../../../ui/router/index";
+import type { AppState } from "../../../ui/state/app";
+import type { createWindowState } from "../../../ui/state/window/index";
 import config from "./config.json";
-export type Probe = { host: WindowRef; scope: string; window: ReturnType<typeof createWindowState>; appearance: AppearanceStore; router: Navigation; generation: number };
+export type Probe = { host: WindowRef; scope: string; window: ReturnType<typeof createWindowState>; appearance: AppState; router: Navigation; generation: number };
 export const secondaryVisible = signal(true);
 export const probes = new Map<string, Probe>();
 let before: Map<string, Probe> | undefined;
@@ -41,7 +41,7 @@ export function observe(id: string, probe: Probe) {
 async function verify(generation: number) {
   const main = probes.get("main")!;
   const second = probes.get(config.secondaryId)!;
-  await until(() => [...probes.values()].every(value => value.window.routing.status() === "live" && value.appearance.state.status() === "live"), "subscriptions did not become live");
+  await until(() => [...probes.values()].every(value => value.window.routing.status() === "live" && value.appearance.settings.view.status() === "live"), "subscriptions did not become live");
   await until(() => main.host.state()?.visible === true && Window.get(config.secondaryId)?.state()?.visible === true, "two native windows did not become visible");
   assert(main.scope !== second.scope, "native windows share a window Store");
   if (generation === 1) {
@@ -49,13 +49,13 @@ async function verify(generation: number) {
     await main.router.navigate("settings");
     await main.window.session.change({ kind: "section", value: config.section });
     await main.window.session.preview(true, config.preview);
-    await main.appearance.state.dispatch({ type: "colorMode", value: "dark" });
-    await until(() => second.appearance.state.value().colorMode === config.colorMode, "shared preference did not reach second window");
+    await main.appearance.settings.view.dispatch({ type: "colorMode", value: "dark" });
+    await until(() => second.appearance.settings.view.value().colorMode === config.colorMode, "shared preference did not reach second window");
     assert(second.window.session.value().clicks === 0, "counter leaked across windows");
     assert(second.router.route() === "home", "history leaked across windows");
     assert(second.window.session.value().section === "general", "section leaked across windows");
     assert(second.window.session.value().opacityPreview == null, "preview leaked across windows");
-    assert(main.appearance.state.value().saved, "preference did not persist");
+    assert(main.appearance.settings.view.value().saved, "preference did not persist");
     before = new Map(probes);
     main.router.beforeEach(() => new Promise<boolean>(resolve => { releaseGuard = () => resolve(true); }));
     oldGuard = main.router.navigate("home");
@@ -75,12 +75,12 @@ async function verify(generation: number) {
   releaseGuard!();
   assert(await oldGuard === "cancelled", "old guard did not cancel");
   assert(main.router.route() === "settings", "old HMR callback overwrote current route");
-  await main.appearance.state.dispatch({ type: "colorMode", value: "light" });
-  await until(() => second.appearance.state.value().colorMode === "light", "new subscriptions did not receive a post-HMR preference");
-  assert(before.get("main")!.appearance.state.status() === "disposed", "old settings owner did not dispose");
-  assert(before.get("main")!.appearance.state.value().colorMode === config.colorMode, "old settings subscription received a post-HMR callback");
-  await main.appearance.state.dispatch({ type: "colorMode", value: "dark" });
-  await until(() => second.appearance.state.value().colorMode === config.colorMode, "post-HMR setting restore did not synchronize");
+  await main.appearance.settings.view.dispatch({ type: "colorMode", value: "light" });
+  await until(() => second.appearance.settings.view.value().colorMode === "light", "new subscriptions did not receive a post-HMR preference");
+  assert(before.get("main")!.appearance.settings.view.status() === "disposed", "old settings owner did not dispose");
+  assert(before.get("main")!.appearance.settings.view.value().colorMode === config.colorMode, "old settings subscription received a post-HMR callback");
+  await main.appearance.settings.view.dispatch({ type: "colorMode", value: "dark" });
+  await until(() => second.appearance.settings.view.value().colorMode === config.colorMode, "post-HMR setting restore did not synchronize");
   evidence("hmr_passed", { generation, cleanupCount, main: main.scope, second: second.scope });
   const oldScope = second.scope;
   secondaryVisible.set(false);
@@ -95,8 +95,8 @@ async function verify(generation: number) {
   openSecondary!();
   await until(() => probes.has(config.secondaryId) && probes.get(config.secondaryId)!.window.routing.status() === "live", "secondary did not reopen");
   const reopened = probes.get(config.secondaryId)!;
-  await until(() => reopened.appearance.state.value().colorMode === config.colorMode, "reopened window lost shared preference");
+  await until(() => reopened.appearance.settings.view.value().colorMode === config.colorMode, "reopened window lost shared preference");
   assert(reopened.scope !== oldScope && reopened.window.session.value().clicks === 0 && reopened.router.route() === "home", "reopening reused old session");
   assert(main.window.session.value().clicks === 1, "closing secondary changed main");
-  evidence("complete", { main: main.scope, closed: oldScope, reopened: reopened.scope, colorMode: reopened.appearance.state.value().colorMode });
+  evidence("complete", { main: main.scope, closed: oldScope, reopened: reopened.scope, colorMode: reopened.appearance.settings.view.value().colorMode });
 }

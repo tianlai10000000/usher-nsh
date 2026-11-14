@@ -2,16 +2,81 @@
 
 本文规定共享状态的通用契约、独立 crate 边界、订阅流程与应用适配。模块关系见 [architecture.md](../architecture.md)，开发约束见 [CONTRIBUTING.md](../CONTRIBUTING.md)，批次与证据统一见 [迭代台账](todo.md)。更新业务规则仍以 [更新设计](update.md) 为准。
 
+## 模块化收敛设计
+
+本节约束后续重构；实施批次和验收仅在 todo.md 的 SM7 记录。采用 Pinia 式领域模块组织，不引入 Pinia，也不把共享状态管理等同于严格业务状态机。
+
+- `crates/usher-state` 只提供泛型快照、唯一发布者、订阅、版本与关闭契约；继续封装成熟后端，不包含业务类型、应用注册表、配置路径、文件 I/O 或 NSH 依赖。
+- Rust 业务状态置于应用 `src/state/<domain>/`，TS 业务消费模块置于 `ui/state/<domain>/`。外观使用 `appearance`，主题目录、明暗偏好、强调色及背景属于该域；诊断、更新、语言偏好和窗口会话分别组织。领域库仍保持已有职责，由应用状态服务装配，不复制领域算法。
+- 通用 TS 投影与 NSH 适配置于 `ui/state-runtime/`。复用 NSH 的 signal、computed、batch、context、effect、cleanup，不实现第二套依赖图、调度器或组件生命周期。共享投影由应用或窗口根拥有，页面只借用。
+- 外观共享偏好由 Rust 唯一写入；TS 的 mode、selectedTheme、palette 是快照访问器或 computed。NSH 的 colorScheme 是有效明暗的只读来源，由外观模块统一暴露，不复制进 Rust 再回写。只有收到有效共享快照后才能调用 setColorScheme；未加载占位状态只用于渲染。
+- 单视图草稿、hover、焦点、浮层和动画继续由 NSH 局部状态管理。跨页面或跨组件需要同步的数据进入所属业务模块，不要求所有值往返 Rust。
+
+### 目录与依赖
+
+目标目录为 `src/state/{appearance,preferences,diagnostics,updates,window}/`、`ui/state/` 下对应业务目录、`ui/state-runtime/` 和 `src/persistence/`。小模块按实际职责拆分，不强制生成空的 model/actions/service 文件。应用装配依赖业务模块；业务服务依赖通用 crate 与仓库接口；桥接依赖应用服务；视图依赖 TS 门面。通用 crate 不得反向依赖业务模块。
+
+`src/state/appearance/` 管理主题解析、外观偏好和背景资源；`preferences/`、`diagnostics/`、`updates/`、`window/` 分别管理语言、诊断、更新与窗口状态。`settings/` 管理路径注册、配置文档迁移及串行事务。它不是全应用 Store：窗口、更新运行态和诊断健康各有独立发布者与生命周期。
+
+`ui/state/app.ts` 只装配分域借用门面，分别暴露 `appearance`、`background`、`preferences`、`diagnostics`、`settings`。旧扁平 AppearanceStore 和兼容源文件已移除。更新执行器与投影属于 `ui/state/updates/`，feature 层只渲染更新面板。各模块借用同一设置 view 和窗口 session，不创建偏好的可写副本。`ui/state-runtime/{contracts,projection,nsh,decode}.ts` 维护通用版本、结构解码和 NSH 适配，业务 schema 在各域 `decode.ts`。
+
+请求协调器，不创建新的共享偏好副本。
+
+请求协调器持有当前执行中的互斥与重试闭包，保存/失败/加载反馈仍读取 Rust 窗口 session。同一资源的外观、语言、背景导入和诊断偏好复用一个协调器；诊断导出与主题目录操作使用各自的窗口票据，不与设置保存合并。模块卸载后的迟到 picker、字节读取和命令回执不再提交；窗口 owner 继续负责取消未完成票据。开始 picker/目录操作前的局部防重入只保护执行生命周期，不复制可见业务状态。
+
+### 持久化与主题规则
+
+分区 action 经 SettingsService 的同一事务锁提交字段变更，针对内存中的最新文档执行校验和修改，再由 `src/persistence/settings.rs` 原子保存完整文档。仓库只处理字节，不持有第二份缓存、不解释业务字段。文档是持久偏好的唯一可写模型，usher-state 发布它的不可变快照；不是两个独立 Store。各分区不会从磁盘各读一份旧文档后覆盖保存。读取只发生在服务初始化，视图始终消费订阅。保存失败保留当前未保存版本，重试不推进业务 revision；发布异常关闭服务。
+
+主题继承、引用、强调色、finish 覆盖和前景色派生均由 Rust 外观模块解析。`theme-snapshots` 命令将同一注册表输出为 `ui/state/appearance/bundled.generated.json`；Rust 回归测试比较完整生成内容，防止启动主题漂移。TS 仅选择明暗表并映射组件属性，不再计算强调色或前景色。未知主题使用当前 Rust 快照中的默认主题，因此保留强调色覆盖；首快照前使用生成主题。
+
+订阅、读取和命令回执使用所属域同一个解码函数。字段枚举、结构、版本、范围与已解析主题表在进入投影前校验。非法快照终止绑定并保留最后有效数据；普通业务命令失败仍允许重试。通用层只识别协议失效，不包含业务规则。
+
+应用根创建窗口 owner 和 settings owner，Provider 只借出只读 view。NSH cleanup 统一释放订阅、请求生命周期和窗口未完成票据；HMR 创建新投影，Rust 作用域保持，关闭窗口后身份不复用。NSH 有效明暗、局部控件和动画仍使用 NSH 既有状态，不镜像为新的共享 Store。
+
+```mermaid
+flowchart LR
+    View[页面和组件] -->|分域 action| Modules[ui/state 业务模块]
+    Modules -->|类型化命令| Bridge[NSH 桥接]
+    Bridge --> Transaction[应用 SettingsService 串行事务]
+    Transaction --> Domain[各域偏好模型与校验]
+    Transaction -->|最新完整文档| Repository[persistence/settings 字节仓库]
+    Repository --> File[settings.toml]
+    Domain --> Theme[Rust appearance 主题解析]
+    Transaction -->|不可变快照| Core[业务无关 usher-state]
+    Core --> Decode[各域 decode]
+    Decode --> Runtime[state-runtime 版本和生命周期]
+    Runtime -->|NSH signal / computed| Modules
+    Modules -->|只读 selector| View
+    Theme --> Generated[bundled.generated.json]
+    Generated -->|首快照前渲染| Modules
+    NSH[NSH 有效明暗] -->|只读| Modules
+```
+
+诊断健康、窗口会话和更新运行态拥有各自的 Rust 发布者；上图的 SettingsService 只协调同一设置文件的持久偏好，不包揽这些运行态。旧原生设置 DTO 的诊断健康字段在 TS 解码时剔除，实时健康只来自诊断订阅。
+
+### 跨域标识与设备主题投影
+
+StoreId 的进程唯一分配器位于应用 `src/state/identity.rs`，设置、窗口、更新和诊断各自调用，不依赖 settings 域，也不放入业务无关 crate。文件路径注册仍属于设置模块。
+
+主题文件的 touch 是稀疏覆盖声明，不是可直接绘制的快照。Rust 在继承后的 light / dark 表上分别合并 touch、解析引用并派生前景色，发布 `touchLight` / `touchDark`；强调色覆盖作用于四份有效表。派生表不写入主题文件。引用解析每轮只展开当前文本中的引用，循环由深度上限拒绝；展开结果也受已有 token 长度上限约束，防止循环或指数展开阻塞初始化。旧 DTO 的 touch 字段只保留协议兼容，TS 渲染不读取它；启动产物由同一注册表生成。主题契约位于 `ui/state/appearance/contracts.ts`，绘制组件仅依赖 `ThemeAccessor`，不依赖整个 AppState。
+
+窗口流复用通用 subscribeDecoded，额外校验路由目录身份；终止后忽略迟到消息，混合 snapshot/end 消息不能成为合法快照。会话回执、预览范围及更新阶段互斥字段在域解码器校验，避免旧传输分支绕过协议检查。
+
+### 迁移验证边界
+
+分批覆盖目录依赖、延迟首帧、订阅重排、跨页面同步、NSH 生命周期、主题规则等价、分区并发保存及失败重试。保持 NSH 命令串行执行；Rust 工作区、对应 state-ui/UI 及必要原生旅程逐批记录，不把目录迁移等同于全部模块拆分完成。
+
 ## 1. 目标与现状
 
 目标是提供类似 Pinia / Vuex 的共享状态入口，使页面、窗口、原生菜单和后台任务通过类型化动作修改状态，并通过订阅取得一致的最新快照。模块对外提供与具体后端、框架无关的接口，后续替换存储或分发实现时，调用方无需调整。项目所有跨页面共享或跨页面切换保留的状态均纳入迁移，详见第 8.3 节；共享机制统一，作用域仍区分应用与窗口。独立进程和服务端之间的同步需要额外传输与业务协议，不由本模块自动提供。
 
 | 模块 | 职责 |
 | --- | --- |
-| `settings` / `settings_service` | 设置规则、串行持久化、业务 revision 与通用版本发布 |
+| `state/settings/model` / `state/settings/service` | 设置规则、串行持久化、业务 revision 与通用版本发布 |
 | `settings_bridge` / `state_bridge` | 按目录共享服务、版本订阅、取消及引擎清理 |
 | `ui/state` | 传输、只读投影、版本接收及 NSH 响应式适配 |
-| `usher-update` / `update_service` | 领域转换与应用执行协调分层，具体契约以更新方案为准 |
+| `usher-update` / `state::updates` | 领域转换与应用执行协调分层，具体契约以更新方案为准 |
 
 通用状态管理与业务状态机分层：前者负责读取、发布和同步，后者负责某一业务允许哪些转换。外观设置不必建模成下载式阶段；更新流程继续使用自己的状态与事件。
 
@@ -49,17 +114,17 @@
 | `crates/usher-state/src/backends/watch.rs` | 首个可选后端，内部使用 Tokio watch；只在模块内处理底层借用与错误 |
 | `crates/usher-state/tests/` | 不启动 NSH 的契约与并发测试，保留状态专用 mock 和夹具 |
 | `crates/usher-test-support/src/task.rs` | 仅开发依赖的通用 poll / 唤醒工具，不依赖状态或业务 crate |
-| `src/app_state.rs` | 已实现设置路径注册表、进程内 StoreId 分配和独立引擎会话，注入 watch 工厂；窗口域由引擎 Local 内的 Windows 表按宿主窗口注册；传输捕获 currentWindow，动作使用 Rust StoreId，关闭后不复用身份 |
-| `src/settings_service.rs` | 设置命令串行、服务层容量检查、快照比较、失败关闭与类型化错误；持久化仍归 SettingsStore |
-| `src/window_service.rs`、`src/window_session.rs` | 唯一窗口快照提交与独立会话规则；会话回执及票据类型化，导航发布失败可重试 |
+| `src/state/settings/mod.rs` | 已实现设置路径注册表、进程内 StoreId 分配和独立引擎会话，注入 watch 工厂；窗口域由引擎 Local 内的 Windows 表按宿主窗口注册；传输捕获 currentWindow，动作使用 Rust StoreId，关闭后不复用身份 |
+| `src/state/settings/service/mod.rs` | 设置命令串行、服务层容量检查、快照比较、失败关闭与类型化错误；配置事务归 SettingsStore，文件字节归 persistence/settings |
+| `src/state/window/mod.rs`、`src/state/window/session/mod.rs` | 唯一窗口快照提交与独立会话规则；会话回执及票据类型化，导航发布失败可重试 |
 | `src/state_bridge.rs` | 通用订阅生命周期、取消和有界投递；不依赖设置规则，版本 DTO 由领域桥接转换 |
 | `src/settings_bridge.rs`、`src/update_bridge.rs` | 各领域的类型化命令、快照 DTO 与适配 |
-| `ui/state/contracts.ts`、`ui/state/index.ts` | 框架无关的只读访问器、动作、selector 和访问入口；消费者门面不暴露释放权限 |
-| `ui/state/runtime/nsh.ts` | 集中封装 NSH 响应式与作用域 API；实现投影更新、派生值、context 和清理绑定 |
-| `ui/state/transport.ts` | 实现项目状态传输接口，隐藏 `usher/nsh` DTO 与订阅对象 |
-| `ui/state/projection.ts` | 独立版本接收器、不可变投影、同步状态和绑定代次；通过接口注入传输与响应式实现 |
-| `ui/state/app.ts` | 组合传输和响应式适配器，拥有连接 / 销毁权限，通过 Provider 借出只读门面 |
-| `ui/state/appearance.ts`、`ui/state/session.ts` | 设置已接入只读投影；窗口 session 由 window.ts / window-contracts.ts 对接 Rust，appearance 不再持有共享 signals |
+| `ui/state-runtime/contracts.ts`、`ui/state/index.ts` | 框架无关的只读访问器、动作、selector 和访问入口；消费者门面不暴露释放权限 |
+| `ui/state-runtime/nsh.ts` | 集中封装 NSH 响应式与作用域 API；实现投影更新、派生值、context 和清理绑定 |
+| `ui/state/settings/transport.ts` | 实现项目状态传输接口，隐藏 `usher/nsh` DTO 与订阅对象 |
+| `ui/state-runtime/projection.ts` | 独立版本接收器、不可变投影、同步状态和绑定代次；通过接口注入传输与响应式实现 |
+| `ui/state/settings/store.ts` | 组合传输和响应式适配器，拥有连接 / 销毁权限，通过 Provider 借出只读门面 |
+| `ui/state/app.ts`、`ui/state/appearance/`、`ui/state/window/` | 设置已接入只读投影；窗口 session 由 window/index.ts / window/contracts.ts 对接 Rust，appearance 不再持有共享 signals |
 | `ui/router/`、`crates/usher-router/` | 独立路由门面与纯路由规则；由应用适配使用本模块发布窗口路由状态，见 [路由设计](routing.md) |
 | `ui/features/updates/` | 更新文案、布局投影与业务效果执行；共享数据通过状态门面访问 |
 
@@ -123,7 +188,7 @@ TS 消费者门面定义项目自己的 `Readable<T>`（只读调用函数）、
 
 ### 4.3 提交与读取规则
 
-纯状态机可单独使用，不要求每个领域都立刻实现同一种 reducer。SM2 保留现有 `SettingsStore`，由 `SettingsService` 串行调用并发布其只读快照，没有第二份可写设置状态。Rust 消费者通过 `app_state` 的类型化命令、快照和 `SettingsService::reader()` 对接；领域仓库与文件写入实现仍为私有。逐步分离纯规则与 I/O 时保持同一契约。
+纯状态机可单独使用，不要求每个领域都立刻实现同一种 reducer。SM2 保留现有 `SettingsStore`，由 `SettingsService` 串行调用并发布其只读快照，没有第二份可写设置状态。Rust 消费者通过 `state::settings` 的类型化命令、快照和 `SettingsService::reader()` 对接；领域仓库与文件写入实现仍为私有。逐步分离纯规则与 I/O 时保持同一契约。
 
 发布者先构造完整的新快照，在短临界区内推进序号并替换通道值，使用无接收者时也能保留最新值的发送方式。首版使用完整快照，不发送字段补丁。消费者不能修改已发布值；`Arc` 用于共享 Rust 快照，不跨语言传递指针。读取后立即克隆 `Arc` 并释放 `watch` 借用，不跨 `.await` 持有通道读锁。
 
@@ -194,7 +259,7 @@ SM3 的 `SettingsState.subscribe` 同步返回 NSH `Stop` 函数，使用固定�
 
 ### 8.1 NSH 机制的封装位置
 
-NSH 的 `signal/computed/effect/context` 是依赖运行时和组件作用域的响应式机制，与业务有限状态机职责不同，参考 [NSH 响应式 API](https://nsh.dev/modules/nsh/)。共享状态接入中对这些 API 的使用集中在 `ui/state/runtime/nsh.ts`；Rust 侧的 `Callback`、引擎线程投递及销毁处理留在 NSH 桥接。独立 `usher-state` crate 只提供框架无关接口，不直接依赖或重新实现 NSH 的响应式图。
+NSH 的 `signal/computed/effect/context` 是依赖运行时和组件作用域的响应式机制，与业务有限状态机职责不同，参考 [NSH 响应式 API](https://nsh.dev/modules/nsh/)。共享状态接入中对这些 API 的使用集中在 `ui/state-runtime/nsh.ts`；Rust 侧的 `Callback`、引擎线程投递及销毁处理留在 NSH 桥接。独立 `usher-state` crate 只提供框架无关接口，不直接依赖或重新实现 NSH 的响应式图。
 
 每个窗口由状态装配创建投影，适配器内部用 NSH context 提供作用域，组件通过项目门面的 `useSettingsStore()`、`useSessionStore()` 访问；路由通过独立模块的 `useRouter()`、`useRoute()` 访问同一窗口路由 Store。业务 selector 依赖抽象 `select`，状态传输不参与 UI 规则。各域每个窗口只建立一份共享订阅，不按页面重复订阅。SM3 由 App 的 appearance 装配创建 settings owner，`SettingsProvider` 借出相同门面；原有属性调用仍兼容。订阅失败保留最后快照并显示同步错误，重试入口由 owner 显式重新连接。NSH 适配器负责依赖跟踪和批量更新，确保通过公共只读函数仍能触发界面更新。
 

@@ -1,6 +1,6 @@
 //! Read-only live diagnostic status transport, reusing the generic subscription lifecycle.
 use crate::{
-    diagnostic_state::{STATUS, Status},
+    state::diagnostics::{STATUS, Status},
     state_bridge::{Binding, Event},
 };
 use nsh_core::{

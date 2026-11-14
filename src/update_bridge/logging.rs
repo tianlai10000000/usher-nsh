@@ -1,5 +1,5 @@
 //! Writes committed update events and classifies native details for diagnostics only.
-use crate::update_service::{Claim, UpdateService, transport};
+use crate::state::updates::{Claim, UpdateService, transport};
 use usher_logging::{Fields, Level, LogKind, current};
 use usher_update::state;
 

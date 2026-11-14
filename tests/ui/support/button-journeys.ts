@@ -4,6 +4,8 @@ import { expect, open, test, type App } from "nsh/test";
 type PickerDriver = {
   prepare: (app: App) => void | Promise<void>;
   cancelled: (app: App) => void | Promise<void>;
+  captureUpdates?: (app: App, name: string) => Promise<void>;
+  captureSettings?: (app: App, name: string) => Promise<void>;
 };
 export function registerButtonTests(entries: { buttons: string; settings: string; updates: string }, picker: PickerDriver) {
   const entry = entries.buttons;
@@ -89,6 +91,8 @@ export function registerButtonTests(entries: { buttons: string; settings: string
     try {
       await app.waitUntil(() => app.enabled("id:appearance-dark"));
       for (const [id, operation, other] of [
+        ["show-status-bar", "statusbar", "appearance-light"],
+        ["locale-en", "language", "appearance-light"],
         ["appearance-dark", "appearance", "appearance-light"],
         ["accent-reset", "accent", "accent-apply"],
         ["theme-builtin.primer", "theme", "theme-builtin.slate"],
@@ -98,8 +102,16 @@ export function registerButtonTests(entries: { buttons: string; settings: string
         if (id === "accent-reset") await app.press("id:settings-section-theme");
         if (id === "diagnostic-export") await app.press("id:settings-section-diagnostics");
         await app.waitUntil(() => app.enabled(`id:${id}`));
+        if (id === "show-status-bar") {
+          await app.hover("id:settings-neutral");
+          await picker.captureSettings?.(app, "before");
+        }
         await app.press(`id:${id}`);
         await app.waitFor(`text:Pending:${operation}`);
+        if (id === "show-status-bar") {
+          await app.hover("id:settings-neutral");
+          await picker.captureSettings?.(app, "blocked");
+        }
         if (operation === "scan" || operation === "export") {
           await app.waitFor(`id:${id} >> id:${id}-loading`);
         } else {
@@ -113,7 +125,7 @@ export function registerButtonTests(entries: { buttons: string; settings: string
         await app.waitUntil(() => app.enabled(`id:${id}`));
         expect(app.shows(`id:${id}-loading`)).toBe(false);
       }
-      expect(app.texts()).toContain("Calls:5");
+      expect(app.texts()).toContain("Calls:7");
     } finally { app.dispose(); }
   });
 
@@ -140,6 +152,28 @@ export function registerButtonTests(entries: { buttons: string; settings: string
         expect(app.texts()).toContain("Picker error:none");
         expect(app.texts()).toContain(`Calls:${attempt}`);
       }
+    } finally { app.dispose(); }
+  });
+
+  test("update download locks checking without starting unrelated loading and restores it after failure", async () => {
+    const app = await open(entries.updates, options);
+    try {
+      await app.press("id:fail-install");
+      await app.hover("id:update-neutral");
+      await picker.captureUpdates?.(app, "before");
+      await app.press("id:update-download");
+      await app.waitFor("id:update-download-loading");
+      expect(app.enabled("id:update-check")).toBe(false);
+      expect(app.shows("id:update-check-loading")).toBe(false);
+      await expect(app.press("id:update-check")).rejects.toMatchObject({ code: "ERR_NSH_TEST_DISABLED" });
+      expect(app.texts()).toContain("Checks:0");
+      await app.hover("id:update-neutral");
+      await picker.captureUpdates?.(app, "downloading");
+      await app.press("id:fail-install");
+      expect(app.enabled("id:update-check")).toBe(true);
+      await app.press("id:update-check");
+      await app.waitFor("id:update-check-loading");
+      expect(app.texts()).toContain("Checks:1");
     } finally { app.dispose(); }
   });
 

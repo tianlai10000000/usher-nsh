@@ -3,7 +3,10 @@
 use dispatch2::DispatchQueue;
 use nsh_core::prelude::*;
 use objc2::MainThreadMarker;
-use objc2_app_kit::{NSApplication, NSOpenPanel};
+use objc2_app_kit::{
+    NSAccessibility, NSApplication, NSControl, NSOpenPanel, NSPopUpButton, NSSegmentedControl,
+    NSView,
+};
 
 pub use usher_nsh::__nsh_native_components_macos;
 
@@ -11,6 +14,7 @@ pub use usher_nsh::__nsh_native_components_macos;
 pub fn __nsh_native_module() -> Registry {
     let mut registry = usher_nsh::__nsh_native_module();
     registry.module::<NativePicker>();
+    registry.module::<NativeInteraction>();
     registry
 }
 
@@ -62,5 +66,68 @@ impl NativePicker {
     /// Observe panel closure independently of the application's busy projection.
     pub fn visible() -> bool {
         with_panel(false)
+    }
+}
+
+/// Exercise the production AppKit targets without depending on private NSH view identifiers.
+#[module]
+pub struct NativeInteraction;
+
+fn visit_controls(view: &NSView, activate: bool, states: &mut Vec<String>) {
+    if let Some(label) = view.accessibilityLabel() {
+        let label = label.to_string();
+        if label.starts_with("Contract ") {
+            let control = view
+                .downcast_ref::<NSControl>()
+                .expect("contract fixtures are controls");
+            if activate {
+                if let Some(segments) = view.downcast_ref::<NSSegmentedControl>() {
+                    segments.setSelectedSegment(1);
+                }
+                if let Some(popup) = view.downcast_ref::<NSPopUpButton>() {
+                    popup.selectItemAtIndex(1);
+                }
+                if let Some(action) = control.action() {
+                    // SAFETY: The production control owns its matching action and retained target.
+                    unsafe {
+                        control.sendAction_to(Some(action), control.target().as_deref());
+                    }
+                }
+            }
+            let selected = if let Some(segments) = view.downcast_ref::<NSSegmentedControl>() {
+                segments.selectedSegment()
+            } else if let Some(popup) = view.downcast_ref::<NSPopUpButton>() {
+                popup.indexOfSelectedItem()
+            } else {
+                -1
+            };
+            states.push(format!("{label}:{}:{selected}", control.isEnabled()));
+        }
+    }
+    for child in view.subviews() {
+        visit_controls(&child, activate, states);
+    }
+}
+
+#[module]
+impl NativeInteraction {
+    /// Inspect or activate only labelled controls in the disposable acceptance host.
+    pub fn inspect(activate: bool) -> String {
+        let mut states = Vec::new();
+        let mut inspect = || {
+            let mtm = MainThreadMarker::new().expect("native controls run on the main queue");
+            for window in NSApplication::sharedApplication(mtm).windows() {
+                if let Some(view) = window.contentView() {
+                    visit_controls(&view, activate, &mut states);
+                }
+            }
+        };
+        if MainThreadMarker::new().is_some() {
+            inspect();
+        } else {
+            DispatchQueue::main().exec_sync(inspect);
+        }
+        states.sort();
+        states.join(",")
     }
 }

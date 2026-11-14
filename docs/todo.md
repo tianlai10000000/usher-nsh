@@ -32,6 +32,21 @@
 | [N6 系统通知](#notify) | P3 | 待实施 | 各平台 API 与成本调研后推进 |
 | [TH1 / SM1–SM5 / RT1–RT3 / UT1 / LG1–LG6 已交付基础](#completed) | P1 | 已完成（限已验范围） | 证据保留；剩余平台和发布项不计入完成 |
 | DOC1 文档归并 | P1 | 已完成 | 仅文档迁移、链接检查；不计作产品验收 |
+| [SK0–SK4 快捷键模块](#shortcuts) | P1 | 设计已完成；实现待实施 | 本轮授权架构方案；独立 crate → 本地适配 → Global → 原生验收，实施另行授权 |
+
+<a id="shortcuts"></a>
+
+## SK 快捷键模块
+
+用户于 2026-11-14 请求设计独立快捷键 crate，预留系统全局与页面快捷键，并参考同级 Slint Usher 的初始化流程。本轮交付 [快捷键模块方案](shortcuts.md)，不将设计登记为产品实现。
+
+| 批次 | 优先级 | 状态 | 前置、范围与验收 |
+| --- | --- | --- | --- |
+| SK0 | P1 | 已完成（设计范围） | 已核查 NSH 0.5.0 类型、Rust keymap 原生消费流程、现有历史绑定及 Slint 初始化；明确独立 usher-shortcuts、三类作用域、注册票据、恢复和平台确认边界。2026-11-14：新增方案及架构入口，文档本地链接与新增差异空白检查通过；未改产品代码、未执行产品测试。后续按用户要求收紧核心无业务依赖契约，业务统一归 src/shortcuts/ 并按 modules 拆分，UI 与配置同名分模块；同步架构和 SK1/SK2 范围，文档链接与差异空白检查通过。随后明确启动状态栏实时订阅、分项详情、重试与显隐生命周期解耦，更新 SK2/SK4 验收范围；仅设计更新，文档链接与差异空白检查通过。2026-11-14 按用户确认改为 Global 启动、Application 窗口创建、Page 首次进入懒加载；补轻量索引、版本缓存/迟到结果、注册前冲突、全目录 CI 及启动/页面状态分离，文档链接与差异空白检查通过，未运行产品测试。 |
+| SK1 | P1 | 待实施 | 依赖 SK0 及实施授权；独立 crate 的通用绑定/冲突/计划/生命周期契约，禁止业务命令、路由及业务夹具依赖；应用 src/shortcuts/ 统一目录、轻量索引与 modules 加载入口，配置单一来源与 NSH 解析适配；契约测试、workspace 检查及 CI 接入。不得新增未经确定的产品键位或重试数值。 |
+| SK2 | P1 | 待实施 | 依赖 SK1；在 src/shortcuts/ 与 ui/shortcuts/ 中建立窗口服务、页面租约及 NSH keymap 门面，导航业务独立 modules/navigation，迁移 HistoryControls，复用 Router 动作；Application 随窗口初始化，Page 首次进入懒加载，离开解绑、重入复用声明；覆盖并发加载、失败重试、迟到结果、版本缓存及注册前冲突；同时交付独立状态发布、只读 UI 投影及启动状态栏实时摘要/详情/重试；状态栏显隐不影响注册。验证编辑保护、模态、路由守卫、多窗口和 HMR。原生表异步更新时消费旧按键的限制须真实验证；严格同步透传要求须先补上游契约。 |
+| SK3 | P2 | 待实施 | 依赖 SK1、SK2 及具体全局命令/键位授权；Global 随程序启动初始化，不等待页面；进程唯一 Global 协调、按键串行注册、旧 VM 清理/接管与分项状态。NSH VM 销毁注册归属必须验证，不能跳过未决注册直接交接。 |
+| SK4 | P1 | 待实施 | 依赖对应实现；启动与当前页面状态分离，未访问页面不阻塞启动就绪且详情不触发加载；全目录 CI 冲突校验、启动/首次进入/重入性能测量；启动状态栏实时阶段/失败展示与重试，晚订阅/隐藏期间完成/重新显示/旧回执/连接中断/多窗口隔离及状态栏卸载不影响注册，首次输入、完整 VM reload、前后台、系统占用恢复和发布产物验收；按平台记录结果，Linux portal、Windows、macOS 不互相代验。 |
 
 <a id="theme"></a>
 
@@ -43,6 +58,88 @@
 | TH2 | P1 | 受阻 | 官方 PR #1857 / `10121ce891433bd168f0fa6ec4e7ad896bf6740e` 已提供 Select 起止样式，0.5.0 尚未包含。可用兼容版本到位后同步 CLI / Rust / 类型；用 popupMotion 的 style / starting / ending 替换 createSelectMotion，移除 onOpen / onClose 动画钩子。覆盖选择、Escape、外部点击、退出中重开、减少动效和原生中间帧。不得只补类型声明或延迟业务 open。 |
 | TH3 / 07.05 | P1 | 待实施 | 现有 token 对比度测试通过，但 macOS 深色及 Primer 浅色的实测环未达 3:1。用已知 outlineColor 的纯色样例确认压暗来源，参照页面 / 卡片 / 面板真实像素，修正推导并统一偏移；七主题浅深色截图断言，再分别复核 Windows / Linux。旧像素测量与不确定性保留于原 07.05 证据。 |
 | TH4 / 03.07 | P2 | 待验收 / 按需实施 | 全主题、触屏与其他宿主的部件和动效验收；标签条、分段、分体按钮等结构仅在真实产品引入时适配。不能把 TH1 视为整个 NSH 库或跨平台像素一致通过。 |
+| TH5 / 03.07 | P1 | 已完成（本机范围） | 用户本轮授权外观选项顺序与标题栏三态切换；设置控件统一按跟随系统、浅色、深色排列，标题栏按相同顺序循环，系统入口使用显示器图标及本地化操作提示。共用 ui/config/appearance.json，继续通过现有 Store 提交；2026-11-14：nsh check、完整 UI 49 项、macOS 布局 5 项和 git diff --check 通过。报告：target/test-reports/ui.json、appearance-cycle-macos.xml。回归覆盖按钮顺序、完整循环、设置入口同步及中英文提示；原生首次因沙箱禁止本地服务启动失败，放行后完整 5 项通过。其他平台未验收。后续用户修正：图标改为当前保存的外观偏好，提示与无障碍动作仍指向下一模式；nsh check、提示回归 3 项和 git diff --check 通过（appearance-current-icon-tooltips.xml），此次图标修正未重跑原生视觉验收。 |
+
+## SM7 模块化业务状态收敛
+
+用户于 2026-11-14 授权先修订设计、拆分批次，再开始重构。所有批次沿以下依赖推进，不重开通用 crate 已验收机制，不影响既有暂缓项。
+
+| 批次 | 状态 | 前置与范围 | 验收 |
+| --- | --- | --- | --- |
+| SM7-0 | 已完成 | 状态管理与架构设计明确应用业务目录、NSH 复用和唯一持久化入口 | 文档一致性与差异检查 |
+| SM7-1 | 已完成（本批范围） | 依赖 SM7-0；建立应用 appearance 模块，抽离主题投影和宿主绑定；Rust 主题实现归属应用 state，保留兼容路径 | 类型检查、Rust 工作区、state-ui/UI；延迟首快照不应用占位偏好 |
+| SM7-2 | 已完成（本批、本机范围） | 依赖 SM7-1；拆分设置操作协调、背景、语言、诊断，移出 appearance 兼容门面；通用 TS 适配迁到 state-runtime | 共享操作互斥、失败重试、取消卸载、跨页面与原生旅程 |
+| SM7-3 | 已完成（本批、本机范围） | 依赖 SM7-2；按域统一快照解码，收敛 Rust 主题派生与启动回退，移除重复强调色规则 | 订阅/读取/回执非法数据，明暗/强调色/自定义主题等价 |
+| SM7-4 | 已完成（本批、本机范围） | 依赖 SM7-3；抽离唯一配置仓库和分区提交，再拆分 Rust 业务服务；更新/诊断/窗口模块归位，保留已有领域库 | 并发分区保存不覆盖、旧回执、失败/重试/重启、无写权限 |
+| SM7-5 | 已完成（本批、本机范围） | 依赖 SM7-4；切换全部调用方并移除旧兼容出口，统一应用/窗口 Provider 生命周期 | 全量门禁、HMR、多窗口、实际宿主及目录依赖审计 |
+| SM7-R1 | 已完成（本机范围） | 用户授权全面复审；修复跨域依赖、窗口协议残留及设备主题派生边界 | Rust / mock / UI / 原生生命周期回归 |
+
+### SM7-R1 全面复审与修复（2026-11-14）
+
+本轮按用户授权复审单一数据来源、业务独立性、Rust / TS / NSH 边界和旧架构残留。审查覆盖设置事务与仓库、更新作用域与执行器、诊断健康、窗口会话、版本投影、主题派生和 NSH 宿主绑定；不改动通用 usher-state crate，不新增依赖。
+
+| 发现的问题 | 修复与回归 |
+| --- | --- |
+| 主题引用替换在内层 while 反复处理替换文本，循环引用绕过外层深度限制，可阻塞状态初始化 | 新增触屏循环回归首次暴露挂起，定位并终止本轮测试子进程后修复；每轮只替换该轮原始引用，深度限制可实际生效，展开结果复用已有 token 长度上限。覆盖自引用、互相引用、重复展开与合法链式替换。 |
+| Rust 只解析 pointer 明暗表，touch 仍是原始覆盖声明；TS 却将其当成有效 token，导致引用/前景色和强调色来源不一致 | Rust 派生 touchLight / touchDark，四份有效表统一覆盖强调色；派生数据不写入主题文件，启动产物重新生成并与注册表完整比较。旧 touch DTO 字段仅保留协议兼容，渲染不再读取。Rust 与 TS 测试覆盖明暗引用、前景色、强调色和设备表选择。 |
+| 窗口传输仍使用旧独立订阅逻辑，结束后可能继续投递，混合消息可误判为合法结束；回执只检查字符串，主动读回未验证目录身份 | 复用 subscribeDecoded 并增加目录身份防护；读取、命令快照同样校验目录。票据采用规范非零十进制字符串，预览值使用已有背景范围。补充结束后迟到消息、混合/假值 end、非法 JSON / 票据 / 目录 / 预览回归；更新解码同时拒绝与阶段不匹配的 outcome / candidate / failure，避免视图错误推导动作。 |
+| StoreId 分配属于进程基础设施，却放在 settings，导致其他域反向依赖；底层绘制类型经整个 AppState 取得 | 分配器移到应用 state/identity；并发唯一性回归通过。主题契约移入 state/appearance/contracts，绘制组件依赖 ThemeAccessor；增加目录依赖守卫。 |
+| 未被生产使用的旧 UpdateRegistry 仍公开缓存 SettingsService 已拥有的 UpdateService，并在 drop 时关闭同一实例，形成第二生命周期拥有者 | 删除旧注册表与出口；测试、CI 前缀改为 updates_scope。消费方通过 settings.updates() 借用，借用句柄释放不关闭共享服务，SettingsService 关闭 / 销毁才关闭所属更新服务，其他目录不受影响。更新设计先同步该边界。 |
+
+单一来源复核：设置内存文档是持久偏好的唯一可写模型，文件只在初始化与语义命令中读写；设置事务序列化合并分区，仓库不缓存状态。更新 Machine 的自动检查选项、日志运行配置由该事务同步，属于运行时投影。诊断健康独立订阅，旧 DTO 的诊断字段不进入 TS 偏好投影。TS 只维护快照、selector 和执行生命周期；NSH 承担响应式、清理和系统有效明暗，没有新增可独立写入的共享偏好副本。局部草稿、浮层及动画保留 NSH 局部状态。
+
+最终验证：`cargo test --locked --workspace` **247 项**、state-ui **69 项**、UI **49 项**、router-ui **13 项**、headless E2E **4 项**、脚本 **147 项**全部通过；目录身份与假值结束消息的最终补充由完整 decode 文件 **10 项**复验通过。integration **46 项**、update-state **125 项**及更新后的必测前缀通过（与 workspace 重叠，不累加）。`nsh check`、`cargo fmt --all --check`、`git diff --check`及本地文档链接检查通过。
+
+隔离 macOS 原生验收 **17 项**通过：多窗口 / 真实源码 HMR / 关闭重开 3 项、无 filter 的完整按钮套件 13 项、真实 Cmd+R VM reload 1 项。原生脚本使用临时源码与数据目录，未借用真实用户配置。报告及相应 JUnit 归档为 `target/test-reports/sm-review-*`；旧 SM7 完成记录保留历史语义，本记录取代其中关于旧 UpdateRegistry 和主题契约路径的当前架构描述。
+
+本轮触屏验证是 Rust 规则与 TS 投影回归，没有触屏设备或其他操作系统真机验收；更新执行者跨 VM 接管的既有限制未改变。
+
+### SM7-3～SM7-5 验收记录（2026-11-14）
+
+用户追加授权 SM7-3 完成后继续 SM7-4、SM7-5；本次完成三个批次的实现、迁移与本机验收，不扩大其他暂缓批次。
+
+- **SM7-3**：settings、appearance、preferences、background、diagnostics、window、updates 各域 schema 统一在 `decode.ts`；读取、订阅和命令回执复用解码入口。非法快照关闭绑定并保留最后有效值，业务拒绝仍可重试。新增 6 项 wire mock / 解码回归，覆盖嵌套字段、版本、迟到回调和三个入口。旧设置 DTO 的诊断健康字段不再进入 TS 偏好投影，诊断订阅是唯一实时来源。
+- **SM7-3**：Rust `state/appearance/color.rs` 统一色彩解析、亮度和对比度；主题注册表负责前景色与强调色 finish 派生。TS 删除强调色、前景色和主题引用的重复规则，只映射已解析 token。新增 `theme-snapshots` 生成命令及完整产物一致性回归，启动回退与 live 主题同源；补齐所有内置主题明暗强调色 finish 断言，Gallery UI 明暗回归通过。
+- **SM7-4**：Rust 业务状态归入应用 `src/state/{appearance,preferences,diagnostics,updates,window,settings}/`。偏好 schema / 校验按域拆分，设置路径注册与串行事务位于 settings，`src/persistence/settings.rs` 只读写字节、备份损坏文件和原子替换，不缓存业务状态。各分区命令修改同一事务内的最新文档，避免分别读取旧文件后互相覆盖；更新运行态、诊断健康及窗口仍独立发布，不引入全应用大锁。新增并发四分区提交与重新加载、目录无写权限期间累积分区修改及同 revision 重试两项集成回归；既有迁移、损坏保护、旧回执、失败恢复测试继续通过。
+- **SM7-5**：删除旧 Rust 根模块和 TS 兼容源文件，生产、平台、测试夹具及 CI 路径全部切换。`createAppState` 在窗口根装配命名分域门面，页面借用；外观、偏好、诊断、背景和设置操作独立，更新 executor / projection / mock 移到 `ui/state/updates/`，feature 只渲染。NSH signal/computed/context/cleanup 继续承担响应式与 owner 生命周期；未修改 `usher-state` crate，未增加依赖。新增 4 项目录依赖 / 唯一配置仓库守卫测试。
+- 首轮 UI 回归发现诊断延迟保存夹具仍覆盖旧扁平字段，已改为分域且显式类型约束；色彩 helper 抽取时的命名遮蔽编译错误已修复。以下为修复后冻结实现的完整重跑，不以单项诊断或零测试代替验收。
+
+| 最终门禁 | 结果 |
+| --- | --- |
+| `nsh check`、`cargo fmt --all --check`、`git diff --check` | 通过 |
+| `cargo test --locked --workspace` | 244 项通过，0 失败 |
+| `python3 scripts/test.py state-ui` | 65 项通过，含业务 mock、解码 mock、NSH owner 与真实桥接 |
+| `python3 scripts/test.py ui` | 49 项通过 |
+| `python3 scripts/test.py router-ui` / `e2e` | 13 / 4 项通过 |
+| `python3 -m unittest discover -s scripts/tests -p 'test_*.py'` | 145 项通过 |
+| `state` / `router` / `test-support` / `integration` / `update-state` / `routes-check` | 全部通过；分别 55 / 31 / 6 / 46 / 122 / 4 项，包含与 workspace 重叠的回归，不累加为独立测试数 |
+| `theme-snapshots … --check` | 生成产物与 Rust 注册表一致 |
+| 隔离 macOS `native_acceptance.py` | 3 项通过：多窗口、真实源码 HMR、关闭重开；临时数据清理通过 |
+| 隔离 macOS `native_button_acceptance.py`（无 filter） | 13 项完整通过，包含 AppKit、picker、保存交互、更新操作与生产 App 状态栏 |
+| `python3 scripts/test.py native-reload` | 1 项通过：真实 Cmd+R 后恢复偏好、重建窗口会话并拒绝旧回调 |
+
+最终报告与 JUnit 归档为 `target/test-reports/sm7-final-*`，原生状态 / 按钮报告为 `sm7-final-native-state.xml`、`sm7-final-native-buttons.xml`；启动主题检查为 `sm7-theme-artifact.log`。设计和目录更新同步至 architecture、state-management、testing、相关模块文档、CONTRIBUTING 和中英文 README；本地文档链接检查通过。
+
+验证平台为本机 macOS / NSH 0.5.0。未新增其他平台、系统外观自动变化或签名发布产物验收。更新执行租约在 VM 销毁后不能自动接管的既有边界不变；本次 VM reload 验收针对偏好与窗口会话，不宣称在途更新任务续接。
+
+### SM7-1 验收记录（2026-11-14）
+
+- `src/state/appearance/theme.rs` 承接原主题注册表，内容与迁移前逐字一致；`src/style_themes.rs` 仅兼容导出。`usher-state` crate 无修改，无业务或 NSH 依赖新增。
+- `ui/state/appearance/` 抽离主题选择、palette 派生和 NSH 外观绑定；旧 `appearance.ts` 继续装配综合设置操作，仍有诊断、背景职责，归 SM7-2，不宣称所有业务模块已完成拆分。有效明暗通过模块门面提供，设置页不再自行读取 NSH colorScheme。
+- 宿主绑定仅在投影 live 时应用偏好，连接中及错误状态不把占位或未同步值写给宿主；系统有效明暗直接复用 NSH，不增加双向镜像。effect 由 NSH owner 释放。
+- 新增 `ui/state/__tests__/appearance-host.test.tsx` 2 项 mock 回归，注入可控宿主，使用真实 NSH signal/effect/owner。覆盖延迟首快照、重连、错误状态、系统事件不回写及卸载后不再应用；已进入 state-ui 发现目录和必测前缀。mock 不冒充系统明暗自动切换实测。
+- 本机 macOS / NSH 0.5.0：nsh check、cargo fmt --all --check、git diff --check 通过；Rust 工作区 241 项、state-ui 47 项（含新增 mock 2 项与真实桥接）、UI 49 项、脚本 141 项、macOS 原生布局 5 项全部通过，0 失败。原生套件覆盖完整 App 三态循环、设置同步、侧栏与状态栏；未做系统外观自动变化、跨平台或新增截图像素验收。
+- 报告位于 `target/test-reports/sm7-1-cargo.log`、`sm7-1-state-ui.json`、`sm7-1-ui.json`、`sm7-1-scripts.log`、`sm7-1-native-layout.xml`；本批 JSON 引用的 JUnit 另以 sm7-1 前缀归档，避免下一次常规运行覆盖本批证据。
+
+### SM7-2 验收记录（2026-11-14）
+
+- `ui/state/appearance.ts` 收敛为兼容装配门面。`diagnostics/` 管理健康投影、诊断偏好、启动与导出，`background/` 管理 picker、图片导入和票据预览，`preferences/` 管理语言与本地化，`appearance/actions.ts` 管理外观命令与主题目录，`settings/operations.ts` 管理唯一请求互斥、错误反馈与重试；初始化占位数据迁入 `settings/initial.ts`。各模块借用同一个设置 view 和窗口 session，不新建共享偏好副本，持久化和 Rust 设置事务未变。
+- 通用 `contracts`、`projection` 和 NSH 适配实现在 `ui/state-runtime/`；生产及测试引用迁至新路径，原路径只兼容导出。通用契约与投影算法逐字核对未变，NSH signal/computed/context/effect/cleanup 继续负责响应式与 owner 生命周期。`usher-state` crate 无修改。
+- 为开始操作尚未发布到投影的窗口增加 picker/目录局部执行防重入；开始票据之后、picker 或文件字节返回之后检查 owner，避免销毁后的迟到工作。开始操作被拒绝仍向调用方抛错，局部执行锁在 finally 释放；可见进度仍来自 Rust session，未建立第二份业务状态。
+- 新增 `ui/state/__tests__/business-modules.test.ts` 12 项 mock：跨模块单一请求锁、失败/重试/重连、只读/校验反馈、开始前和回执后销毁、取消/超限/读取失败、预览票据被新输入取代、迟到 picker/字节丢弃、独立诊断导出、目录重试、语言快照同步、开始操作拒绝后的恢复。使用独立 settings/session/owner/host 替身，不接触真实用户数据；加入 state-ui 必测前缀。SM7-1 的真实 NSH owner 夹具继续回归。
+- 本机 macOS、NSH 0.5.0：最终 nsh check、cargo fmt --all --check、git diff --check 通过；Rust 工作区 241 项、state-ui 59 项（含新增 mock 12 项及真实桥接）、完整 UI 49 项、脚本 141 项全部通过。初次类型检查发现状态键多次读取不能完成联合类型收窄，改为单次读取后最终检查通过。
+- `python3 scripts/native_button_acceptance.py --junit target/test-reports/sm7-2-native.xml` 完整原生 13 项通过，0 失败/跳过；使用临时源码和数据目录，覆盖真实 AppKit 选择器取消、跨页面异步反馈、设置保存互斥、受控控件和完整 App 连续切换。`sm7-2-native-screenshots/pixel-comparison.json` 中 NSH/AppKit 锁定与解除、设置内容区锁定变化像素均为 0，真正不可用的变化像素分别为 8387/52331；已查看设置等待截图。
+- 证据：`target/test-reports/sm7-2-{cargo,scripts,state-ui,native}.log`、`sm7-2-state-ui.json`、`sm7-2-ui.json`、`sm7-2-native.xml`；JSON 对应 JUnit 以 sm7-2 前缀归档。未新增跨平台、进程重启或独立配置分区保存验收。按计划保留旧兼容门面，业务快照解码/主题规则归属和 Rust 持久化分区分别留在 SM7-3/SM7-4。
 
 <a id="settings"></a>
 
@@ -54,7 +151,52 @@
 | --- | --- | --- | --- |
 | 03.02 / SM6 | P2 | 部分完成 | 共享状态迁移已经完成；其余缺口合并到平台批次，避免重复建立 Store 或重做 SM1–SM5。 |
 | 03.03 | P1 | 部分完成 | 补合并写入 Worker、退出 / 移动后台限时刷盘及各平台路径。更新 auto_check 和日志三开关已有持久化，不再列作未实现；托盘等新偏好随模块接入，覆盖旧数据、保存失败与重试。 |
+| UI-001 | P1 | 已完成（本机 macOS 范围） | 公共控件契约分离 disabled / interactionBlocked / busy；按钮、开关、滑块、选择器及 AppKit 适配接入，保留业务串行与重入保护。Rust 241、UI 47、state-ui 45、脚本 141 和 macOS 原生 11 项通过；公共 NSH / AppKit 与设置内容区临时锁前后像素差均为 0。详见下方 UI-001 验收记录及根目录 bug-history.md。 |
+| UI-004 | P1 | 已完成（本机 macOS 范围） | 响应式 props 被 rest 解构冻结导致 Switch 无法连续切换；统一保留属性描述符，公共受控值／标签及完整 App 连续四次 Gallery 切换回归通过。完整 UI 49、state-ui 45、脚本 141、macOS 原生 13 项通过，详见本节 UI-004 记录。 |
+| UI-003 | P1 | 已完成（本机 macOS 范围） | AppKit 空选择恢复使用 -1，并避免空选中时标题同步选回首项；业务禁用、空值恢复及解锁后的目标动作通过完整原生 11 项复验。 |
+| UI-002 | P1 | 已完成（本机 macOS 范围） | 公共滑块 onChange 获取锁后丢失 onChangeEnd 的回归已复现并修复，保留已接受操作的完成事件；无头与原生共用用例通过，复核证据见下方。 |
 | 03.06 | P1 | 部分完成 | 补 TSX/Rust 文案参数契约、原生菜单和托盘文案、独立格式地区、日期时间 / 复数规则，以及长译文和系统字号。已有 zh-Hans / en 与系统回退保留。 |
+
+### UI-001 公共交互锁与控件闪烁修复（2026-11-14）
+
+用户授权从公共交互契约统一修复，而非局部删除页面样式。`interaction.ts` 定义行为禁用与视觉灰显两个投影；按钮复用 `useButtonAction`，开关、滑块、选择器通过 `ValueControls.tsx` 适配公开 NSH API。AppKit 平台目标动作拒绝临时锁期间的提交，并恢复受控选择。设置、主题、背景、诊断及标题栏使用该契约；无图片、未接入能力和当前长任务继续正常禁用／显示加载。`appearance.sync` 请求锁、Rust 提交串行化与既有操作票据未删除或放宽。设计写入 `interaction-design.md`，快速排查记录写入根目录 `bug-history.md` UI-001。
+
+本机 macOS 验证（仓库根目录执行）：
+
+- `nsh check`、`cargo fmt --all --check`、`git diff --check` 通过；`cargo test --locked --workspace` 共 241 项通过，日志 `target/test-reports/interaction-cargo.log`。
+- `python3 scripts/test.py ui`：45 项通过，`target/test-reports/ui.json`。公共契约独立夹具覆盖按钮、图标按钮、Switch、Slider、Select 的临时锁与真正不可用、键盘／鼠标阻断、解除恢复及独立操作；既有异步套件继续覆盖重复触发、成功、拒绝、卸载、跨视图任务和取消。设置旅程增加状态栏与语言操作。最终收敛后专项重跑公共契约 1 项、设置／异步 7 项及诊断 4 项，均通过；对应 `interaction-headless.xml`、`interaction-settings-headless.xml`、`interaction-diagnostics.xml`。
+- `python3 scripts/test.py state-ui`：45 项通过，`target/test-reports/state-ui.json`；`python3 -m unittest discover -s scripts/tests`：141 项通过，`target/test-reports/interaction-scripts.log`。
+- `python3 scripts/native_button_acceptance.py --junit target/test-reports/interaction-native.xml`：完整原生套件 9 项通过，0 失败／跳过。隔离宿主保留真实设置服务、NSH 渲染和 AppKit 控件；真实文件面板连续两次取消及恢复通过。AppKit 专项通过公共目标动作验证锁定不发事件、拒绝选择回到原值、解锁后回调恢复，并核对业务禁用状态；不把目标动作驱动等同于物理鼠标打开原生菜单验收。
+- 原生脚本自动清空本轮截图目录、保留截图并执行 Swift PNG 解码对照。`target/test-reports/interaction-native-screenshots/pixel-comparison.json`：NSH 控件锁定／解除变化像素均为 0，真正不可用变化 32765；AppKit 锁定／解除均为 0，真正不可用变化 208937；实际设置页状态栏保存等待期间内容区变化为 0。已查看公共控件、AppKit 和设置页等待截图。测量区域由夹具 onLayout 得到，排除会改变的测试状态文字；设置页使用可控视图边界延迟，不代表真实磁盘延迟。
+
+首次原生运行因沙箱禁止本地开发服务监听而 8 项启动失败，未作为通过证据；允许隔离宿主监听后完整重跑。中间扩展 AppKit 与设置截图后均完整重跑，以上以最终 9 项及像素报告为准。测试入口继续接入现有 `ui` 和 `e2e-macos` 配置，原生脚本结束清理临时源码与宿主进程。未验收 Windows、Linux、触屏、屏幕阅读器及 AppKit 物理菜单全旅程，不作跨平台或性能结论。
+
+### UI-001 / UI-002 / UI-003 全项目复核（2026-11-14）
+
+逐项审计生产 TSX／TS 的 disabled、enabled、disabledStyle、disabled 类、busy / pending / saving / working / canCheck 派生链，并检查 macOS 原生 enabled 与目标动作。检查清单保存在 `target/test-reports/interaction-audit-bindings.txt`。发现并修复三项：
+
+1. 更新设置与更新浮层共用 `UpdateDetails` 的检查按钮仍以 `!canCheck` 将下载 working 映射为禁用灰显；改用 `interactionBlocked={working}`，保留能力不可用／就绪前置的 disabled 与当前检查的 busy。下载按钮也用统一互斥契约，自身 loading 不变。新增回归覆盖下载期间检查不能重复执行、不显示无关 loading、失败恢复后可以检查。
+2. 公共 `ThemeSlider` 新增的 onChangeEnd 拦截会吞掉已接受操作的完成事件。初次拖动用例没有命中滑块变化，不能作为缺陷复现；改用真实键盘焦点顺序 Tab × 4 → Right 后，修复前为 Calls:1 / Blocked:true / Ends:0，报告 `interaction-audit-before.xml`。修复为透传框架完成通知，保留新输入保护；已接受操作可在 onChange 获取锁后继续完成，防止提交／预览收尾遗漏。
+
+3. AppKit 无匹配选项时，原先以逐段取消 selected／selectItem(nil) 恢复空选择，真实目标动作补验得到 popup=0 / segments=1，而非 -1。分段控件改用 AppKit 明确的空选择索引 -1；弹出选择器除清空索引外，仅在有选项时调用 synchronizeTitleAndSelectedItem，避免空选中时被标题同步自动选回第一项。受控投影与被拒绝动作使用相同语义。该边界补验两轮完整运行均为 10 通过／1 失败（第二轮仅 popup 仍为 0），不计为通过；修复后重新运行完整原生套件。
+
+其余生产绑定未发现同类遗漏：设置／主题／背景／诊断／标题栏采用临时锁；历史导航、账号入口、无图片与未接入能力属于真实业务不可用；导出及文件／目录操作只展示自身加载。窄菜单更新入口是当前任务自身的状态指示，仍按既定范围保留。另复核公共按钮拒绝／卸载／恢复、选择器打开期间事件保护、AppKit 受控选中索引更新；AppKit 原生用例补充业务 disabled 下直接目标动作不得发事件、无匹配选择项时拒绝选择后恢复为空。
+
+验证：`nsh check` 与 `git diff --check` 通过；完整 UI 47 项、state-ui 45 项、脚本 141 项通过；macOS 原生完整 11 项通过。新增两项同时进入已有 UI / e2e-macos 入口。报告为 `ui.json`、`state-ui.json`、`interaction-audit-ui.log`、`interaction-audit-state-ui.log`、`interaction-audit-scripts.log`、`interaction-audit-native.xml`。AppKit 边界修复后重新运行 `cargo test --locked --workspace`，241 项通过，日志 `interaction-audit-cargo.log`。
+
+原生 NSH / AppKit 锁定与解除、实际设置内容区对照仍为 0 像素变化，真实不可用仍产生灰显差异，结果为 `interaction-audit-native-screenshots/pixel-comparison.json`。新增更新用例保留 `update-check-before.png` 与 `update-check-downloading.png`，已人工查看：当前下载按钮显示加载，检查按钮保持正常对比度；检查按钮会随进度条插入发生正常布局下移，该项是人工视觉核对，未宣称整页像素相同。平台、屏幕阅读器和 AppKit 物理菜单旅程的原有未测边界保持不变。解决方案补充到交互设计，缺陷分别记录在根目录 bug-history.md UI-001 / UI-002 / UI-003。
+
+### UI-004 用户反馈后的响应式属性转发修复（2026-11-14）
+
+用户明确反馈“切换一次 Switch，再点击无法切回，窗口仍可操作”。新建完整 App 的 Gallery 同页连续四次切换回归，修复前第二次等待 bottom-status-bar 显示超时；加入 300ms 等待仍失败，排除仅因点击过快。有效失败证据为 `target/test-reports/statusbar-repro-headless.xml` 与 `statusbar-delay-diagnostic.xml`。最初诊断曾使用错误的 waitFor 状态名 visible，导致参数错误，该次不作为缺陷复现；改为 shown 后得到上述有效失败。
+
+根因：UI-001 新增 ValueControls 的对象 rest 解构将 TSX getter 求值为普通属性，底层 Switch 的 checked 停在首次挂载值，后续点击重复提交同一个值；样式层仍读取实时 props，使视觉与底层事件状态分离。相同快照转发存在于 Slider、Select 和 AsyncButton。NSH 0.5.0 的 spread / merge 会保留并跟踪 getter，问题由应用适配提前将 getter 丢失引入。此前固定值公共夹具只检查调用次数，状态栏原测试又在两次切换之间导航重挂载，因此测试通过没有覆盖这个回归；之前的“未发现遗漏”不能替代本次用户场景验收。
+
+修复：新增 `ui/components/forwardProps.ts`，复制属性描述符并删除适配专用字段，全部四处转发复用；不靠等待、重挂载、修改 NSH 内部或放宽业务锁修复。临时交互锁、加载反馈、完成事件及 AppKit 保护保持原契约。公共回归使用真正受控值，在同挂载实例连续切换 Switch、连续步进 Slider、往返选择 Select、改变按钮无障碍标签。新 `statusbar.test.tsx` 通过实际 App 导航进入 Gallery，同页连续关／开／关／开状态栏并检查恢复可用与后续导航；原生脚本复制真实 App.tsx 为 ProductionApp.tsx，不再以独立 SettingsPage 代替 Shell。两项新增回归接入现有 ui 与 e2e-macos，filter 仅用于诊断，不计完整验收。
+
+验证：`nsh check` 与 `git diff --check` 通过；完整 `python3 scripts/test.py ui` 49 项、state-ui 45 项、脚本 141 项通过，日志 `statusbar-ui.log`、`statusbar-state-ui.log`、`statusbar-scripts.log` 及对应 suite JSON。本轮未修改 Rust，沿用上一轮 241 项工作区结果，不重复计数。专项 `statusbar-fixed-headless.xml` 1 项与 `reactive-controls-headless.xml` 3 项通过。
+
+完整 `python3 scripts/native_button_acceptance.py --junit target/test-reports/statusbar-fixed-native.xml`：13 项通过、0 失败／跳过，包含真实完整 App 连续四次 Gallery 切换、公共受控值和此前所有异步／取消／AppKit 用例；`statusbar-fixed-native-screenshots/pixel-comparison.json` 中 NSH／AppKit 锁定、解除及设置内容区仍为 0 像素变化，真实不可用差异仍保留。`docs/interaction-design.md` 补充 props getter 保留规则，bug-history.md 记录 UI-004 及漏测原因。原有跨平台／屏幕阅读器未验收边界不变。
 
 <a id="routing"></a>
 
@@ -1757,11 +1899,11 @@ N1 至 N4 构成首个可用的应用内通知交付。实施时同步架构、�
 
 | 编号 | 状态 | 任务与验收 |
 | --- | --- | --- |
-| 03.01 | 已完成 | 首个 Rust Settings Store 通过类型化命令返回带 revision 的快照，TSX 外观投影由页面共用。主页与设置页切换时共享外观，主页计数保留。见 [设置仓库](../src/settings.rs)、[NSH 桥接](../src/settings_bridge.rs)和 [TSX 投影](../ui/state/appearance.ts)。 |
+| 03.01 | 已完成 | 首个 Rust Settings Store 通过类型化命令返回带 revision 的快照，TSX 外观投影由页面共用。主页与设置页切换时共享外观，主页计数保留。见 [设置仓库](../src/state/settings/model.rs)、[NSH 桥接](../src/settings_bridge.rs)和 [TSX 投影](../ui/state/app.ts)。 |
 | 03.02 | 部分完成 | 已按数据目录共享原生设置仓库，当前设置视图通过版本订阅及显式读取获取快照。[通用状态管理方案](state-management.md)已记录独立 `usher-state` crate、可替换后端、NSH 适配及全部跨页面共享数据迁移计划；03.08 核心、03.09 设置接入与 03.10 JS 订阅已完成；其余迁移由 03.11 至 03.13 跟踪。导航、分类与共享预览也迁移到新模块，作用域仍属当前窗口。 |
 | 03.03 | 部分完成 | 已用带版本的 TOML 保存外观、语言、侧栏和状态栏偏好，支持原子替换、旧值迁移、损坏备份、未来 schema 保护和失败重试。待加入合并写入 Worker、退出与移动后台限时刷盘，以及其他平台路径、托盘、更新和日志偏好。 |
-| 03.04 | 已完成 | 支持 Light、Dark、System、独立强调色和样式主题。所有主题使用同一种 JSON，由 Rust 注册表合并 `extends` 链并替换 `var()` 引用，界面只按 token 名读取，不含按主题 ID 的分支。内置主题在构建时从 [主题目录](../ui/theme)发现，包含 Default、Apple 玻璃、NSH Gallery、Primer、Geist、Slate 和 Radix Sand。见 [主题注册表](../src/style_themes.rs)、[token 投影](../ui/theme/index.ts)和[样式用例](../tests/ui/style-themes.test.tsx)。 |
-| 03.05 | 已完成 | 支持本地 JSON 主题发现、继承任一已注册主题、扫描诊断（含基础主题缺失、成环和引用无效）、编辑或复制和选择恢复。IBM Carbon 已作为开发版外部文件在 macOS 验证浅色与深色。当前主题定义保存在 `themes/` 的 JSON，TOML 保存选择并兼容迁移旧内嵌主题。两者分别写入，由设置 Store 管理提交顺序和失败重试。见[主题加载器](../src/style_themes.rs)和[本地主题说明](../README.zh.md#样式主题)。 |
+| 03.04 | 已完成 | 支持 Light、Dark、System、独立强调色和样式主题。所有主题使用同一种 JSON，由 Rust 注册表合并 `extends` 链并替换 `var()` 引用，界面只按 token 名读取，不含按主题 ID 的分支。内置主题在构建时从 [主题目录](../ui/theme)发现，包含 Default、Apple 玻璃、NSH Gallery、Primer、Geist、Slate 和 Radix Sand。见 [主题注册表](../src/state/appearance/theme.rs)、[token 投影](../ui/theme/index.ts)和[样式用例](../tests/ui/style-themes.test.tsx)。 |
+| 03.05 | 已完成 | 支持本地 JSON 主题发现、继承任一已注册主题、扫描诊断（含基础主题缺失、成环和引用无效）、编辑或复制和选择恢复。IBM Carbon 已作为开发版外部文件在 macOS 验证浅色与深色。当前主题定义保存在 `themes/` 的 JSON，TOML 保存选择并兼容迁移旧内嵌主题。两者分别写入，由设置 Store 管理提交顺序和失败重试。见[主题加载器](../src/state/appearance/theme.rs)和[本地主题说明](../README.zh.md#样式主题)。 |
 | 03.06 | 部分完成 | TSX 已支持 `zh-Hans`、`en`、系统语言匹配与回退，切换后页面即时更新。待补 TSX/Rust 共用的参数契约、原生菜单和托盘文案、独立格式地区、日期时间与复数规则，以及长文案和系统字号验收。见[文案目录](../i18n/messages)和[翻译入口](../ui/i18n/index.ts)。 |
 | 03.07 | 部分完成 | 接入 NSH 官方 Gallery UI 作为可选主题 `builtin.nsh-gallery`：快照固定到上游提交，映射见 [sources/nsh-gallery.json](../ui/theme/sources/nsh-gallery.json)，用 [同步脚本](../scripts/sync-gallery-theme.py)更新，署名见 [NOTICE](../NOTICE)。已带入颜色、圆角、阴影和控件度量（按钮 28、输入框 32、聚焦光晕 3、按压 97%、悬停叠色 5%），每项度量记录上游来源。主题不再只换颜色：度量由 `cssVars.shared` 提供，`ui/theme/look.ts` 统一读取，视图不含写死的尺寸。Slate、Primer、Radix Sand 按各自官方源码给出尺寸，Geist 未公开尺寸故沿用根主题。Rust 单测覆盖度量校验、共享 token、强调色重算和各体系尺寸差异，NSH 用例 `control-metrics` 在布局层断言同一按钮在不同主题下的高度。后续已补：按钮、输入框、卡片的表面质感（`finish-*` token：填充、渐变、描边、多层阴影）和触屏尺寸表（`cssVars.touch`，按 `platform.desktop` 选用），聚焦环改为由注册表推导的 `focus-ring`。2026-11-12 已在 macOS 真机对照官网 Gallery 的按钮和输入框，质感接近；Gallery 的 `finishes` 渐变起止同色，视觉差异来自内高光阴影和描边。未做：Gallery 的组件结构（标签条、分段控件、分体按钮、菜单、面板）。聚焦环在屏幕上的实际对比度未达 3:1，见 [07.05](#evidence-scaffolding-12-批次-07--测试体系与性能基线--部分完成)。 |
 
@@ -1903,7 +2045,7 @@ N1 至 N4 构成首个可用的应用内通知交付。实施时同步架构、�
 | 07.02 | 部分完成 | 已交付设置、窗口 / 路由、更新应用集成及隔离 / 离线夹具，覆盖动作到快照、设置落盘、更新执行交接；CI 已接入。五端原生烟测、实际更新 / 导出产物旅程及签名验收仍待对应批次。 |
 | 07.03 | 待办 | 在 `benches/` 建立微基准，测量派发、快照投影、列表转换和日志格式化，固定输入并保存结果。 |
 | 07.04 | 待办 | 在 `tests/performance/` 建立发布宿主性能作业，测冷启动、交互、帧时间、CPU、峰值内存、托盘长驻与恢复、移动前后台及资源释放。在同规格 runner 上保存原始样本、P50/P95 和平台基线，再定义回归门禁。 |
-| 07.05 | 待办 | 聚焦环在屏幕上的实际对比度。注册表按主题自己的前景色与背景色推导 `focus-ring`（[derive_focus_ring](../src/style_themes.rs)），Rust 单测 `every_bundled_focus_ring_reaches_three_to_one_on_every_surface` 保证该 token 对 background、card、panel 三种表面不低于 3:1，推导时另外参考 sidebar 与 menu-surface。这只保证 token，不保证屏幕。2026-11-12 在 macOS 真机（NSH 0.5.0）对 Default、NSH Gallery、Primer、Slate 的浅色和深色做 Tab 前后截图差分，取变化像素作为环，实测对比度：按 Default、Gallery、Primer、Slate 的顺序，浅色 3.86、3.85、2.70、4.23，深色 2.76、2.61、2.13、2.83。深色四项和 Primer 浅色低于 3:1；Apple Glass、Geist、Radix Sand 未截图。已知现象：屏幕上的环比 token 暗，三通道按近似同一比例缩小：Default 浅色 0.92，Default 深色 0.90，Primer 深色约 0.90，Gallery 深色约 0.86，各样本不一致，不是固定倍数。例：Default 深色 token `#707070`，屏幕 `#656565`。变暗在浅色底上会抬高对比度，在深色底上会压低对比度，所以浅色大多达标而深色全部不达标。来源未查明，可能是颜色空间转换，也可能是 outline 的混合方式。不确定之处：对比度的参照色取的是 Tab 前同一位置的像素，outline 落在控件边缘时它可能是控件自己的边色而不是页面表面（Primer 浅色取到 `#ccd3db`，深色取到 `#2b2f35`，都不在已检查的表面里），所以 Primer 两项的数值可能偏低，需要用页面和卡片的真实颜色复核。另有一处观察：各控件聚焦偏移不统一，列表项使用负偏移，按钮不是。待办：1. 用已知 `outlineColor` 的纯色方块在浅色、深色底上截图，建立设定色到屏幕色的映射，确认压暗的原因。2. 按映射反推推导公式，并把验收改为对显示色断言：截图差分用例固定在 `tests/ui/`，覆盖七个内置主题的浅色和深色，参照色取页面、卡片、面板的真实像素。3. 统一聚焦偏移。4. 在 Windows 和 Linux 宿主复核同一映射，不假设与 macOS 相同。 |
+| 07.05 | 待办 | 聚焦环在屏幕上的实际对比度。注册表按主题自己的前景色与背景色推导 `focus-ring`（[derive_focus_ring](../src/state/appearance/theme.rs)），Rust 单测 `every_bundled_focus_ring_reaches_three_to_one_on_every_surface` 保证该 token 对 background、card、panel 三种表面不低于 3:1，推导时另外参考 sidebar 与 menu-surface。这只保证 token，不保证屏幕。2026-11-12 在 macOS 真机（NSH 0.5.0）对 Default、NSH Gallery、Primer、Slate 的浅色和深色做 Tab 前后截图差分，取变化像素作为环，实测对比度：按 Default、Gallery、Primer、Slate 的顺序，浅色 3.86、3.85、2.70、4.23，深色 2.76、2.61、2.13、2.83。深色四项和 Primer 浅色低于 3:1；Apple Glass、Geist、Radix Sand 未截图。已知现象：屏幕上的环比 token 暗，三通道按近似同一比例缩小：Default 浅色 0.92，Default 深色 0.90，Primer 深色约 0.90，Gallery 深色约 0.86，各样本不一致，不是固定倍数。例：Default 深色 token `#707070`，屏幕 `#656565`。变暗在浅色底上会抬高对比度，在深色底上会压低对比度，所以浅色大多达标而深色全部不达标。来源未查明，可能是颜色空间转换，也可能是 outline 的混合方式。不确定之处：对比度的参照色取的是 Tab 前同一位置的像素，outline 落在控件边缘时它可能是控件自己的边色而不是页面表面（Primer 浅色取到 `#ccd3db`，深色取到 `#2b2f35`，都不在已检查的表面里），所以 Primer 两项的数值可能偏低，需要用页面和卡片的真实颜色复核。另有一处观察：各控件聚焦偏移不统一，列表项使用负偏移，按钮不是。待办：1. 用已知 `outlineColor` 的纯色方块在浅色、深色底上截图，建立设定色到屏幕色的映射，确认压暗的原因。2. 按映射反推推导公式，并把验收改为对显示色断言：截图差分用例固定在 `tests/ui/`，覆盖七个内置主题的浅色和深色，参照色取页面、卡片、面板的真实像素。3. 统一聚焦偏移。4. 在 Windows 和 Linux 宿主复核同一映射，不假设与 macOS 相同。 |
 | 07.06 | 已完成 | UT1：状态两后端契约保留，RT1 新增独立路由参考 / matchit 同契约、固定 seed 属性、生成器拒绝及历史溢出测试。router 无默认 feature 9 项、matchit 14 项通过，state 20 / 35 项通过；共用测试支持 6 项，脚本 96 项通过。命令与 CI 已接入，远端 CI 未运行。 |
 | 07.07 | 部分完成 | UT2：设置 11 项、窗口 / 路由 8 项、更新 15 项应用集成，TS 投影、真实订阅 / 路由桥接、可控守卫门面、生成新鲜度检查及命令 / CI 已交付。RouterView 重试 / 返回错误注入已通过；统一跨语言 DTO fixture 目录仍待补齐，真实桥接另行验证生产 DTO。 |
 | 07.08 | 部分完成 | TE1：无头及 macOS 原生隔离数据目录、真实窗口 / HMR、清理、JUnit / JSON 已交付；e2e 支持 headless 和 macos。原生命令已配置手动专用图形 runner 作业，远端未运行；跨进程重启和其他平台仍待验收。 |

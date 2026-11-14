@@ -1,10 +1,10 @@
 /** Draws a themed progress ring through the public Canvas API, respecting reduced motion. */
 import { Canvas, reduceMotion } from "nsh";
-import type { AppearanceStore } from "../state/appearance";
+import type { ThemeAccessor } from "../theme/index";
 
 /** A null progress denotes indeterminate work; numeric progress is a fraction from zero to one. */
 export function ProgressRing(props: {
-  palette: AppearanceStore["palette"];
+  palette: ThemeAccessor;
   size: number;
   progress: number | null;
   label?: string;

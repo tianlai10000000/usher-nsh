@@ -2,8 +2,8 @@
 import { mount, signal, Text, View } from "nsh";
 import { Button } from "nsh/base";
 import { Settings, SettingsState } from "usher/nsh";
-import { createAppearanceStore } from "../../../ui/state/appearance";
-import { SettingsProvider, useSettingsStore } from "../../../ui/state/app";
+import { createAppState } from "../../../ui/state/app";
+import { SettingsProvider, useSettingsStore } from "../../../ui/state/settings/store";
 
 function Borrower() {
   const settings = useSettingsStore();
@@ -12,7 +12,7 @@ function Borrower() {
 }
 
 function Preview() {
-  const appearance = createAppearanceStore();
+  const appearance = createAppState();
   const show = signal(true);
   const deliveries = signal(0);
   const observed = signal("waiting");
@@ -34,10 +34,10 @@ function Preview() {
     await Settings.setColorMode(mode);
     foreignDone.set(mode);
   }
-  return <SettingsProvider value={appearance.state}>
+  return <SettingsProvider value={appearance.settings.view}>
     <View>
-      <Text>{`Primary: ${appearance.mode()}`}</Text>
-      <Text>{`Sync: ${appearance.state.status()}`}</Text>
+      <Text>{`Primary: ${appearance.appearance.mode()}`}</Text>
+      <Text>{`Sync: ${appearance.settings.view.status()}`}</Text>
       <Borrower />
       <Text>{`Observed: ${observed()}`}</Text>
       <Text>{`Deliveries: ${deliveries()}`}</Text>

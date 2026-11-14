@@ -4,25 +4,25 @@ import { Settings } from "usher/nsh";
 import { ThemeButton } from "../../../ui/components/ThemeControls";
 import { SettingsPage } from "../../../ui/features/settings/SettingsPage";
 import { Frame } from "../../../ui/layout/Frame";
-import { createRouter } from "../../../ui/router";
-import { createAppearanceStore } from "../../../ui/state/appearance";
+import { createRouter } from "../../../ui/router/index";
+import { createAppState } from "../../../ui/state/app";
 import { spacing } from "../../../ui/theme/look";
 import fixture from "../../fixtures/background.json";
 
 function BackgroundPreview() {
-  const appearance = createAppearanceStore();
+  const appearance = createAppState();
   const navigation = createRouter();
   navigation.navigate("settings");
   async function load() {
     const bytes = await (await fetch(fixture.dataUrl)).bytes();
     await Settings.importBackgroundImage("preview.png", bytes);
-    await appearance.choose("light");
+    await appearance.appearance.choose("light");
   }
   return (
     <Frame appearance={appearance} navigation={navigation}>
-      <View style={spacing(appearance.palette).stack}>
-        <ThemeButton palette={appearance.palette} label="Load preview image" testID="load-preview-image"
-          disabled={appearance.busy()} onPress={() => void load()} />
+      <View style={spacing(appearance.appearance.palette).stack}>
+        <ThemeButton palette={appearance.appearance.palette} label="Load preview image" testID="load-preview-image"
+          disabled={appearance.settings.busy()} onPress={() => void load()} />
         <SettingsPage appearance={appearance} />
       </View>
     </Frame>

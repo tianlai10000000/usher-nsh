@@ -1,5 +1,5 @@
 /** Controlled transport replies and a runtime-free reactive adapter for projection contracts. */
-import type { Dispose, Envelope, Observer, ReactiveAdapter, StateTransport } from "../../contracts";
+import type { Dispose, Envelope, Observer, ReactiveAdapter, StateTransport } from "../../../state-runtime/contracts";
 
 export interface Data { count: number; revision: number; saved: boolean; nested: { label: string } }
 export const initial = (): Data => ({ count: 0, revision: 0, saved: true, nested: { label: "initial" } });

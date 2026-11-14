@@ -2,17 +2,17 @@
 import { mount, signal, Text, View } from "nsh";
 import { Button } from "nsh/base";
 import { Frame } from "../../../ui/layout/Frame";
-import { createRouter, RouterProvider } from "../../../ui/router";
-import { createAppearanceStore } from "../../../ui/state/appearance";
-import { createWindowState } from "../../../ui/state/window";
-import { SettingsProvider } from "../../../ui/state/app";
-import { createUpdates } from "../../../ui/features/updates";
+import { createRouter, RouterProvider } from "../../../ui/router/index";
+import { createAppState } from "../../../ui/state/app";
+import { createWindowState } from "../../../ui/state/window/index";
+import { SettingsProvider } from "../../../ui/state/settings/store";
+import { createUpdates } from "../../../ui/features/updates/index";
 import { SettingsPage } from "../../../ui/features/settings/SettingsPage";
-import type { Native } from "../../../ui/features/updates/contracts";
+import type { Native } from "../../../ui/state/updates/contracts";
 
 function Probe() {
   const window = createWindowState();
-  const appearance = createAppearanceStore(window.session);
+  const appearance = createAppState(window);
   const navigation = createRouter(window.routing);
   const scenario = signal("shell");
   const calls = signal(0);
@@ -75,7 +75,7 @@ function Probe() {
   };
   const updates = createUpdates(appearance, updater);
   return (
-    <SettingsProvider value={appearance.state}>
+    <SettingsProvider value={appearance.settings.view}>
       <RouterProvider value={navigation}>
         <Frame
           appearance={appearance}

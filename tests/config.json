@@ -130,7 +130,7 @@
             "updates_backend_contract_",
             "updates_publication_failure_",
             "updates_concurrent_",
-            "updates_registry_"
+            "updates_scope_"
           ]
         },
         {
@@ -163,10 +163,14 @@
           ],
           "test_paths": [
             "ui/state/__tests__",
-            "ui/features/updates/__tests__"
+            "ui/state/updates/__tests__"
           ],
           "timeout_seconds": 120,
           "required_test_prefixes": [
+            "snapshot decode",
+            "business modules",
+            "appearance host waits",
+            "appearance host exposes",
             "state sequence",
             "state callbacks",
             "state disposal",
@@ -451,7 +455,13 @@
             "immediate promise actions do not show loading or change control implementation",
             "settings show loading for scan and export but not immediate appearance changes",
             "async background picker loading survives a section change and clears when picking is cancelled",
-            "async install buttons remain busy after command submission and recover from a failed installation"
+            "async install buttons remain busy after command submission and recover from a failed installation",
+            "shared interaction locks preserve appearance and reject pointer and keyboard changes",
+            "native AppKit locks preserve enabled appearance and restore rejected selections",
+            "shared slider completes an accepted gesture when its change acquires a lock",
+            "shared controls retain reactive values and accessibility labels across repeated input",
+            "status bar remains responsive across repeated Gallery toggles in the full application",
+            "update download locks checking without starting unrelated loading and restores it after failure"
           ]
         },
         {
@@ -501,7 +511,7 @@
           ],
           "timeout_seconds": 120,
           "required_test_prefixes": [
-            "update_service::tests::"
+            "state::updates::tests::"
           ]
         },
         {
@@ -520,7 +530,7 @@
             "updates_backend_contract_",
             "updates_publication_failure_",
             "updates_concurrent_",
-            "updates_registry_"
+            "updates_scope_"
           ]
         }
       ]

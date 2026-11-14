@@ -7,10 +7,12 @@
  * save happens behind it.
  */
 import { cleanup, effect, LayoutAnimation, platform, reduceMotion, signal, windowSize } from "nsh";
-import type { AppearanceStore } from "../../state/appearance";
+import type { AppState } from "../../state/app";
 
-export function createMenuPresence(appearance: AppearanceStore) {
-  const { palette, setSidebarDocked, sidebarDocked } = appearance;
+export function createMenuPresence(appearance: AppState) {
+  const palette = appearance.appearance.palette;
+  const setSidebarDocked = appearance.preferences.setSidebarDocked;
+  const sidebarDocked = appearance.preferences.sidebarDocked;
   const wide = () => platform.desktop && windowSize().width >= palette().metric.wideBreakpoint;
   const slideMs = () => (reduceMotion() ? 0 : palette().metric.layoutMs);
 

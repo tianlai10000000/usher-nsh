@@ -4,7 +4,8 @@ import { ThemeButton } from "../../components/ThemeControls";
 import { headingLook, spacing } from "../../theme/look";
 import type { PageProps } from "../contracts";
 export function NotFoundPage(props: PageProps) {
-  const { palette, t } = props.appearance;
+  const palette = props.appearance.appearance.palette;
+  const t = props.appearance.preferences.t;
   return <View testID="route-not-found" style={spacing(palette).stack}>
     <Text style={headingLook(palette, "display")}>{t("router.notFound")}</Text>
     <Text style={{ color: palette().text }}>{props.navigation.current().location.path}</Text>

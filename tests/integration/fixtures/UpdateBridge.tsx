@@ -2,7 +2,7 @@
 import { mount, signal, Text, View } from "nsh";
 import { Button } from "nsh/base";
 import { UpdateState } from "usher/nsh";
-import { onDispose } from "../../../ui/state/runtime/nsh";
+import { onDispose } from "../../../ui/state-runtime/nsh";
 
 function Probe() {
   const status = signal("idle");
