@@ -4,7 +4,7 @@
 
 快捷键规则独立为 `crates/usher-shortcuts/`。该 crate 只管理通用绑定集合、不透明作用域及冲突、注册计划、初始化状态和过期回执校验；NSH 负责按键识别、平台修饰键、输入法处理、菜单标签和系统注册。具体业务动作继续由 Router、设置及各 Feature 执行。
 
-本文描述目标架构，当前应用仅在 `ui/layout/components/Navigation.tsx` 使用 `keymap.bind` 注册历史快捷键；独立 crate 和下述应用适配尚未实现。实施授权、批次和验收证据统一见 [todo.md](todo.md#shortcuts)。本轮范围为设计，不新增产品键位或改变界面。
+本文区分当前本地输入实现与系统全局接入目标。核心 crate 无依赖，应用 `src/shortcuts/` 拥有目录、窗口服务、声明缓存及版本化健康状态，`ui/shortcuts/` 持有 NSH keymap 句柄并分发业务命令。HistoryControls 仅显示导航控件；RouterView 按 entryKey 借用页面租约。状态栏读取独立投影，显隐不改变注册。生产目录包括导航和两个全局业务键位；页面机制使用隔离测试宿主验收，不向业务页面添加测试键。Global 已通过 NSH GlobalShortcut 接入进程协调器，默认配置打开设置与切换浅深色；只有系统接受回执才显示已注册。批次和验收证据统一见 [todo.md](todo.md#shortcuts)。
 
 应用层区分三类绑定（这些业务类别不进入核心 crate 的作用域枚举）：
 
@@ -14,7 +14,7 @@
 | Application | 窗口创建并取得真实身份后 | 当前窗口内跨页面有效 | `keymap` / 窗口服务 |
 | Page | 首次进入页面时懒加载，处理器就绪后注册 | 当前路由实例激活时有效 | `keymap` / 窗口服务中的页面租约 |
 
-Application 不等于系统 Global。编辑控件的复制、粘贴、光标移动、Tab 遍历和浮层 Escape 继续由 NSH 控件负责；不建立覆盖整棵组件树的第二套键盘系统。首期只迁移已有历史绑定，不默认注册新的系统全局键。多段按键序列、录制改键界面与持久化覆盖不在首期范围。
+Application 不等于系统 Global。编辑控件的复制、粘贴、光标移动、Tab 遍历和浮层 Escape 继续由 NSH 控件负责；不建立覆盖整棵组件树的第二套键盘系统。产品默认全局键位见第 10 节；其余动作不自动占用系统键位。多段按键序列、录制改键界面与持久化覆盖不在首期范围。
 
 ## 2. 已核查能力与参考来源
 
@@ -43,35 +43,40 @@ crates/usher-shortcuts/src/
   lib.rs          Public contracts and exports
   model.rs        IDs, canonical keys, scopes and policies
   registry.rs     Catalog validation and conflicts
-  plan.rs         Desired bindings and registration differences
-  lifecycle.rs    Registration states, effects and receipts
-  error.rs        Stable error categories
+  lifecycle.rs    Registration differences, states, effects and receipts
+  # Catalog planning lives in registry.rs; error categories live in model.rs.
 src/shortcuts/
   mod.rs                    Unified application facade and assembly
   catalog.rs                Lightweight index and loaded catalog validation
   loader.rs                 On-demand module loading and versioned cache
-  service.rs                Serialized transitions and state publication
-  context.rs                Business scopes, availability and owner mapping
+  service.rs                Window/page availability, transitions and state publication
+  global.rs                 Process coordinator, VM leases and confirmed registration health
+  global_bridge.rs          Process transport and VM teardown fencing
   modules/
     mod.rs                  Explicit module registration
     navigation.rs           Navigation bindings and Router command mapping
+    window.rs               Main-window settings intent
+    appearance.rs           Application light/dark intent
   adapters/
     mod.rs                  Backend assembly
     nsh.rs                  NSH normalization and capability mapping
   bridge.rs                 Typed bridge DTOs and commands
 ui/shortcuts/
   index.ts                  Unified UI facade
-  runtime/nsh.ts            keymap/GlobalShortcut ownership and cleanup
+  runtime/nsh.ts            Local keymap ownership and cleanup
+  runtime/global.ts         VM-lifetime global executor and projection
+  global-controller.ts      Serial promises, receipts and late-result cleanup
   transport.ts              Typed bridge adaptation
   status.ts                 Read-only health projection and public actions
   modules/
     navigation.ts           Navigation UI integration when required
 ui/config/shortcuts/
-  runtime.json              Registration and retry policies
+  index.json                Lightweight module identities and loading categories
+  runtime.json              Registration and retry policies (host integration)
   navigation.json           Navigation binding declarations
 ```
 
-以上为目标目录，源文件头和公共接口文档使用英文。核心不依赖 NSH、`usher-state`、Router、日志后端、平台窗口或文件系统；应用服务组合 `usher-shortcuts` 与 `usher-state`，桥接处理 DTO，TS 运行时封装 NSH。首期不引入额外热键依赖。后端替换时复用同一套注册与回执契约测试。
+上述目录由当前本地与全局宿主实现使用；业务模块仅管理动作映射，通用核心不依赖 NSH、usher-state、Router、设置、平台窗口或 I/O。应用服务组合 usher-shortcuts 与 usher-state；后端继续使用 NSH，不新增生产热键库。测试中的 Carbon 独占探针仅作为独立 OS 注册验收工具，不进入产品代码。
 
 `ui/config/shortcuts/` 为分模块应用命令元数据、默认键位和运行策略的单一来源；应用 `catalog.rs` 通过构建/桥接汇总校验，TS 不保留另一张默认表。业务命令处理器在各模块装配处穷尽绑定；启动只检查 Global/Application 模块及轻量索引，页面模块在按需加载后、注册前检查未知命令、缺失处理器及模块版本不一致。核心只识别不透明 BindingId，应用持有 BindingId 到业务 CommandId 的映射；核心不接收业务命令或页面枚举。未来用户覆盖交给统一设置持久化协调器，不由本 crate 写文件。
 
@@ -87,7 +92,7 @@ ui/config/shortcuts/
 
 业务快捷键统一归应用层 `src/shortcuts/` 管理，不放入 `usher-shortcuts`，也不散落在 `src/state/`、Router 实现或页面组件中。该目录使用 `usher-state` 发布快照，但状态库不决定业务模块的目录归属。TS 接入统一归 `ui/shortcuts/`，业务配置统一归 `ui/config/shortcuts/`，三者按相同业务模块命名。
 
-`modules/navigation.rs` 管理导航命令映射、可执行条件和作用域声明，调用既有 Router。后续实际接入窗口、设置等业务时分别增加 `modules/window.rs`、`modules/settings.rs` 和对应配置；无实际动作时不创建空模块。系统 Global 是注册通道，不是业务模块：某个业务模块可以声明全局或本地绑定，注册机制由共享 service/adapters 执行。
+`modules/navigation.rs` 管理导航命令映射、可执行条件和作用域声明，调用既有 Router。`modules/window.rs` 与 `modules/appearance.rs` 分别管理全局设置入口和浅深色意图；TS main-window 适配连接 Router 与设置动作，配置按相同业务模块组织。系统 Global 是注册通道，不是业务模块：某个业务模块可以声明全局或本地绑定，注册机制由共享 service/adapters 执行。
 
 `catalog.rs` 管理轻量模块索引和已加载声明，验证跨模块冲突、缺失处理器和版本；`modules/mod.rs` 显式登记模块描述及加载入口，不在启动时调用全部页面工厂。`loader.rs` 负责按需加载与版本缓存，避免一个大文件包含全部业务分支。每个模块负责自己的命令到既有业务服务的映射，不能复制业务状态。模块之间不直接调用，由统一门面和原有业务服务协作。
 
@@ -97,7 +102,7 @@ ui/config/shortcuts/
 
 ## 4. 公共契约
 
-接口名称是实施约束草案，落地时以编译及契约测试确定签名。
+下表以已实现的通用公开接口为准。业务模块版本、命令解析和后端能力校验属于应用接口。
 
 | 类型 / 操作 | 语义 |
 | --- | --- |
@@ -106,13 +111,17 @@ ui/config/shortcuts/
 | `BindingSpec` | 绑定 ID、标准键、ScopeId、输入通道、编辑/长按/透传策略及必需性；不含业务命令 |
 | `ScopeRelations` | 调用方声明的重叠关系，不认识页面或路由树 |
 | `OwnerToken` | 不透明资源拥有者身份与代次；应用负责映射窗口及页面生命周期 |
-| `Catalog::validate` | 验证绑定/作用域 ID、能力和重叠关系；业务命令与处理器由应用校验 |
-| `reconcile(context)` | 根据外部提供的能力、激活集合和 enabled 值生成计划；不读取业务状态或调用系统 API |
-| `apply(event)` | 纯状态转换，返回注册/释放/等待重试效果及新快照 |
-| `RegistrationTicket` | owner、catalogRevision、generation、binding ID；每次副作用带回相同票据 |
-| `RegistrationReceipt` | Installed / Rejected / Failed / Released；失败保留稳定错误分类 |
-| `ShortcutSnapshot` | 各输入通道、各绑定状态、阶段、错误分类与可重试性；不含业务展示元数据 |
-| `Trigger` | 绑定身份与代次；只表达一次输入，不通过状态订阅广播执行 |
+| `Catalog::new` | 验证绑定/作用域 ID、能力和重叠关系；业务命令与处理器由应用校验 |
+| `Catalog::plan` | 根据外部提供的能力、激活集合和 enabled 值生成计划；不读取业务状态或调用系统 API |
+| `Runtime::reconcile / acknowledge / retry / dispose` | 校验完整目标计划，返回 Install/Release 效果；宿主按自身时钟显式调用有预算的 retry，不在核心内调度 |
+| `Ticket` | 私有递增序号及 DesiredBinding（owner、revision、绑定）；回执与输入返回原票据 |
+| `Receipt` | Installed / InstallFailed / Released / ReleaseFailed；失败保存通用分类，释放失败仍保留资源所有权 |
+| `Runtime::snapshot` / `Snapshot` | 资源票据、状态、当前目标和尝试次数；应用聚合阶段和展示，不含业务元数据 |
+| `Runtime::accepts(&Ticket)` | 校验一次输入是否仍属当前已安装目标；应用在通过后执行业务，不通过快照广播动作 |
+
+`CanonicalStroke` 是适配器生成的标准文本，不在核心解析语法；NSH 适配使用 Keystroke::parse/reserved/Display。`ResourceKey` 用不透明 DomainId 区分后端资源碰撞域，应用决定全局及各窗口的域映射，不能借不同域绕过业务冲突校验。核心 Catalog 校验声明与作用域，Runtime 还会拒绝同一有效计划中同时占用相同资源的绑定。
+
+Runtime 由单个资源协调 owner 持有，调用方串行投递；完整计划 revision 单调，所有条目必须携带同一 revision。票据序号只在该 Runtime 内唯一，重建时调用方必须更换 OwnerToken，并完成旧资源释放后再接管。相同计划无重复效果，移除/替换立即使旧触发失效；未决安装不得因超时释放所有权，迟到成功先清理再安装后继。暂时失败按构造时传入的总尝试预算显式重试，Rejected/Unsupported 不自动重试；用户确认后可提交新修订重新注册。处置后仍须接收回执直到 is_disposed，释放失败可以继续 retry，不能丢弃 Runtime 宣称清理完成。
 
 后端只执行计划和报告回执；服务是共享注册状态唯一写入口。句柄和 JS 回调不进入快照，平台对象不跨线程传递。计时器由宿主拥有，核心只接收时钟事件；测试使用可控时钟，不实际等待。
 
@@ -233,4 +242,36 @@ usher-shortcuts 通用状态转换
 
 同时检查一次按键仅执行一次、不可用时不执行业务及原生消费边界；不能把单元测试 handler 返回值当作透传验收。全局测试使用隔离应用身份，测试配置选择键位，结束清理所有注册，避免污染用户键位。
 
-实施时新增 crate 契约使用 `cargo test --locked -p usher-shortcuts`，加入 workspace 后执行 `cargo test --locked --workspace`；TS 接入执行 `nsh check` 及既有 UI/真实宿主测试流程，新增测试进入 CI。上述 crate 命令在 crate 落地前不可用；实际命令、平台、结果与剩余缺口只写入 todo.md，不在本设计登记完成状态。
+crate 契约使用 `cargo test --locked -p usher-shortcuts`，工作区回归执行 `cargo test --locked --workspace`；TS 接入执行 `nsh check` 及既有 UI/真实宿主测试流程，新增测试进入 CI。统一报告命令为 `python3 scripts/test.py shortcuts`（核心）与 `python3 scripts/test.py shortcuts-app`（应用索引、所有已登记模块和 NSH 解析）；已纳入 CI，核心还进入既有七目标编译矩阵。实际命令、平台、结果与剩余缺口只写入 todo.md，不在本设计登记完成状态。
+
+## 9. 本地执行边界
+
+`ShortcutState.attach` 接受真实 Router opening 的 scope，返回独立快捷键 Store 身份。替换执行器会关闭旧服务；旧 scope 的回执或清理不能修改新服务。窗口关闭与 VM Local 清理由桥接收敛，TS 持有的每个 keymap 句柄独立解绑。注册调用成功仅表示 NSH 本地 API 已安装，不声称 OS 同步消费表已确认。
+
+`ModuleLoader` 在一个 VM 中共享不可变索引，每个 OS/模块成功声明缓存一次，锁内串行执行工厂合并并发请求；失败不缓存。索引版本被实例固定，重新装配新索引创建新缓存。工厂仅构造小型内嵌声明，不执行文件、网络或业务 I/O。页面使用 beginPage/finishPage 两步加载票据；finish 前再次核对当前 entry。卸载、重试及快速切页不接受旧票据。
+
+本地重试策略由 `ui/config/shortcuts/runtime.json` 提供：一次安装尝试，不安排自动计时重试；公开重试动作开启新的安装代次，释放失败必须继续持有旧资源直到释放回执成功。NSH VM 的 keymap 表位于根节点，同 VM 多窗口必须按当前焦点提交有效表，并在回调再次检查窗口拥有权。焦点或可用性变化到原生表更新之间仍可能消费一次旧键；回调会拒绝过期业务执行，不能承诺同步透传。
+
+`shortcuts-ui` 使用可控 transport/backend 验证控制器；`shortcuts-headless` 使用隔离 Rust fixture host 走真实桥接；`shortcuts-macos` 额外验证焦点切换和完整 VM reload。测试工厂只编译进 `tests/e2e/shortcuts/host`，配置与产品目录隔离。状态展示依赖消息目录和布局只读契约；未访问模块仅展示索引，详情不执行工厂。
+
+## 10. 启动全局快捷键与业务接入
+
+| 业务模块 | 默认全局键位 | 动作 |
+| --- | --- | --- |
+| window | Ctrl+Alt+Shift+S | 聚焦主窗口，通过其 Router 导航到设置；仍执行已有路由守卫 |
+| appearance | Ctrl+Alt+Shift+T | 通过设置事务切换本应用浅色／深色；System 从 effectiveScheme 推导下一状态，不更改操作系统主题 |
+
+macOS 的 Alt 对应 Option。这两个组合为项目默认值，定义在 ui/config/shortcuts/window.json 和 appearance.json，均由轻量索引登记。选择依据：Apple 的 [Command-Comma](https://support.apple.com/en-us/102650) 是当前前台应用设置入口；[VS Code 的主题选择](https://code.visualstudio.com/docs/reference/default-keybindings) 使用应用内组合序列；[Raycast](https://manual.raycast.com/keyboard-shortcuts) 为命令提供用户自定义全局热键。没有可直接照搬的统一全局设置／主题标准，因此不全局占用 Command-Comma，也不把应用内多段键当作系统热键。默认键仍可能被其他程序占用，失败状态不得误称已生效。
+
+NSH 全局 API 没有本地编辑判断、透传开关和重复事件标志。全局声明要求 editing=always、repeat=true、passThrough=false：接受后端发出的每次回调，不承诺过滤长按重复；其余策略在加载时拒绝。键位同时经 NSH 系统与本地解析器校验，统一标准文本用于 Global/Application/Page 冲突检测。
+
+GlobalService 属于进程，不按设置目录或窗口创建。每个 VM 通过 Local 租约申请执行权；其他 VM 仅订阅共享状态，不能执行注册或确认。单个 VM 的 TS 执行器不归任何组件拥有，原生订阅在渲染 owner 之外建立，状态栏和主窗口业务适配重挂载不重注册系统键。原生注册 Promise 串行结算，返回 true 才标为 registered；false 为拒绝，异常单独报告。安装未决时保留独占状态，显式重试排队，不将超时解释为取消。回执传输失败保留待确认结果及剩余效果，避免重复安装或遗漏后续键。
+
+业务分发仅交给存活的主窗口适配；路由和主题状态仍由原有模块写入。主窗口设置未同步或处于重挂载间隙时，每类动作最多暂存一个待执行意图；新处理器接管后消费，旧处理器清理不得撤销新处理器。全局注册健康只表示系统注册确认，业务失败仍由所属 Router/设置状态报告。
+
+VM 结束先撤销租约和旧票据。NSH 0.5 macOS Surface::stop 清空旧命令并释放其全局注册，替换 VM 可在该宿主契约下建立新代次；其他平台尚未确认 teardown 时，未决资源保留 recovering，拒绝盲目接管。正常 unregister 的公开确认强度为 API 接受命令，不是额外的 OS 释放回执；后续注册仍必须得到系统成功结果。窗口关闭只清理 Local，Global 随 VM/进程宿主释放。
+
+窗口状态与 Global 状态分别发布，UI 只组合只读投影：保留窗口原始阶段作为 window，startup 仅作为组合摘要，详情分别展示 window/global；全局失败／恢复参与启动摘要，但不禁用已可用的页面或窗口按键。无全局声明显示 notRequested，非桌面显示 unsupported。运行期改键界面、跨平台恢复确认和权限交互仍按独立批次推进。
+
+
+状态栏默认入口采用组件库小号 ghost Button，显示键盘图标与一行启动摘要；页面状态移入 Tooltip 和 Popover 详情，避免未配置页面占用底栏。异常状态使用警示图标与本地化检查提示，完整启动／页面摘要保留在无障碍名称中。交互状态复用主题 buttonLook，尺寸、文字、颜色与间距来自主题 token；详情和异步重试继续使用组件库及既有适配。

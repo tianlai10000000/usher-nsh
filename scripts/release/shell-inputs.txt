@@ -23,6 +23,7 @@ Cargo.lock
 # Embedded into the binary by Rust, although they live under ui/.
 ui/theme
 ui/config/background.json
+ui/config/shortcuts
 
 # The shell's identity and permissions. Its version and build change on every release, so
 # the comparison ignores those two fields (see IGNORED_NSH_JSON_FIELDS in shell_inputs.py).

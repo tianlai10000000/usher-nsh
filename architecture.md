@@ -115,15 +115,15 @@ Store 先保存待提交的主题文件，再将完整设置写入同目录临�
 
 账户和更新入口由 `Frame` 接收可选契约，未提供实现时按钮禁用。窗口布局通过契约消费能力，与账户和更新的内部实现解耦。
 
-### 快捷键模块目标
+### 快捷键模块
 
-快捷键目标独立为 `crates/usher-shortcuts/`，负责通用绑定集合、不透明作用域冲突、注册计划和初始化/恢复状态；NSH `keymap` 与 `GlobalShortcut` 继续负责本地输入和系统注册。业务快捷键统一在应用 `src/shortcuts/` 管理，通过 `modules/` 按导航、窗口、设置等实际接入模块拆分；`catalog.rs` 汇总声明，service/context 管理状态及可用性，adapters/bridge 管理接入。`ui/shortcuts/` 封装 NSH 生命周期，业务动作仍调用所属 Router 或 Feature。核心不接收业务 CommandId、路由、页面或业务处理器，只消费不透明身份、作用域关系及 enabled 值。应用将系统 Global 映射为进程级唯一拥有，Application 为窗口级，Page 通过路由实例租约启停。
+通用快捷键机制独立为 `crates/usher-shortcuts/`，负责通用绑定集合、不透明作用域冲突、注册计划和初始化/恢复状态；NSH `keymap` 与 `GlobalShortcut` 继续负责本地输入和系统注册。业务快捷键统一在应用 `src/shortcuts/` 管理，通过 `modules/` 按导航、窗口、设置等实际接入模块拆分；`catalog.rs` 汇总声明，service 管理状态及可用性，adapters/bridge 管理接入。`ui/shortcuts/` 封装 NSH 生命周期，业务动作仍调用所属 Router 或 Feature。核心不接收业务 CommandId、路由、页面或业务处理器，只消费不透明身份、作用域关系及 enabled 值。应用将系统 Global 映射为进程级唯一拥有，Application 为窗口级，Page 通过路由实例租约启停。
 
 Global 在程序启动时初始化，Application 在窗口创建时初始化；Page 在首次进入时懒加载并于处理器就绪后注册，离开解绑，重入复用同版本不可变声明并创建新租约。启动仅读取轻量模块索引，不初始化未访问页面；加载并发、迟到结果及缓存失效由应用 loader 管理，不进入通用 crate。状态栏分别投影启动级和当前页面状态，未加载页面不阻止启动就绪，查看详情不触发加载。
 
-当前只在 `HistoryControls` 中直接绑定历史快捷键，独立模块尚未实现。设计要求把绑定移至窗口装配，区分本地 API 安装和系统注册确认，拒绝过期回执并清理旧代资源；NSH 原生先消费按键，JS 返回 false 不代表透传。接口、恢复限制与验证见 [快捷键模块方案](docs/shortcuts.md)，实施与验收统一见 [SK 批次](docs/todo.md#shortcuts)。
+核心 crate 无生产或开发依赖，不包含业务命令。窗口 ShortcutService 通过 usher-state 发布权威健康状态，ModuleLoader 缓存按需加载的不可变声明；ui/shortcuts/runtime/nsh.ts 持有 NSH keymap 句柄，modules/navigation.ts 只转发 Router 动作。RouterView 按 entryKey 创建及释放页面租约，HistoryControls 不注册快捷键。键位与运行策略来自 ui/config/shortcuts；业务页面暂不新增键位。global.rs/global_bridge.rs 提供进程唯一协调器与 VM 独占执行租约，App 在窗口状态建立前启动全局初始化；运行时等待 NSH 系统注册回执，窗口只借用全局投影。window 与 appearance 模块分别映射打开设置和切换浅深色，main-window 适配复用主窗口 Router 与设置命令；未就绪时暂存有界意图，卸载撤销旧业务处理器。NSH 原生先消费按键，JS 回调只能拒绝业务执行，不能保证原生表异步切换期间的透传。接口与恢复限制见 [快捷键方案](docs/shortcuts.md)，验收统一见 [SK 批次](docs/todo.md#shortcuts)。
 
-底部状态栏在启动时实时展示快捷键初始化阶段，并提供分项详情和重试入口。状态由应用快捷键服务独立通过 usher-state 发布，ui/shortcuts/status.ts 转为只读投影，App 经布局契约注入 Frame/StatusBar；核心与应用快捷键模块均不依赖状态栏。状态栏隐藏或卸载不停止初始化、不释放注册，重新显示读取最新状态；窗口本地状态与进程全局状态分别展示。
+状态栏在启动时实时展示快捷键初始化阶段，并提供分项详情和重试入口。状态由应用快捷键服务独立通过 usher-state 发布，ui/shortcuts/status.ts 转为只读投影，App 经布局契约注入 Frame/StatusBar；核心与应用快捷键模块均不依赖状态栏。状态栏隐藏或卸载不停止初始化、不释放注册，重新显示读取最新状态；窗口本地状态与进程全局状态分别展示。
 
 ## 4. 主题与背景资源
 

@@ -1,0 +1,7 @@
+# Dependency-free shortcut registration contracts.
+[package]
+name = "usher-shortcuts"
+version = "0.0.1-alpha.1"
+edition = "2024"
+license = "LicenseRef-Proprietary"
+publish = false

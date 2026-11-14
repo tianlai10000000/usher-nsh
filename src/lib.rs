@@ -6,6 +6,7 @@ mod diagnostic_bridge;
 mod diagnostics;
 mod router_bridge;
 mod settings_bridge;
+pub mod shortcuts;
 pub mod state;
 mod state_bridge;
 mod update_bridge;
@@ -24,6 +25,8 @@ fn macos_components(components: &nsh_platform_macos::Components) {
 fn native(registry: &mut Registry) {
     registry
         .module::<Greeting>()
+        .module::<shortcuts::bridge::ShortcutState>()
+        .module::<shortcuts::global_bridge::GlobalShortcutState>()
         .module::<settings_bridge::Settings>()
         .module::<settings_bridge::SettingsState>()
         .module::<router_bridge::WindowState>()

@@ -208,3 +208,26 @@ CI 从统一配置运行状态 feature 组合、路由契约、应用集成、TS
 `ui/state/__tests__/decode.test.ts` 使用注入的 wire 和命令 mock 覆盖读取、订阅、回执的非法快照、最后有效值与迟到回调；真实 NSH 桥接仍由 integration 用例独立验证。更新 controller mock 随实现位于 `ui/state/updates/__tests__/`，两处均进入 state-ui 发现目录。
 
 `tests/integration/settings_state.rs` 通过真实临时文件覆盖不同偏好分区并发提交、重新打开、无写权限及重试。`scripts/tests/test_state_boundaries.py` 防止旧门面回流、通用 crate 引入业务依赖、更新状态回到 feature 视图以及设置模型直接读写文件。生成启动主题由 Rust 完整内容比较，强调色 finish 与前景色由主题回归验证。原生 HMR、多窗口和 VM reload 继续使用隔离宿主脚本，不能以 mock 代替。
+
+## 快捷键模块验证边界
+
+`crates/usher-shortcuts/tests/contracts.rs` 只使用标准库与核心公开 API，验证作用域冲突、计划选择、票据、注册/释放串行、迟到回执、预算和清理；核心不通过开发依赖引用业务夹具。`tests/integration/shortcuts.rs` 使用应用模块索引与 NSH 解析器，枚举当前声明模块并检查平台归一、保留键、版本/命令错误及跨模块冲突。轻量索引读取不得执行模块工厂。
+
+在仓库根目录运行 `python3 scripts/test.py shortcuts` 和 `python3 scripts/test.py shortcuts-app`，报告分别写入 `target/test-reports/shortcuts.json` 与 `shortcuts-app.json`。CI 的纯 Rust job 执行前者，macOS 应用 job 执行后者，核心纳入 `state-targets` 编译矩阵。注册效果用可控回执验证，NSH 解析不等于原生热键注册验收；系统全局及跨平台扩展按 [SK 批次](todo.md#shortcuts) 推进。
+
+快捷键应用集成还覆盖窗口焦点/模态、路由守卫、懒加载票据、跨窗口隔离、并发缓存、加载失败与注册/解绑重试。`python3 scripts/test.py shortcuts-ui` 是 mock 控制器测试，以假的 Transport/InputBackend 检查效果、回执及清理；不能代替原生输入验收。
+
+`python3 scripts/test.py shortcuts-headless` 在临时源码目录和独立应用身份运行真实 NSH 桥接与 keymap，测试页工厂仅由 `tests/e2e/shortcuts/host` 注入。`python3 scripts/test.py shortcuts-macos` 在解锁 macOS 会话运行共享旅程、同 VM 多窗口焦点及完整 VM 重载。前两项进入 UI CI，原生项进入手动触发的 native-state job。报告按各套件独立统计，不将 mock、无头与原生结果混为同一种验收。
+
+全局快捷键增加进程租约、并发申请、原生确认前拒绝触发、部分注册失败、未决操作不可交接、确认宿主清理后的代次替换、策略拒绝与本地冲突测试，仍归 shortcuts-app。shortcuts-ui 使用可控 Promise 验证注册等待、异常、迟到成功、销毁、回执丢失、剩余效果恢复及业务处理器替换，并单测 System/light/dark 切换语义。
+
+`python3 scripts/test.py global-shortcuts-macos` 使用 tests/e2e/global-shortcuts 的独立宿主和配置，排除产品全局键位，以测试键建立真实 NSH 系统注册。测试专用 Carbon 探针独立验证系统独占、拒绝、释放和重注册；业务命令通过显式测试入口验证主窗口 Router 守卫、主题事务及重挂载。探针不模拟注册成功，不进入生产依赖。NSH 测试 app.dispose 只释放句柄，进程清理由用例结束触发；退出测试按该边界验证下一宿主能重新注册。
+
+macOS 自动注入系统键需要额外输入权限；未取得权限时，不能把 mock 回调、应用内键盘事件或业务意图测试宣称为后台物理按键验收。系统注册、业务接线与物理输入必须分别记录证据。
+
+
+系统输入验收独立运行 `python3 scripts/test.py global-shortcuts-input-macos`。先运行 `python3 scripts/shortcut_input.py --request-permission`，在 macOS 辅助功能中授权 `target/test-tools/Usher Shortcut Input.app`。工具采用稳定 bundle ID，源码及身份不变时复用签名；修改工具后可能需要重新授权。仅用于测试的 Swift 工具通过 CGEvent 发送配置中的按键，并在发出前确认目标宿主进程仍存在且不是前台应用。无需屏幕录制、输入监控或完全磁盘访问权限。未授权时命令失败，不跳过或记为通过。
+
+该套件检查后台打开设置恢复主窗口、后台主题切换、每次输入的业务回调计数，以及状态栏卸载期间全局注册仍然有效。隐藏应用后的状态使用 AppKit 校验，不依赖可能保留旧焦点的 NSH WindowState；主题更新后记录原生活跃状态，再由测试夹具显式恢复控件以继续下一步。无业务适配期间恢复控件不消费待处理意图，必须重挂载后由生产适配消费。输入工具通过原子 JSON 回执完成握手，不依赖 LaunchServices 对快速退出进程的等待。测试键位来自独立 fixture；产品键位由应用目录校验覆盖。系统事件注入不等于实体键盘、IME 或所有键盘布局验收。输入工具及 AppKit 测试依赖只进入测试宿主，不进入 `usher-shortcuts` 或产品快捷键模块。手动 CI 在 `native_state` 与 `native_shortcut_input` 同时启用时执行，runner 须先授权相同身份的工具。
+
+窗口回归关闭并重开同一 secondary ID，确认新的窗口 scope 和焦点归属；组件重挂载、窗口重开及进程退出分别验证，不互相替代。状态展示测试独立检查窗口／全局阶段、失败重试与晚订阅读取，不将全局失败投影成窗口失败。同一源码目录的 `nsh check` / `nsh test` 串行运行，避免并发覆写生成文件；桌面原生套件串行运行，避免争夺焦点。

@@ -32,21 +32,76 @@
 | [N6 系统通知](#notify) | P3 | 待实施 | 各平台 API 与成本调研后推进 |
 | [TH1 / SM1–SM5 / RT1–RT3 / UT1 / LG1–LG6 已交付基础](#completed) | P1 | 已完成（限已验范围） | 证据保留；剩余平台和发布项不计入完成 |
 | DOC1 文档归并 | P1 | 已完成 | 仅文档迁移、链接检查；不计作产品验收 |
-| [SK0–SK4 快捷键模块](#shortcuts) | P1 | 设计已完成；实现待实施 | 本轮授权架构方案；独立 crate → 本地适配 → Global → 原生验收，实施另行授权 |
+| [SK0–SK4 快捷键模块](#shortcuts) | P1 | SK0–SK3 已完成（本批范围）；SK4 验收中 | 已接通启动全局注册、设置入口与浅深色切换；物理输入及跨平台扩展按 SK4 推进 |
 
 <a id="shortcuts"></a>
 
 ## SK 快捷键模块
 
-用户于 2026-11-14 请求设计独立快捷键 crate，预留系统全局与页面快捷键，并参考同级 Slint Usher 的初始化流程。本轮交付 [快捷键模块方案](shortcuts.md)，不将设计登记为产品实现。
+用户于 2026-11-14 请求设计独立快捷键 crate，预留系统全局与页面快捷键，并参考同级 Slint Usher 的初始化流程。设计见 [快捷键模块方案](shortcuts.md)。用户随后明确授权先实施 SK1，通用 crate 不耦合业务，业务快捷键统一放入独立目录并按模块管理。随后授权 SK2，并确认先通过隔离测试页面验收懒加载，业务页面不新增键位；同时要求交付 mock 与回归用例。随后授权 SK3 启动全局初始化，并指定打开设置及切换浅深色；要求先查行业惯例后选择默认键位。依据官方应用内／全局键位边界，使用项目默认 Ctrl+Alt+Shift+S/T，配置与依据见 shortcuts.md。
 
 | 批次 | 优先级 | 状态 | 前置、范围与验收 |
 | --- | --- | --- | --- |
 | SK0 | P1 | 已完成（设计范围） | 已核查 NSH 0.5.0 类型、Rust keymap 原生消费流程、现有历史绑定及 Slint 初始化；明确独立 usher-shortcuts、三类作用域、注册票据、恢复和平台确认边界。2026-11-14：新增方案及架构入口，文档本地链接与新增差异空白检查通过；未改产品代码、未执行产品测试。后续按用户要求收紧核心无业务依赖契约，业务统一归 src/shortcuts/ 并按 modules 拆分，UI 与配置同名分模块；同步架构和 SK1/SK2 范围，文档链接与差异空白检查通过。随后明确启动状态栏实时订阅、分项详情、重试与显隐生命周期解耦，更新 SK2/SK4 验收范围；仅设计更新，文档链接与差异空白检查通过。2026-11-14 按用户确认改为 Global 启动、Application 窗口创建、Page 首次进入懒加载；补轻量索引、版本缓存/迟到结果、注册前冲突、全目录 CI 及启动/页面状态分离，文档链接与差异空白检查通过，未运行产品测试。 |
-| SK1 | P1 | 待实施 | 依赖 SK0 及实施授权；独立 crate 的通用绑定/冲突/计划/生命周期契约，禁止业务命令、路由及业务夹具依赖；应用 src/shortcuts/ 统一目录、轻量索引与 modules 加载入口，配置单一来源与 NSH 解析适配；契约测试、workspace 检查及 CI 接入。不得新增未经确定的产品键位或重试数值。 |
-| SK2 | P1 | 待实施 | 依赖 SK1；在 src/shortcuts/ 与 ui/shortcuts/ 中建立窗口服务、页面租约及 NSH keymap 门面，导航业务独立 modules/navigation，迁移 HistoryControls，复用 Router 动作；Application 随窗口初始化，Page 首次进入懒加载，离开解绑、重入复用声明；覆盖并发加载、失败重试、迟到结果、版本缓存及注册前冲突；同时交付独立状态发布、只读 UI 投影及启动状态栏实时摘要/详情/重试；状态栏显隐不影响注册。验证编辑保护、模态、路由守卫、多窗口和 HMR。原生表异步更新时消费旧按键的限制须真实验证；严格同步透传要求须先补上游契约。 |
-| SK3 | P2 | 待实施 | 依赖 SK1、SK2 及具体全局命令/键位授权；Global 随程序启动初始化，不等待页面；进程唯一 Global 协调、按键串行注册、旧 VM 清理/接管与分项状态。NSH VM 销毁注册归属必须验证，不能跳过未决注册直接交接。 |
-| SK4 | P1 | 待实施 | 依赖对应实现；启动与当前页面状态分离，未访问页面不阻塞启动就绪且详情不触发加载；全目录 CI 冲突校验、启动/首次进入/重入性能测量；启动状态栏实时阶段/失败展示与重试，晚订阅/隐藏期间完成/重新显示/旧回执/连接中断/多窗口隔离及状态栏卸载不影响注册，首次输入、完整 VM reload、前后台、系统占用恢复和发布产物验收；按平台记录结果，Linux portal、Windows、macOS 不互相代验。 |
+| SK1 | P1 | 已完成（本批范围） | 独立 usher-shortcuts 核心无生产/开发依赖，交付通用绑定校验、作用域冲突、计划、票据、串行注册/释放、重试预算与清理；应用 src/shortcuts/ 轻量索引、modules/navigation 和 NSH 本地解析适配，ui/shortcuts/ 门面及配置单一来源已接入现有导航。未新增产品键位或重试默认值；契约、工作区、CI 与七目标编译接入，证据见下。 |
+| SK2 | P1 | 已完成（本批、本机范围） | 依赖 SK1；在 src/shortcuts/ 与 ui/shortcuts/ 中建立窗口服务、页面租约及 NSH keymap 门面，导航业务独立 modules/navigation，迁移 HistoryControls，复用 Router 动作；Application 随窗口初始化，Page 首次进入懒加载，离开解绑、重入复用声明；覆盖并发加载、失败重试、迟到结果、版本缓存及注册前冲突；同时交付独立状态发布、只读 UI 投影及启动状态栏实时摘要/详情/重试；状态栏显隐不影响注册。验证编辑保护、模态、路由守卫、多窗口和 HMR。原生表异步更新时消费旧按键的限制须真实验证；严格同步透传要求须先补上游契约。 |
+| SK3 | P2 | 已完成（注册与业务接线、本机范围） | 依赖 SK1、SK2 及具体全局命令/键位授权；Global 随程序启动初始化，不等待页面；进程唯一 Global 协调、按键串行注册、旧 VM 清理/接管与分项状态。NSH VM 销毁注册归属必须验证，不能跳过未决注册直接交接。 |
+| SK4 | P1 | 进行中（本机重点验收通过；跨平台与键盘布局暂缓） | 依赖对应实现；启动与当前页面状态分离，未访问页面不阻塞启动就绪且详情不触发加载；全目录 CI 冲突校验、启动/首次进入/重入性能测量；启动状态栏实时阶段/失败展示与重试，晚订阅/隐藏期间完成/重新显示/旧回执/连接中断/多窗口隔离及状态栏卸载不影响注册，首次输入、完整 VM reload、前后台、系统占用恢复和发布产物验收；按平台记录结果，Linux portal、Windows、macOS 不互相代验。 |
+
+
+### SK1 实施与验收（2026-11-14）
+
+- `crates/usher-shortcuts/` 只依赖标准库。BindingId/ScopeId/OwnerToken/DomainId 均不透明，Catalog 不接收业务命令，Runtime 只输出效果与快照；`cargo tree --locked -p usher-shortcuts --edges all` 确认没有生产或开发依赖。业务模块、配置读取、NSH 类型与命令映射留在 `src/shortcuts/`，轻量索引观察不会执行工厂。
+- `ui/config/shortcuts/index.json` 与 `navigation.json` 为模块与键位来源，Rust 按模块加载、校验并通过 NSH 解析器归一；TS 导航模块复用同一配置。HistoryControls 仅调用门面，仍保留原组件注册生命周期；无全局注册、窗口状态服务、页面缓存或状态栏健康展示。配置已加入外壳构建输入清单，避免 Rust 嵌入数据被误判为仅 TS 代码包更新。
+- 本机 macOS：`python3 scripts/test.py shortcuts` 17 项、`shortcuts-app` 7 项通过；报告 `target/test-reports/shortcuts.json`、`shortcuts-app.json`。覆盖冲突、未知输入、精确键值、互斥作用域、幂等计划、禁用清理、迟到安装、释放失败、重试预算、owner 失效、部分失败、目录/命令错误及索引惰性。
+- `cargo test --locked --workspace` 271 项通过；完整 `python3 scripts/test.py ui` 49 项通过，含实际 App 导航快捷键/历史旅程；`python3 -m unittest discover -s scripts/tests -p 'test_*.py'` 147 项通过。日志 `target/test-reports/sk1-workspace.log`、`sk1-ui.log`、`sk1-scripts.log`，UI 汇总 `ui.json`。
+- `nsh check`、`cargo fmt --all --check`、`cargo clippy --locked --workspace --all-targets -- -D warnings`、`python3 scripts/release/shell_inputs.py check-embedded` 和 `git diff --check` 通过。Clippy 首次发现既有 settings/model.rs 的 impl 位于测试模块之后，仅移动该块位置消除告警，无业务变更；复查通过。日志 `sk1-nsh.log`、`sk1-clippy.log`。
+- `python3 scripts/test.py state-targets` 通过：新增核心在 macOS arm64/x86_64、Windows x86_64、Linux x86_64、Android arm64、iOS arm64/模拟器 arm64 均有真实编译产物；报告 `state-targets.json`、`state-target-artifacts.jsonl`。这不代表各平台原生输入或全局注册验收。
+- CI 已加入核心与应用两套命令及编译矩阵；远端 CI 未运行。本批未做原生按键/全局注册验收及性能测量，SK2–SK4 保持待实施；不计作启动状态栏或页面懒加载已交付。
+
+
+### SK2 实施与验收（2026-11-14）
+
+- 通用 crate 仍无生产或开发依赖，本批仅为原子候选状态提交补充 Runtime 的 Clone；目录、导航命令、窗口可用性及宿主状态均留在 `src/shortcuts/`。新增 loader/service/bridge，业务模块继续集中在 modules；键位及显式重试策略来自 ui/config/shortcuts。
+- App 拥有本窗口执行器；HistoryControls 不再注册按键。RouterView 按 entryKey 借用页面租约，begin/finish 票据拒绝迟到结果；成功声明按固定索引版本缓存并合并并发加载，失败不缓存。未访问页面不会执行工厂。按用户确认，生产页面不新增键位，测试模块仅注入隔离 fixture host。
+- 独立 usher-state 健康发布经严格解码投影到状态栏：启动/页面分开、未配置 Global 如实展示，支持详情与显式重试；断线详情不沿用旧就绪结果，状态栏显隐不拥有注册。重试覆盖安装失败与释放失败，页面重试保留清理租约。
+- `python3 scripts/test.py shortcuts-app` 17 项、`shortcuts-ui` 6 项通过。后者为独立 mock transport/backend 和状态投影用例，覆盖安装失败、回执、即时阻断、过期加载、重试后卸载、幂等清理、断线显示及只读详情；Rust 集成补充并发缓存、失败工厂重试、守卫取消、页面冲突、焦点、关闭及释放失败重试。报告 shortcuts-app.json、shortcuts-ui.json。
+- `shortcuts-headless` 1 条真实桥接完整旅程、`shortcuts-macos` 3 条原生旅程通过。隔离页面直接使用生产 RouterView、ShortcutState、NSH keymap 和 StatusBar，覆盖首次加载、重入缓存、离开解绑、隐藏状态栏、输入框保护、模态阻断、根组件重挂载；原生额外覆盖同 VM 焦点切换、关闭副窗口及完整 Cmd+R VM 重载。报告 shortcuts-headless.json、shortcuts-macos.json，均位于 target/test-reports。首次原生启动受沙箱端口限制，权限流程放行后执行完整套件通过；报告收集的路径不匹配也已修正并完整重跑。
+- 工作区 Rust 281 项、完整 UI 49 项、router-ui 13 项、state-ui 69 项、脚本 147 项通过。状态套件首轮受并行 NSH 共用生成目录串扰，首项执行了错误测试包；已串行重跑完整 state-ui 并通过，不计首轮为有效结果。今后同一源码目录的 NSH 检查/测试串行运行。
+- `nsh check`、工作区 fmt/Clippy、shell_inputs.py check-embedded、git diff --check 通过；cargo tree 确认核心无依赖。新增 mock、无头宿主套件进入 UI CI，原生套件进入手动 native-state job；远端 CI 未运行。
+- 边界：本地 keymap 安装成功不等于 OS 同步消费表确认，异步切表间隙仍可能消费旧键，回调会拒绝旧业务票据；未承诺严格同步透传。未新增系统全局注册，未进行 Windows/Linux 原生、IME/其他键盘布局、发布产物或冷/热路径性能测量；源码热替换的版本目录切换仍需后续专项验收，当前验证组件重挂载和完整 VM reload。上述扩展统一留在 SK3/SK4。
+
+
+### SK3 实施与验收（2026-11-14）
+
+- 通用 usher-shortcuts 未加入业务类型、平台或其他依赖；新增能力全部位于应用 src/shortcuts 与 ui/shortcuts。global/global_bridge 管理进程唯一协调器、VM 执行租约、系统回执与独立状态；GlobalShortcut 继续调用 NSH，无新增生产热键库。App 启动即建立全局服务，不等待页面加载，组件卸载不释放系统键。
+- 业务按 window、appearance 分模块：Ctrl+Alt+Shift+S 聚焦主窗口并通过其 Router 打开设置，遵守守卫；Ctrl+Alt+Shift+T 通过设置事务切换本应用浅色／深色，System 从当前 effectiveScheme 推导。键位来自对应 JSON。已查 Apple、VS Code、Raycast 官方约定：Command-Comma 为前台设置入口，主题／命令无统一系统全局键位，故不全局抢占该惯用键；来源及选择说明在设计文档。
+- 注册 true 才标记 registered；拒绝、异常、unsupported 和等待旧宿主清理分别呈现。全局健康参与启动摘要，失败不禁用本地按键。待决安装不因重试或超时交接，回执丢失保留待确认结果与剩余效果；旧 VM 回调及回执不能修改新代次。Global 重试／组件重挂载不与状态栏拥有权耦合。
+- `shortcuts-app` 25 项通过，包含新增全局确认、部分失败、并发租约、未决接管、旧回执、原生策略约束和跨通道冲突。`shortcuts-ui` 17 项 mock 通过，包含 Promise 拒绝／异常、回执恢复、迟到成功清理、解绑失败、业务适配替换、System/light/dark 语义及启动聚合。报告分别为 target/test-reports/shortcuts-app.json、shortcuts-ui.json。
+- `global-shortcuts-macos` 4 条原生旅程通过：真实 NSH 系统注册及独立 Carbon 排他探针、占用拒绝后重试、组件重挂载／完整 Cmd+R VM 重载、用例结束时宿主退出后的再注册，以及真实主窗口 Router 守卫／主题持久化动作。测试宿主排除产品全局键位，只注册隔离测试键；原生探针不进入产品代码。首次退出测试错误地把 app.dispose 当作进程退出；根据 NSH 保留宿主到用例结束的契约修正并完整重跑 4 项通过，未将首轮失败计为验收。
+- 本地回归 `shortcuts-headless` 1 条、`shortcuts-macos` 3 条通过，覆盖页面懒加载、编辑保护、窗口焦点及重载。工作区 Rust 289 项、完整 UI 49 项、脚本 147 项通过；nsh check、工作区 fmt/Clippy、fixture 格式、shell_inputs.py check-embedded、文档本地链接及 git diff --check 通过。日志 sk3-*.log 与各套件报告保存在 target/test-reports。mock 及应用测试沿既有 CI 扩展，新增原生套件进入手动 native-state job，远端 CI 未运行。
+- 验收边界：CGPreflightPostEventAccess 返回 false，当前环境没有自动注入系统按键权限。上述原生结果证明 OS 注册／释放与业务接线，不代表后台物理键、IME 或所有键盘布局已验证；不把 mock 或直接业务意图入口计为物理输入。Windows/Linux 真实宿主、Linux portal、未确认宿主清理后的接管、源码 HMR 目录变更及发布产物仍归 SK4。macOS VM 重载的释放顺序已有源码契约和原生再注册证据，其他平台未确认释放时保持 recovering，不盲目接管。
+
+### 快捷键状态栏视觉调整（2026-11-14）
+
+- 用户要求重设默认显示并严格复用组件库。入口改为小号 ghost Button，使用既有 SystemIcon 适配；默认只显示键盘图标与启动摘要，页面状态置于 Tooltip／Popover。异常显示警示图标与检查提示，中英文文案同步；主题 token 提供视觉值，保留悬停、按下、键盘焦点、完整无障碍名称和异步重试。
+- `nsh check`、快捷键 mock 19 项、原生全局旅程 4 项、脚本 151 项通过。整页状态栏显隐回归 1 项通过，差异空白检查通过。新增默认不展开页面状态的原生断言，状态栏失败详情及重试原有回归通过；检查原生截图 target/test-reports/global-shortcuts-macos.png，确认默认入口无凸起边框，文字与底栏辅助文本一致。
+
+### SK4 实施与验收（2026-11-14）
+
+- 用户已授权 SK4，重点后台触发、启动初始化、窗口重开和状态栏。通用 crate 保持无业务／平台依赖；本批产品修复仅位于 UI 快捷键只读投影，业务目录和注册拥有权不变。
+- 新增回归先复现“全局失败将健康窗口通道误显示失败”，随后修复：保留 window 独立阶段，startup 仍为组合摘要。mock 验证 validating/installing/ready、晚订阅和页面未请求状态；原生验证状态栏分通道失败、真实重试与恢复后重试按钮消失。
+- `global-shortcuts-macos` 4 项通过，覆盖启动注册／拒绝／恢复、状态栏重挂载、完整 VM reload 和宿主退出后再注册。`shortcuts-macos` 3 项通过，新增关闭并重开相同 secondary ID，确认新 scope、当前窗口独占响应及前进／后退仍可用；懒加载／隐藏状态栏／完整 VM reload 原有旅程回归通过。`shortcuts-headless` 1 项通过。mock `shortcuts-ui` 19 项通过，工作区 Rust 289 项、脚本 151 项通过。
+- 新增 `global-shortcuts-input-macos` 系统事件验收套件、独立 Swift 输入工具与权限回执检查；后台前置由独立进程在发键前确认，测试配置和 AppKit 依赖只归测试宿主。手动 CI 增加显式输入验收开关，未授权命令失败，不计跳过为通过。用户开启辅助功能后，`global-shortcuts-input-macos` 完整旅程 1 项通过：五次真实系统事件输入分别验证后台打开设置、浅深色双向切换、聚焦主窗口以及业务适配／状态栏卸载期间触发后重挂载消费；每次输入只产生一次有效回调。独立工具逐次确认发键时宿主不是前台，主题更新后通过 AppKit 活跃状态确认后台执行。报告为 target/test-reports/global-shortcuts-input-macos.json。
+- `nsh check`、工作区 fmt/Clippy、嵌入资源清单与差异空白检查通过；报告位于 target/test-reports。远端 CI 未运行。完整 UI 回归 49 项通过，actionlint 与文档本地链接检查通过。
+- 输入验收初轮暴露测试夹具问题：NSH WindowState 未反映应用隐藏状态、隐藏窗口无法继续点击测试按钮，以及 `open -W` 对快速退出工具的等待竞态。改为主题更新后的 AppKit 状态取证、取证后显式恢复测试控件、等待原子 JSON 回执；未修改产品分发逻辑。失败日志保留，完整重跑通过后才计为验收；共用夹具的 global-shortcuts-macos 4 项、脚本 151 项、nsh check 与 fixture fmt 再次通过；后台事件注入不等于实体键盘／所有布局验收。
+- 本轮尚待验收：发布产物、冷启动／首次进入／重入的 release 性能测量、源码 HMR 目录变更。SK4 保持进行中。
+- 后续待办（用户明确暂缓）：其他平台与键盘布局验收移至后续处理，本轮不推进，也不计为已通过。恢复时分别记录平台、布局、输入法及原生宿主证据：
+  - [ ] Windows 原生全局／窗口／页面快捷键、后台触发、注册占用恢复与窗口重开。
+  - [ ] Linux 原生快捷键及 portal 授权、注册恢复与宿主生命周期。
+  - [ ] IME 组合输入、非默认键盘布局下的键位解析、显示、冲突和实际触发。
+  - [ ] 未确认宿主清理的平台验证 VM 接管与旧注册释放顺序；确认前保留 recovering，不以 macOS 结果代验。
+- 本次仅调整待办范围与暂缓状态，差异空白检查通过；未修改代码或运行产品测试。
 
 <a id="theme"></a>
 

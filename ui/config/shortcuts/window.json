@@ -1,0 +1,15 @@
+{
+  "id": "window",
+  "version": "1",
+  "bindings": [
+    {
+      "id": "window.openSettings",
+      "command": "openSettings",
+      "keystroke": "ctrl+alt+shift+s",
+      "editing": "always",
+      "repeat": true,
+      "passThrough": false,
+      "required": true
+    }
+  ]
+}

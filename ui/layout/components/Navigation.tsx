@@ -2,9 +2,9 @@
  * History arrows and breadcrumbs for the title bar.
  *
  * Both read the shared navigation state and send the same semantic navigation actions as the
- * menus. The arrows also bind the platform's back and forward shortcuts for the mounted window.
+ * menus. Window-owned shortcuts invoke the same router actions.
  */
-import { keymap, platform, Text, View, windowSize } from "nsh";
+import { platform, Text, View, windowSize } from "nsh";
 import { AsyncButton } from "../../components/AsyncButton";
 import { SystemIcon } from "../../components/SystemIcon";
 import type { Navigation } from "../../router/index";
@@ -18,14 +18,9 @@ export function HistoryControls(props: NavigationProps) {
   const palette = props.appearance.appearance.palette;
   const t = props.appearance.preferences.t;
   const { canGoBack, canGoForward, goBack, goForward } = props.navigation;
-  const mobile = platform.os === "ios" || platform.os === "android";
   // Raise the SF Symbol artwork by one point to align it with the sidebar icon.
   const arrowAlignment = platform.os === "macos" ? { paddingBottom: 2 } : undefined;
 
-  if (!mobile) {
-    // NSH removes these bindings with the mounted window.
-    keymap.bind({ "mod+[": () => { if (!canGoBack()) return false; void goBack(); return true; }, "mod+]": () => { if (!canGoForward()) return false; void goForward(); return true; } }, { when: "notEditing" });
-  }
 
   return (
     <View class="flex-row items-center" style={spacing(palette).text}>

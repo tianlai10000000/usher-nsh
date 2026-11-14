@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "modules": [
+    {
+      "id": "navigation",
+      "version": "1",
+      "kind": "application"
+    },
+    {
+      "id": "window",
+      "version": "1",
+      "kind": "global"
+    },
+    {
+      "id": "appearance",
+      "version": "1",
+      "kind": "global"
+    }
+  ]
+}

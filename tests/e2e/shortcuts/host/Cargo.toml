@@ -1,0 +1,11 @@
+# Isolated shortcut fixture host; never included in production builds.
+[package]
+name = "usher-shortcut-tests"
+version = "0.0.0"
+edition = "2024"
+publish = false
+[workspace]
+[dependencies]
+usher-nsh = { path = "../../../.." }
+nsh-core = "=0.5.0"
+serde_json = "1"

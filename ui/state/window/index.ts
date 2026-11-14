@@ -89,7 +89,7 @@ export function createWindowState(routes: unknown = catalog) {
       return result;
     },
   };
-  return { session, routing };
+  return { session, routing, scope: wire.scope };
 }
 export type WindowSession = ReturnType<typeof createWindowState>["session"];
 export type RoutingBinding = ReturnType<typeof createWindowState>["routing"];

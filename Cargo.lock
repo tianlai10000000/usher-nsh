@@ -2876,6 +2876,7 @@ dependencies = [
  "toml 1.2.1+spec-1.1.0",
  "usher-logging",
  "usher-router",
+ "usher-shortcuts",
  "usher-state",
  "usher-test-support",
  "usher-update",
@@ -2891,6 +2892,10 @@ dependencies = [
  "serde_json",
  "usher-test-support",
 ]
+
+[[package]]
+name = "usher-shortcuts"
+version = "0.0.1-alpha.1"
 
 [[package]]
 name = "usher-state"

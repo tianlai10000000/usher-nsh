@@ -1,0 +1,29 @@
+{
+  "appIdSuffix": "shortcuts",
+  "module": {
+    "id": "fixture-page",
+    "version": "1",
+    "kind": "page",
+    "page": "settings"
+  },
+  "payload": {
+    "id": "fixture-page",
+    "version": "1",
+    "bindings": [
+      {
+        "id": "fixture-page.back",
+        "command": "back",
+        "keystroke": "mod+k",
+        "editing": "notEditing",
+        "repeat": false,
+        "passThrough": false,
+        "required": true
+      }
+    ]
+  },
+  "secondaryId": "shortcut-secondary",
+  "windowSize": {
+    "width": 900,
+    "height": 740
+  }
+}

@@ -9,14 +9,24 @@
 import { cleanup, effect, LayoutAnimation, platform, reduceMotion, signal, windowSize } from "nsh";
 import type { AppState } from "../../state/app";
 
-export function createMenuPresence(appearance: AppState) {
+export function createMenuPresence(appearance: AppState, blockShortcuts?: () => () => void) {
   const palette = appearance.appearance.palette;
   const setSidebarDocked = appearance.preferences.setSidebarDocked;
   const sidebarDocked = appearance.preferences.sidebarDocked;
   const wide = () => platform.desktop && windowSize().width >= palette().metric.wideBreakpoint;
   const slideMs = () => (reduceMotion() ? 0 : palette().metric.layoutMs);
 
-  const drawerOpen = signal(false);
+  const drawer = signal(false);
+  let releaseBlock: (() => void) | undefined;
+  const drawerOpen = Object.assign(() => drawer(), {
+    set(open: boolean) {
+      if (open && !releaseBlock) releaseBlock = blockShortcuts?.();
+      if (!open) { releaseBlock?.(); releaseBlock = undefined; }
+      drawer.set(open);
+    },
+    update(change: (open: boolean) => boolean) { drawerOpen.set(change(drawer())); },
+  });
+  cleanup(() => releaseBlock?.());
   const dockedLocal = signal(sidebarDocked());
   effect(() => dockedLocal.set(sidebarDocked()));
   const docked = () => wide() && dockedLocal();

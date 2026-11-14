@@ -1,0 +1,15 @@
+{
+  "id": "appearance",
+  "version": "1",
+  "bindings": [
+    {
+      "id": "appearance.toggleScheme",
+      "command": "toggleScheme",
+      "keystroke": "ctrl+alt+shift+t",
+      "editing": "always",
+      "repeat": true,
+      "passThrough": false,
+      "required": true
+    }
+  ]
+}

@@ -9,18 +9,24 @@ import { RouterView } from "./ui/router/RouterView";
 import { pages } from "./ui/pages";
 import { SettingsProvider } from "./ui/state/settings/store";
 import { createAppState } from "./ui/state/app";
+import { createGlobalShortcuts, createShortcuts, shortcutIndicator } from "./ui/shortcuts";
+import { bindMainWindowShortcuts } from "./ui/shortcuts/modules/main-window";
 import { translate } from "./ui/i18n";
 
 function App() {
+  createGlobalShortcuts();
   const appearance = createAppState();
   const window = appearance.window;
   const updates = createUpdates(appearance);
   const navigation = createRouter(window.routing);
   bindNativeRouting(navigation);
+  bindMainWindowShortcuts(navigation, appearance);
+  const shortcuts = createShortcuts(window.scope, navigation);
+  const shortcutStatus = shortcutIndicator(shortcuts, appearance.preferences.t);
   return <SettingsProvider value={appearance.settings.view}>
     <RouterProvider value={navigation}>
-      <Frame appearance={appearance} navigation={navigation} updates={updates.indicator}>
-        <RouterView pages={pages} appearance={appearance} navigation={navigation} session={window.session} updates={updates} />
+      <Frame appearance={appearance} navigation={navigation} updates={updates.indicator} shortcuts={shortcutStatus} blockShortcuts={shortcuts.block}>
+        <RouterView pages={pages} appearance={appearance} navigation={navigation} session={window.session} shortcuts={shortcuts} updates={updates} />
       </Frame>
     </RouterProvider>
   </SettingsProvider>;

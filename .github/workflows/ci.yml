@@ -10,6 +10,10 @@ on:
         description: Run isolated state, routing and update launch acceptance on an unlocked macOS desktop runner
         type: boolean
         default: false
+      native_shortcut_input:
+        description: Also run real background key input (requires native_state and preauthorized Usher Shortcut Input)
+        type: boolean
+        default: false
 
 # Read-only by default: a job that needs more asks for it by name.
 permissions:
@@ -28,7 +32,7 @@ env:
 
 jobs:
   state:
-    name: State and router contracts without NSH
+    name: State, router and shortcut contracts without NSH
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -53,6 +57,11 @@ jobs:
         run: |
           python3 scripts/test.py router
           python3 scripts/test.py routes-check
+
+      - name: Test and lint the dependency-free shortcut contracts
+        run: |
+          python3 scripts/test.py shortcuts
+          cargo clippy --locked -p usher-shortcuts --all-targets -- -D warnings
 
       - name: Lint the router matcher
         run: cargo clippy --locked -p usher-router --all-targets --features matcher-matchit -- -D warnings
@@ -124,6 +133,9 @@ jobs:
       - name: Test the application crate
         run: cargo test --locked --lib
 
+      - name: Validate application shortcut modules and NSH normalization
+        run: python3 scripts/test.py shortcuts-app
+
       - name: Test settings, window and update application integration
         run: python3 scripts/test.py integration
 
@@ -169,6 +181,11 @@ jobs:
       - name: Headless application journeys
         run: python3 scripts/test.py e2e --target headless
 
+      - name: Shortcut controller and isolated bridge journeys
+        run: |
+          python3 scripts/test.py shortcuts-ui
+          python3 scripts/test.py shortcuts-headless
+
       - name: UI tests
         run: python3 scripts/test.py ui
 
@@ -190,6 +207,13 @@ jobs:
         run: bash scripts/ci/install-nsh.sh
       - name: Isolated native windows and real HMR
         run: python3 scripts/test.py e2e --target macos
+      - name: Isolated native shortcut journey
+        run: python3 scripts/test.py shortcuts-macos
+      - name: Isolated global shortcut registration
+        run: python3 scripts/test.py global-shortcuts-macos
+      - name: Real background system shortcut input
+        if: inputs.native_shortcut_input
+        run: python3 scripts/test.py global-shortcuts-input-macos
       - name: Full native VM reload
         run: python3 scripts/test.py native-reload
       - name: Isolated packaged URL registration and launch

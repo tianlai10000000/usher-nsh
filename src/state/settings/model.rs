@@ -605,6 +605,17 @@ fn parse_document(text: &str) -> Result<Document, DocumentError> {
     }
 }
 
+impl Snapshot {
+    pub(crate) fn diagnostic_outputs(&self) -> usher_logging::Outputs {
+        usher_logging::Outputs {
+            console: self.diagnostic_console,
+            file: self.diagnostic_file,
+            structured: self.diagnostic_structured,
+            ..usher_logging::Outputs::default()
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1382,17 +1393,6 @@ mod tests {
                 text: "#EEEEEE".into(),
                 accent: "#99CCFF".into(),
             },
-        }
-    }
-}
-
-impl Snapshot {
-    pub(crate) fn diagnostic_outputs(&self) -> usher_logging::Outputs {
-        usher_logging::Outputs {
-            console: self.diagnostic_console,
-            file: self.diagnostic_file,
-            structured: self.diagnostic_structured,
-            ..usher_logging::Outputs::default()
         }
     }
 }

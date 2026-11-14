@@ -8,7 +8,7 @@ license = "LicenseRef-Proprietary"
 publish = false
 
 [workspace]
-members = [".", "crates/usher-state", "crates/usher-router", "crates/usher-test-support", "crates/usher-update", "crates/usher-logging"]
+members = [".", "crates/usher-state", "crates/usher-router", "crates/usher-test-support", "crates/usher-update", "crates/usher-logging", "crates/usher-shortcuts"]
 default-members = ["."]
 resolver = "3"
 
@@ -25,6 +25,8 @@ usher-update = { path = "crates/usher-update" }
 usher-router = { path = "crates/usher-router", features = ["matcher-matchit"] }
 usher-state = { path = "crates/usher-state", features = ["backend-watch"] }
 
+usher-shortcuts = { path = "crates/usher-shortcuts" }
+
 [dev-dependencies]
 usher-test-support = { path = "crates/usher-test-support" }
 
@@ -39,6 +41,10 @@ path = "tests/integration/state_router.rs"
 [[test]]
 name = "settings_state"
 path = "tests/integration/settings_state.rs"
+
+[[test]]
+name = "shortcuts"
+path = "tests/integration/shortcuts.rs"
 
 [[test]]
 name = "diagnostics"

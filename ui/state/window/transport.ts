@@ -28,6 +28,7 @@ export function windowTransport(catalog: unknown) {
   });
   return {
     initial,
+    scope,
     read: async () => decode(WindowState.snapshot(scope), initial.value.history.catalogIdentity),
     subscribe: (observer: Observer<WindowData>) => subscribeWindow(
       receive => WindowState.subscribe(scope, receive), observer, initial.value.history.catalogIdentity,

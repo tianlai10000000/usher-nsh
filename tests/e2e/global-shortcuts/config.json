@@ -1,0 +1,88 @@
+{
+  "appIdSuffix": "global-shortcuts",
+  "windowSize": {
+    "width": 900,
+    "height": 740
+  },
+  "module": {
+    "id": "fixture-window",
+    "version": "1",
+    "kind": "global"
+  },
+  "payload": {
+    "id": "fixture-window",
+    "version": "1",
+    "bindings": [
+      {
+        "id": "fixture-window.focus",
+        "command": "focusMain",
+        "keystroke": "ctrl+alt+shift+u",
+        "editing": "always",
+        "repeat": true,
+        "passThrough": false,
+        "required": true
+      },
+      {
+        "id": "fixture-window.openSettings",
+        "command": "openSettings",
+        "keystroke": "ctrl+alt+shift+i",
+        "editing": "always",
+        "repeat": true,
+        "passThrough": false,
+        "required": true
+      },
+      {
+        "id": "fixture-window.toggleScheme",
+        "command": "toggleScheme",
+        "keystroke": "ctrl+alt+shift+o",
+        "editing": "always",
+        "repeat": true,
+        "passThrough": false,
+        "required": true
+      }
+    ]
+  },
+  "native": {
+    "keyCode": 32,
+    "modifiers": 6656,
+    "signature": 1431520327,
+    "id": 1,
+    "exclusive": 1
+  },
+  "input": {
+    "helper": {
+      "name": "Usher Shortcut Input",
+      "identifier": "com.tianlai10000000.usher.shortcut-input-tests",
+      "executable": "shortcut-input",
+      "version": "1"
+    },
+    "timeoutMs": 5000,
+    "pollMs": 20,
+    "keys": {
+      "focus": {
+        "keyCode": 32
+      },
+      "settings": {
+        "keyCode": 34
+      },
+      "appearance": {
+        "keyCode": 31
+      }
+    },
+    "modifiers": [
+      {
+        "keyCode": 59,
+        "flag": 262144
+      },
+      {
+        "keyCode": 58,
+        "flag": 524288
+      },
+      {
+        "keyCode": 56,
+        "flag": 131072
+      }
+    ]
+  },
+  "previewPath": ""
+}

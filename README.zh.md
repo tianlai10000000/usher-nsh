@@ -172,6 +172,8 @@ Release 优化参数统一放在 [.cargo/config.toml](.cargo/config.toml)。在�
 
 从项目根目录按变更范围运行检查。工作区命令包含更新、状态、路由与测试支持 crate；应用依赖启用 watch 和 matchit 适配器，独立套件另行验证不启用这些 feature 的核心。
 
+快捷键核心 `usher-shortcuts` 无生产或开发依赖，提供通用绑定校验、计划和回执驱动的注册生命周期。业务模块统一位于 `src/shortcuts/modules/`，键位及运行策略来自 `ui/config/shortcuts/`。窗口拥有快捷键注册并复用 Router 动作；页面声明首次进入时加载、成功后缓存，离开时释放注册。当前业务页面不新增键位。可隐藏的底部状态栏只读订阅启动/页面健康状态，提供详情与重试，不拥有注册。全局快捷键在启动时由进程唯一协调器初始化：**Ctrl+Alt+Shift+S** 聚焦主窗口并打开设置，**Ctrl+Alt+Shift+T** 切换本应用的浅色／深色（macOS 的 Alt 为 Option）。选择跟随系统时，从当前实际显示模式开始切换。这是项目默认组合，并非行业统一全局键；系统拒绝注册会显示在快捷键状态中。见 [快捷键方案](docs/shortcuts.md)。
+
 ```sh
 cargo test --locked --workspace
 nsh check
@@ -198,6 +200,14 @@ python3 scripts/test.py logging
 python3 scripts/test.py logging-mock
 python3 scripts/test.py state
 python3 scripts/test.py router
+python3 scripts/test.py shortcuts
+python3 scripts/test.py shortcuts-app
+python3 scripts/test.py shortcuts-ui
+python3 scripts/test.py shortcuts-headless
+python3 scripts/test.py shortcuts-macos # 需要解锁的 macOS 图形会话
+python3 scripts/test.py global-shortcuts-macos # 隔离系统注册及业务动作
+python3 scripts/shortcut_input.py --request-permission # 为独立 macOS 测试工具开启辅助功能
+python3 scripts/test.py global-shortcuts-input-macos # 隔离应用隐藏时的真实系统按键
 python3 scripts/test.py routes-check
 python3 scripts/test.py update-state
 python3 scripts/test.py state-targets

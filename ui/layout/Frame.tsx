@@ -35,13 +35,15 @@ export function Frame(props: {
   updates?: UpdateIndicator;
   /** Drives the rail's avatar button; the button is disabled without it. */
   account?: AccountEntry;
+  shortcuts?: import("./contracts/shortcuts").ShortcutIndicator;
+  blockShortcuts?: () => () => void;
   children: JSX.Element;
 }) {
   const palette = props.appearance.appearance.palette;
   const showStatusBar = props.appearance.preferences.showStatusBar;
   const desktop = platform.desktop;
   const chrome = createWindowChrome(props.appearance);
-  const menu = createMenuPresence(props.appearance);
+  const menu = createMenuPresence(props.appearance, props.blockShortcuts);
 
   return (
     <View testID="window-frame" class="relative flex-1"
@@ -76,7 +78,7 @@ export function Frame(props: {
 
       {/* Outside the row above, so it is as wide as the window and not just the content. */}
       <If when={showStatusBar()}>
-        <StatusBar appearance={props.appearance} />
+        <StatusBar appearance={props.appearance} shortcuts={props.shortcuts} />
       </If>
 
       <Sheet open={menu.drawerOpen()} side="left"

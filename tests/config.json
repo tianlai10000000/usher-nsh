@@ -671,6 +671,157 @@
           ]
         }
       ]
+    },
+    "shortcuts": {
+      "runs": [
+        {
+          "id": "shortcuts-core",
+          "command": [
+            "cargo",
+            "test",
+            "--locked",
+            "-p",
+            "usher-shortcuts"
+          ],
+          "timeout_seconds": 120,
+          "required_test_prefixes": [
+            "catalog_",
+            "runtime_",
+            "crate_manifest_"
+          ]
+        }
+      ]
+    },
+    "shortcuts-app": {
+      "runs": [
+        {
+          "id": "shortcuts-app",
+          "command": [
+            "cargo",
+            "test",
+            "--locked",
+            "-p",
+            "usher-nsh",
+            "--test",
+            "shortcuts"
+          ],
+          "timeout_seconds": 120,
+          "required_test_prefixes": [
+            "shortcuts_"
+          ]
+        }
+      ]
+    },
+    "shortcuts-ui": {
+      "runs": [
+        {
+          "id": "shortcuts-controller",
+          "runner": "nsh",
+          "command": [
+            "nsh",
+            "test"
+          ],
+          "test_paths": [
+            "ui/shortcuts/__tests__"
+          ],
+          "timeout_seconds": 120,
+          "required_test_prefixes": [
+            "shortcut"
+          ]
+        }
+      ]
+    },
+    "shortcuts-headless": {
+      "runs": [
+        {
+          "id": "shortcuts-headless",
+          "runner": "native",
+          "command": [
+            "python3",
+            "scripts/shortcut_acceptance.py",
+            "--target",
+            "headless"
+          ],
+          "test_paths": [
+            "tests/e2e/shortcuts/shortcuts.test.tsx"
+          ],
+          "timeout_seconds": 600,
+          "required_test_prefixes": [
+            "shortcut host lazily"
+          ]
+        }
+      ]
+    },
+    "shortcuts-macos": {
+      "runs": [
+        {
+          "id": "shortcuts-macos",
+          "runner": "native",
+          "command": [
+            "python3",
+            "scripts/shortcut_acceptance.py",
+            "--target",
+            "macos"
+          ],
+          "test_paths": [
+            "tests/e2e/shortcuts/suite.test.ts"
+          ],
+          "timeout_seconds": 600,
+          "required_test_prefixes": [
+            "shortcut host lazily",
+            "shortcut native reload",
+            "shortcut native focus"
+          ]
+        }
+      ]
+    },
+    "global-shortcuts-macos": {
+      "runs": [
+        {
+          "id": "global-shortcuts-macos",
+          "runner": "native",
+          "command": [
+            "python3",
+            "scripts/shortcut_acceptance.py",
+            "--target",
+            "macos",
+            "--global-shortcuts"
+          ],
+          "test_paths": [
+            "tests/e2e/global-shortcuts/native.test.tsx"
+          ],
+          "timeout_seconds": 600,
+          "required_test_prefixes": [
+            "global native startup",
+            "global native occupied",
+            "global native closing",
+            "global native business"
+          ]
+        }
+      ]
+    },
+    "global-shortcuts-input-macos": {
+      "runs": [
+        {
+          "id": "global-shortcuts-input-macos",
+          "runner": "native",
+          "command": [
+            "python3",
+            "scripts/shortcut_acceptance.py",
+            "--target",
+            "macos",
+            "--global-shortcuts",
+            "--system-input"
+          ],
+          "test_paths": [
+            "tests/e2e/global-shortcuts/input.test.tsx"
+          ],
+          "timeout_seconds": 600,
+          "required_test_prefixes": [
+            "global system input"
+          ]
+        }
+      ]
     }
   },
   "platform_compile": {
@@ -678,7 +829,8 @@
       "usher-state",
       "usher-router",
       "usher-update",
-      "usher-test-support"
+      "usher-test-support",
+      "usher-shortcuts"
     ],
     "features": [
       "usher-state/backend-watch",

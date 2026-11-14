@@ -1,0 +1,8 @@
+{
+  "id": "navigation",
+  "version": "1",
+  "bindings": [
+    { "id": "navigation.back", "command": "back", "keystroke": "mod+[", "editing": "notEditing", "repeat": false, "passThrough": false, "required": true },
+    { "id": "navigation.forward", "command": "forward", "keystroke": "mod+]", "editing": "notEditing", "repeat": false, "passThrough": false, "required": true }
+  ]
+}

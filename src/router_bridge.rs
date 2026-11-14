@@ -27,7 +27,7 @@ impl Local for Windows {
         }
     }
 }
-fn service(sys: &System, scope: &str) -> Result<Arc<WindowService>, String> {
+pub(crate) fn service(sys: &System, scope: &str) -> Result<Arc<WindowService>, String> {
     let (store, catalog) = scope
         .split_once(':')
         .map_or((scope, None), |(store, catalog)| (store, Some(catalog)));
@@ -150,6 +150,7 @@ impl WindowState {
     }
     /// Closes exactly one opening. Late cleanup cannot close a window reopened under the same name.
     pub fn close(scope: String, sys: System) {
+        crate::shortcuts::bridge::close_window(&sys, &scope);
         let local = sys.locals.get::<Windows>();
         local.close_listeners.borrow_mut().remove(&scope);
         let mut windows = local.services.borrow_mut();
